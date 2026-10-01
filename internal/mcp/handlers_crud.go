@@ -140,9 +140,17 @@ func (s *Server) handleUpdateSource(ctx context.Context, request mcp.CallToolReq
 		transport = t
 	}
 
-	// Append /source/main to object URL if not already present
+	// A class include (/oo/classes/<name>/includes/<include>) is written at
+	// its own URL and locked through its class. Every other object takes
+	// /source/main, appended if not already present (#242).
 	sourceURL := objectURL
-	if !strings.HasSuffix(sourceURL, "/source/main") {
+	classURL, includeSourceURL, isClassInclude, err := adt.SplitClassIncludeURL(objectURL)
+	switch {
+	case err != nil:
+		return newToolResultError(fmt.Sprintf("Failed to update source: %v", err)), nil
+	case isClassInclude:
+		objectURL, sourceURL = classURL, includeSourceURL
+	case !strings.HasSuffix(sourceURL, "/source/main"):
 		sourceURL = objectURL + "/source/main"
 	}
 
@@ -152,14 +160,13 @@ func (s *Server) handleUpdateSource(ctx context.Context, request mcp.CallToolReq
 		// lock. UpdateSource reuses this per-object marker, so it still runs
 		// every policy check but does not issue a stateless SearchObject inside
 		// the LOCK -> PUT -> UNLOCK window (#169).
-		var err error
 		updateCtx, err = s.adtClient.PrepareSourceUpdate(ctx, objectURL, transport)
 		if err != nil {
 			return newToolResultError(fmt.Sprintf("Failed to update source: %v", err)), nil
 		}
 	}
 
-	err := s.withObjectLock(updateCtx, objectURL, lockHandle, transport, func(handle string) error {
+	err = s.withObjectLock(updateCtx, objectURL, lockHandle, transport, func(handle string) error {
 		return s.adtClient.UpdateSource(updateCtx, sourceURL, source, handle, transport)
 	})
 	if err != nil {

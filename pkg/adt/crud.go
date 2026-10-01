@@ -1392,7 +1392,7 @@ func (c *Client) UpdateClassInclude(ctx context.Context, className string, inclu
 		Stateful:    true, // Must match lock session — the lock was acquired statefully (issues #88/#92/#98)
 	})
 	if err != nil {
-		return fmt.Errorf("updating class include: %w", err)
+		return &classIncludePutError{err: err}
 	}
 
 	return nil

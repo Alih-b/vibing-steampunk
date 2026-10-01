@@ -162,6 +162,10 @@ type WriteSourceOptions struct {
 	Transport   string          // Transport request number
 	Method      string          // For CLAS only: update only this method (source must be METHOD...ENDMETHOD block)
 	Parent      string          // For FUNC only: function group. Empty resolves it from the module name.
+	// Include is for CLAS only: write this include (definitions,
+	// implementations, macros, testclasses) instead of the main source.
+	// Empty or "main" is the main source; any other name is refused (#242).
+	Include string
 	// ExpectedSourceHash is the SourceHash returned by GetSource. When supplied
 	// for an update, VSP re-reads the source after taking the write lock and
 	// refuses to overwrite a version changed since that read.
@@ -178,8 +182,9 @@ type WriteSourceResult struct {
 	ObjectType         string              `json:"objectType"`
 	ObjectName         string              `json:"objectName"`
 	ObjectURL          string              `json:"objectUrl"`
-	Mode               string              `json:"mode"`             // "created" or "updated"
-	Method             string              `json:"method,omitempty"` // Method name if method-level update
+	Mode               string              `json:"mode"`              // "created" or "updated"
+	Method             string              `json:"method,omitempty"`  // Method name if method-level update
+	Include            string              `json:"include,omitempty"` // Class include written, if not the main source
 	SyntaxErrors       []SyntaxCheckResult `json:"syntaxErrors,omitempty"`
 	Activation         *ActivationResult   `json:"activation,omitempty"`
 	TestResults        *UnitTestResult     `json:"testResults,omitempty"` // For CLAS with TestSource
@@ -272,6 +277,38 @@ func (c *Client) WriteSource(ctx context.Context, objectType, name, source strin
 	default:
 		result.Message = fmt.Sprintf("Unsupported object type: %s (supported: PROG, CLAS, INTF, FUNC, INCL, DDLS, BDEF, SRVD, SRVB, TABL)", objectType)
 		return result, nil
+	}
+
+	// A class include is written to its own URL. Never let an include the
+	// caller named fall through to the main-source path (#242).
+	if opts.Include != "" {
+		include, err := ParseClassIncludeType(opts.Include)
+		switch {
+		case objectType != "CLAS":
+			result.Message = fmt.Sprintf("include is only valid for CLAS, not %s", objectType)
+			return result, nil
+		case err != nil:
+			result.Message = err.Error()
+			return result, nil
+		}
+		if include != ClassIncludeMain {
+			switch {
+			case opts.Method != "":
+				result.Message = "method and include cannot be combined: method replaces a method in the main source"
+				return result, nil
+			case opts.TestSource != "":
+				result.Message = "test_source and include cannot be combined: send the test classes as source with include=testclasses"
+				return result, nil
+			case opts.Mode == WriteModeCreate:
+				result.Message = "mode=create cannot be combined with include: an include is written into an existing class, so create the class first"
+				return result, nil
+			}
+			updated, err := c.writeClassIncludeUpdate(ctx, name, include, source, opts)
+			if err != nil || opts.ExpectedSourceHash == "" || !updated.Success {
+				return updated, err
+			}
+			return c.verifyWriteSourceResult(ctx, updated, source, opts)
+		}
 	}
 
 	// Determine if object exists (for upsert mode)
@@ -450,7 +487,11 @@ func (c *Client) verifyWriteSourceResult(
 		result.Message = "Source was written and activated, but post-write verification has no object URL. Do not retry blindly."
 		return result, nil
 	}
-	resp, err := c.transport.Request(ctx, result.ObjectURL+"/source/main", &RequestOptions{
+	sourceURL := result.ObjectURL + "/source/main"
+	if result.Include != "" {
+		sourceURL = GetClassIncludeSourceURL(result.ObjectName, ClassIncludeType(result.Include))
+	}
+	resp, err := c.transport.Request(ctx, sourceURL, &RequestOptions{
 		Method: "GET", Accept: "text/plain",
 	})
 	if err != nil {

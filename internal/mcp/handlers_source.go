@@ -77,6 +77,12 @@ func (s *Server) routeSourceAction(ctx context.Context, action, objectType, obje
 				if v := getStringParam(params, "expected_source_hash"); v != "" {
 					args["expected_source_hash"] = v
 				}
+				// CLAS only: the include to write instead of the main source.
+				// Forwarded, never dropped, so WriteSource can route it or
+				// refuse it (#242).
+				if v := getStringParam(params, "include"); v != "" {
+					args["include"] = v
+				}
 				// FUNC only: the group, when the caller happens to know it.
 				if v := getStringParam(params, "parent"); v != "" {
 					args["parent"] = v
@@ -165,6 +171,9 @@ func (s *Server) registerWriteSource() {
 		),
 		mcp.WithString("expected_source_hash",
 			mcp.Description("Optional sourceHash returned by GetSource(include_hash=true). After locking, refuse the write if SAP source has changed."),
+		),
+		mcp.WithString("include",
+			mcp.Description("For CLAS only: write this include of an existing class instead of the main source: definitions, implementations, macros, testclasses (created if missing). Any other name is refused."),
 		),
 	), s.handleWriteSource)
 }
@@ -260,6 +269,7 @@ func (s *Server) handleWriteSource(ctx context.Context, request mcp.CallToolRequ
 	method, _ := request.GetArguments()["method"].(string)
 	parent, _ := request.GetArguments()["parent"].(string)
 	expectedSourceHash, _ := request.GetArguments()["expected_source_hash"].(string)
+	include, _ := request.GetArguments()["include"].(string)
 
 	opts := &adt.WriteSourceOptions{
 		Description:        description,
@@ -269,6 +279,7 @@ func (s *Server) handleWriteSource(ctx context.Context, request mcp.CallToolRequ
 		Transport:          transport,
 		Method:             method,
 		ExpectedSourceHash: expectedSourceHash,
+		Include:            include,
 	}
 
 	if mode != "" {

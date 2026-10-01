@@ -461,6 +461,10 @@ var readOnlyClasses = map[string]surfaceClass{
 	"SAP system type=rename":           clsMutate,
 	"SAP edit UI5_UPLOAD":              clsMutate,
 
+	// #242: the class-include write paths.
+	"SAP edit CLAS include=testclasses":    clsMutate,
+	"SAP edit UPDATE_SOURCE class include": clsMutate,
+
 	// --- SAP(): create, delete ---
 	"SAP create OBJECT": clsMutate, "SAP create DEVC": clsMutate, "SAP create TABL": clsMutate,
 	"SAP create CLONE": clsMutate, "SAP create ENHO": clsMutate, "SAP create BADI_IMPL": clsMutate,
@@ -1010,6 +1014,12 @@ func actionCases() []actionCase {
 		{Name: "SAP edit LOCK", Action: "edit", Target: "LOCK", Like: "LockObject"},
 		{Name: "SAP edit UNLOCK", Action: "edit", Target: "UNLOCK", Like: "UnlockObject"},
 		{Name: "SAP edit UPDATE_SOURCE", Action: "edit", Target: "UPDATE_SOURCE", Like: "UpdateSource"},
+		// #242: a class include is written at its own URL, through its own
+		// branch; both must still be refused read-only and package-gated.
+		{Name: "SAP edit CLAS include=testclasses", Action: "edit", Target: "CLAS ZCL_DEMO", Exact: true,
+			Params: kv("source", fakeSource, "include", "testclasses", "transport", "TR-EXAMPLE")},
+		{Name: "SAP edit UPDATE_SOURCE class include", Action: "edit", Target: "UPDATE_SOURCE", Exact: true,
+			Params: kv("object_url", synthClassURL+"/includes/testclasses", "source", fakeSource, "transport", "TR-EXAMPLE")},
 		{Name: "SAP edit MOVE", Action: "edit", Target: "MOVE", Like: "MoveObject"},
 		{Name: "SAP edit COMPARE_SOURCE", Action: "edit", Target: "COMPARE_SOURCE", Like: "CompareSource"},
 		{Name: "SAP edit RECOVER_FAILED_CREATE", Action: "edit", Target: "RECOVER_FAILED_CREATE", Like: "RecoverFailedCreate"},
@@ -1822,6 +1832,10 @@ var packageGated = map[string]string{
 	"SAP create STRUCT":             "",
 	"SAP create BADI_IMPL":          "",
 	"SAP i18n op=texts_set":         "",
+
+	// #242: the class-include write paths.
+	"SAP edit CLAS include=testclasses":    "",
+	"SAP edit UPDATE_SOURCE class include": "",
 
 	"tool Activate":                gapActivationPackage,
 	"tool ActivateMultiple":        gapActivationPackage,

@@ -70,12 +70,19 @@ High-level edit (recommended - auto lock/unlock/activate):
 Method-level edit (CLAS only):
   SAP(action="edit", target="CLAS ZCL_TEST", params={"source": "METHOD get_data...ENDMETHOD.", "method": "GET_DATA"})
 
+Class include edit (CLAS only; the include's own source, main source untouched):
+  SAP(action="edit", target="CLAS ZCL_TEST", params={"include": "testclasses", "source": "CLASS ltcl_test DEFINITION FOR TESTING..."})
+  include: definitions, implementations, macros, testclasses (created if missing). Any other name is refused.
+  Main source and test classes in one call: params={"source": "CLASS zcl_test...", "test_source": "CLASS ltcl_test..."}
+  Without activation: SAP(action="edit", target="CLAS_INCLUDE ZCL_TEST", params={"class_name": "ZCL_TEST", "include_type": "testclasses", "source": "..."})
+
 Surgical edit (find and replace in source):
   SAP(action="edit", target="EDITSOURCE", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "old_string": "old code", "new_string": "new code"})
 
 Low-level edit (manual lock/unlock):
   SAP(action="edit", target="LOCK", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test"})
   SAP(action="edit", target="UPDATE_SOURCE", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "source": "...", "lock_handle": "..."})
+  UPDATE_SOURCE with a class include URL (/sap/bc/adt/oo/classes/zcl_test/includes/testclasses) writes that include; lock the class URL.
   SAP(action="edit", target="UNLOCK", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "lock_handle": "..."})
 
 Activate:
@@ -754,7 +761,7 @@ func getUnhandledErrorMessage(action, objectType, objectName string) string {
 		sb.WriteString("Supported read targets: CLAS, PROG, INTF, FUNC, FUGR, INCL, DDLS, BDEF, SRVD, TABL, TABL_CONTENTS, DEVC, MSAG, TRAN, TYPE_INFO, STRUCT, CDS_DEPS, IDOC\n")
 		sb.WriteString("Use SAP(action=\"help\", target=\"read\") for examples.")
 	case "edit":
-		sb.WriteString("Supported edit targets: CLAS, PROG, INTF, FUNC, DDLS, BDEF, SRVD, TABL, LOCK, UNLOCK, UPDATE_SOURCE, ACTIVATE, ACTIVATE_PACKAGE, EDITSOURCE, PUBLISH_SERVICE, UNPUBLISH_SERVICE\n")
+		sb.WriteString("Supported edit targets: CLAS, CLAS_INCLUDE, PROG, INTF, FUNC, DDLS, BDEF, SRVD, TABL, LOCK, UNLOCK, UPDATE_SOURCE, ACTIVATE, ACTIVATE_PACKAGE, EDITSOURCE, PUBLISH_SERVICE, UNPUBLISH_SERVICE\n")
 		sb.WriteString("Use SAP(action=\"help\", target=\"edit\") for examples.")
 	case "create":
 		sb.WriteString("Supported create targets: OBJECT, DEVC, TABL, CLONE, PROGRAM, CLASS_WITH_TESTS, CLAS_TEST_INCLUDE\n")
