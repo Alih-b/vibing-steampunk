@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
@@ -69,6 +68,13 @@ type Config struct {
 	// stop to ask a human something — a browser sign-in with a second factor
 	// takes far longer than any machine-to-machine handshake.
 	ReauthTimeout time.Duration
+
+	// ReauthReadOnly limits an externally refreshed credential source to a
+	// safe, unlocked GET or HEAD retry. A new browser session cannot inherit an
+	// ADT lock handle, and replaying a mutation after changing credentials leaves
+	// its remote result unknowable. Cookie files opt into this narrow policy;
+	// interactive SSO keeps its established recovery behaviour.
+	ReauthReadOnly bool
 
 	// ProxyContextIDGuard enables a workaround for session-holding proxy
 	// chains such as the SAP Business Application Studio destination proxy
@@ -291,6 +297,15 @@ func WithReauthTimeout(d time.Duration) Option {
 	}
 }
 
+// WithReadOnlyReauth limits automatic session recovery to unlocked GET and
+// HEAD requests. It is intended for credential sources that another process
+// refreshes, such as --cookie-file.
+func WithReadOnlyReauth() Option {
+	return func(c *Config) {
+		c.ReauthReadOnly = true
+	}
+}
+
 // WithTerminalID sets the debugger terminal ID.
 // Use the same ID as SAP GUI to enable cross-tool breakpoint sharing.
 // SAP GUI stores this in: Windows Registry HKCU\Software\SAP\ABAP Debugging\TerminalID
@@ -303,7 +318,10 @@ func WithTerminalID(terminalID string) Option {
 
 // NewHTTPClient creates an http.Client configured for the given Config.
 func (c *Config) NewHTTPClient() *http.Client {
-	jar, _ := cookiejar.New(nil)
+	// One jar for the client's lifetime: session recovery empties it in place
+	// (see Transport.resetCookieJar) rather than replacing client.Jar under
+	// concurrent requests.
+	jar := newResettableJar()
 
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment, // Honor HTTP_PROXY/HTTPS_PROXY env vars

@@ -164,6 +164,15 @@ func (c *Client) UnlockObject(ctx context.Context, objectURL string, lockHandle 
 		Stateful: true, // Must match lock session (issue #88)
 	})
 	if err != nil {
+		// Under cookie-file recovery, an expired session answering the
+		// unlock means the session holding the lock is gone, and the enqueue
+		// with it. Keeping the handle would refuse every later recovery until
+		// the entry ages out.
+		var apiErr *APIError
+		if c.config != nil && c.config.ReauthReadOnly && errors.As(err, &apiErr) &&
+			(apiErr.IsSessionExpired() || apiErr.StatusCode == http.StatusUnauthorized) {
+			c.noteLockClosed(lockHandle)
+		}
 		return fmt.Errorf("unlocking object: %w", err)
 	}
 

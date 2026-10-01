@@ -135,6 +135,11 @@ type Transport struct {
 	// from triggering simultaneous SAML dances.
 	reauthMu   sync.Mutex
 	lastReauth time.Time
+
+	// lockOutstanding, when set by the owning Client, reports whether that
+	// client holds a lock handle. Cookie-file recovery is refused while it
+	// does: reloading would replace the session the lock belongs to.
+	lockOutstanding func() bool
 }
 
 // NewTransport creates a new Transport with the given configuration.
@@ -277,7 +282,7 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 		if token == "" {
 			// Fetch CSRF token first, on the same kind of session the request
 			// itself will use (issue #91).
-			if err := t.fetchCSRFTokenFor(ctx, opts.Stateful); err != nil {
+			if err := t.fetchCSRFTokenWithReauth(ctx, !t.config.ReauthReadOnly, opts.Stateful); err != nil {
 				return nil, fmt.Errorf("fetching CSRF token: %w", err)
 			}
 			token = t.getCSRFToken()
@@ -314,6 +319,9 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 	// was in fact served by the identity provider. Nothing downstream would
 	// recognise the logon page it carries, so catch it here by origin.
 	if resp.StatusCode < 400 && t.canReauth() && t.redirectedAwayFromSAP(resp) {
+		if err := t.requireSafeReauth(opts, path, nil); err != nil {
+			return nil, err
+		}
 		t.setCSRFToken("")
 		t.setSessionID("")
 		if err := t.callReauthFunc(ctx); err != nil {
@@ -328,7 +336,7 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 		// the request's own session kind: for a stateful write it lands between
 		// the failed attempt and the retry, and an unmarked probe there retires
 		// the session the lock handle belongs to (issue #91).
-		if err := t.fetchCSRFTokenFor(ctx, opts.Stateful); err != nil {
+		if err := t.fetchCSRFTokenWithReauth(ctx, !t.config.ReauthReadOnly, opts.Stateful); err != nil {
 			return nil, fmt.Errorf("refreshing CSRF token: %w", err)
 		}
 
@@ -348,6 +356,9 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 
 		// Handle session timeout - refresh session and retry once
 		if apiErr.IsSessionExpired() {
+			if err := t.requireSafeReauth(opts, path, apiErr); err != nil {
+				return nil, err
+			}
 			// Clear cached CSRF token and session ID
 			t.setCSRFToken("")
 			t.setSessionID("")
@@ -369,6 +380,9 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 		// This happens after idle periods when the SAP session expires.
 		// We preserve apiErr so the original path/body is not lost if re-auth itself fails.
 		if resp.StatusCode == http.StatusUnauthorized {
+			if err := t.requireSafeReauth(opts, path, apiErr); err != nil {
+				return nil, err
+			}
 			t.setCSRFToken("")
 			t.setSessionID("")
 
@@ -634,6 +648,41 @@ func (t *Transport) redirectedAwayFromSAP(resp *http.Response) bool {
 // by to produce one.
 func (t *Transport) canReauth() bool {
 	return !t.config.HasBasicAuth() && t.config.ReauthFunc != nil
+}
+
+// requireSafeReauth keeps externally refreshed cookie files out of writes and
+// lock windows. The request already left the process, so continuing it with a
+// new session would turn an observable failure into an unprovable outcome.
+// The session kind is the one the request was sent with: a client-wide
+// stateful session makes every request stateful (see the session header in
+// setDefaultHeaders), not only those that ask for it. cause, when not nil, is
+// the server's answer that showed the session gone; the refusal wraps it.
+func (t *Transport) requireSafeReauth(opts *RequestOptions, path string, cause error) error {
+	if !t.config.ReauthReadOnly {
+		return nil
+	}
+	method := http.MethodGet
+	if opts != nil && opts.Method != "" {
+		method = opts.Method
+	}
+	if t.lockOutstanding != nil && t.lockOutstanding() {
+		return refusal(cause, "session expired on %s %s: refusing cookie-file recovery while a lock is open, because reloading would replace the session the lock belongs to; "+
+			"retry after the lock is released (unlock the object, or wait for the SAP session timeout), or restart the server", method, path)
+	}
+	stateful := t.config.SessionType == SessionStateful || (opts != nil && opts.Stateful)
+	if opts != nil && !stateful && (opts.Method == http.MethodGet || opts.Method == http.MethodHead) {
+		return nil
+	}
+	return refusal(cause, "session expired on %s %s: refusing cookie-file recovery and replay because the remote result is unknown", method, path)
+}
+
+// refusal formats a recovery refusal, wrapping cause when there is one.
+func refusal(cause error, format string, args ...any) error {
+	msg := fmt.Sprintf(format, args...)
+	if cause == nil {
+		return errors.New(msg)
+	}
+	return fmt.Errorf("%s: %w", msg, cause)
 }
 
 // isCSRFToken reports whether the header value is an actual token rather than the
@@ -950,14 +999,25 @@ func (t *Transport) callReauthFunc(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if len(cookies) == 0 {
+		return fmt.Errorf("re-authentication returned no cookies")
+	}
 
+	// Make the accepted source snapshot the sole authentication state before
+	// asking SAP for a token. The callback has already validated its input; an
+	// error before this point leaves the old session untouched.
 	t.cookiesMu.Lock()
-	t.config.Cookies = cookies
+	t.config.Cookies = cloneCookies(cookies)
 	t.cookiesMu.Unlock()
+	t.setCSRFToken("")
+	t.setSessionID("")
 	// The jar still holds what the expired session's server set — including its
 	// own SAP_SESSIONID, which would ride along beside the new one and leave the
 	// server to pick between them.
 	t.resetCookieJar()
+	if t.cache != nil {
+		t.cache.invalidate()
+	}
 
 	// Fetch CSRF token with the new cookies.
 	// Set lastReauth only after CSRF succeeds — if it fails, the next
@@ -1009,14 +1069,60 @@ func (t *Transport) adoptServerCookies(resp *http.Response) {
 }
 
 // resetCookieJar discards cookies accumulated under a previous session.
+//
+// The client built by Config.NewHTTPClient keeps one resettableJar for its
+// lifetime, and clearing it is safe while other requests are under way.
+// Assigning client.Jar instead would race every concurrent Do, which reads
+// the field; that fallback is left only for a caller-supplied client with a
+// jar of its own.
 func (t *Transport) resetCookieJar() {
 	client, ok := t.httpClient.(*http.Client)
 	if !ok || client.Jar == nil {
 		return
 	}
+	if jar, ok := client.Jar.(*resettableJar); ok {
+		jar.reset()
+		return
+	}
 	if jar, err := cookiejar.New(nil); err == nil {
 		client.Jar = jar
 	}
+}
+
+// resettableJar is an http.CookieJar that can be emptied while in use. The
+// http.Client holds the same resettableJar throughout; reset swaps the jar
+// inside it under a lock.
+type resettableJar struct {
+	mu    sync.RWMutex
+	inner http.CookieJar
+}
+
+func newResettableJar() *resettableJar {
+	jar, _ := cookiejar.New(nil) // cookiejar.New never fails with nil options
+	return &resettableJar{inner: jar}
+}
+
+func (j *resettableJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
+	j.mu.RLock()
+	inner := j.inner
+	j.mu.RUnlock()
+	inner.SetCookies(u, cookies)
+}
+
+func (j *resettableJar) Cookies(u *url.URL) []*http.Cookie {
+	j.mu.RLock()
+	inner := j.inner
+	j.mu.RUnlock()
+	return inner.Cookies(u)
+}
+
+// reset drops every cookie. A request that took the old jar just before
+// reset may still set its response cookies there; they are discarded with it.
+func (j *resettableJar) reset() {
+	jar, _ := cookiejar.New(nil)
+	j.mu.Lock()
+	j.inner = jar
+	j.mu.Unlock()
 }
 
 // CurrentCookies returns a copy of the session this client is using now.
@@ -1044,7 +1150,18 @@ func (t *Transport) CurrentCookies() map[string]string {
 func (t *Transport) SetCookies(cookies map[string]string) {
 	t.cookiesMu.Lock()
 	defer t.cookiesMu.Unlock()
-	t.config.Cookies = cookies
+	t.config.Cookies = cloneCookies(cookies)
+}
+
+func cloneCookies(cookies map[string]string) map[string]string {
+	if len(cookies) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(cookies))
+	for name, value := range cookies {
+		cloned[name] = value
+	}
+	return cloned
 }
 
 // addCookies adds user-provided cookies to a request under cookiesMu read lock.
