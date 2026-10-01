@@ -138,19 +138,22 @@ func (c *Client) MoveTransportObject(ctx context.Context, ws *DebugWebSocketClie
 	}
 	out := &TransportMoveResult{Object: key, From: from, To: to}
 
-	source, err := c.GetTransport(ctx, from)
+	source, err := c.transportTree(ctx, from)
 	if err != nil {
 		return out, fmt.Errorf("reading %s: %w", from, err)
 	}
-	out.FromTask = holderOf(source, key)
+	out.FromTask = holderIn(source, from, key)
 	if out.FromTask == "" {
 		return out, fmt.Errorf("%s is not in %s", key, from)
 	}
-	target, err := c.GetTransport(ctx, to)
+	target, err := c.transportTree(ctx, to)
 	if err != nil {
 		return out, fmt.Errorf("reading %s: %w", to, err)
 	}
-	out.ToTask = taskFor(target, strings.ToUpper(c.config.Username))
+	out.ToTask = targetTask(target, to, strings.ToUpper(c.config.Username))
+	if _, err = classifyTask(ctx, ws, c.requestHeader, target, out.ToTask); err != nil {
+		return out, err
+	}
 
 	entry := map[string]any{"PGMID": key.PgmID, "OBJECT": key.Object, "OBJ_NAME": key.Name}
 	res, err := ws.CallRFC(ctx, "TR_APPEND_TO_COMM_OBJS_KEYS", map[string]any{
@@ -185,21 +188,62 @@ func (c *Client) MoveTransportObject(ctx context.Context, ws *DebugWebSocketClie
 // holderOf is the task of the request that carries the entry, the request
 // itself when the entry sits at its level, "" when it is not there.
 func holderOf(details *TransportDetails, key TransportObjectKey) string {
-	has := func(objects []TransportObjectV2) bool {
-		for _, o := range objects {
-			if strings.EqualFold(o.Name, key.Name) && strings.EqualFold(o.Type, key.Object) && (o.PgmID == "" || strings.EqualFold(o.PgmID, key.PgmID)) {
-				return true
-			}
-		}
-		return false
-	}
 	for _, t := range details.Tasks {
-		if has(t.Objects) {
+		if holds(t.Objects, key) {
 			return t.Number
 		}
 	}
-	if has(details.Objects) {
+	if holds(details.Objects, key) {
 		return details.Number
+	}
+	return ""
+}
+
+func holds(objects []TransportObjectV2, key TransportObjectKey) bool {
+	for _, o := range objects {
+		if strings.EqualFold(o.Name, key.Name) && strings.EqualFold(o.Type, key.Object) && (o.PgmID == "" || strings.EqualFold(o.PgmID, key.PgmID)) {
+			return true
+		}
+	}
+	return false
+}
+
+// namedTask is number when it names one of the request's tasks rather than
+// the request itself -- SE09 takes a task wherever a request goes, and
+// transportTree reads the request of a task, so the task would be lost.
+func namedTask(details *TransportDetails, number string) string {
+	number = strings.TrimSpace(number)
+	if number == "" || strings.EqualFold(number, details.Number) {
+		return ""
+	}
+	for _, t := range details.Tasks {
+		if strings.EqualFold(t.Number, number) {
+			return t.Number
+		}
+	}
+	return ""
+}
+
+// targetTask is where an entry goes: the task the caller named, or else the
+// user's task in the request.
+func targetTask(details *TransportDetails, named, user string) string {
+	if t := namedTask(details, named); t != "" {
+		return t
+	}
+	return taskFor(details, user)
+}
+
+// holderIn is the task an entry is taken from. When the caller named a task,
+// only that one; the same entry in another task of the request is not it.
+func holderIn(details *TransportDetails, named string, key TransportObjectKey) string {
+	t := namedTask(details, named)
+	if t == "" {
+		return holderOf(details, key)
+	}
+	for _, task := range details.Tasks {
+		if task.Number == t && holds(task.Objects, key) {
+			return t
+		}
 	}
 	return ""
 }

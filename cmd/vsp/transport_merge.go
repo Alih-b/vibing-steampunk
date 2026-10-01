@@ -102,6 +102,92 @@ that holds it. The object is R3TR unless a PGMID is given.
 	},
 }
 
+var transportAddCmd = &cobra.Command{
+	Use:   "add <REQUEST> <\"TYPE NAME\"> [\"TYPE NAME\" ...]",
+	Short: "Add object entries to a request, as SE09 does (needs ZADT_VSP)",
+	Long: `Add entries to your modifiable task of the request (the request itself when
+you have none, or the task when you name one). The object is R3TR unless a
+PGMID is given. A TABU entry takes the keys of the rows it carries with
+--key: the key fields end to end at their full length, '*' as a generic tail.
+
+  SAP_ENABLE_TRANSPORTS=true vsp -s devsys transport add TR-A "LIMU REPT ZDEMO" "PROG ZDEMO2"
+  SAP_ENABLE_TRANSPORTS=true vsp -s devsys transport add TR-A "TABU ZDEMO_CONF" --key 100KEY1 --key "100KEY2*"`,
+	Args: cobra.MinimumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		keys, _ := cmd.Flags().GetStringArray("key")
+		var entries []adt.TransportEntry
+		for _, a := range args[1:] {
+			key, err := adt.ParseTransportObject(a)
+			if err != nil {
+				return err
+			}
+			entries = append(entries, adt.TransportEntry{TransportObjectKey: key})
+		}
+		if len(keys) > 0 {
+			if len(entries) != 1 {
+				return fmt.Errorf("--key belongs to a single TABU entry")
+			}
+			entries[0].Keys = keys
+		}
+		client, ws, closeWS, err := transportBridge(cmd)
+		if err != nil {
+			return err
+		}
+		defer closeWS()
+		res, err := client.AddTransportObjects(context.Background(), ws, args[0], entries)
+		if asJSON, _ := cmd.Flags().GetBool("json"); asJSON && res != nil {
+			if perr := printJSON(res); perr != nil {
+				return perr
+			}
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		for _, k := range res.Added {
+			fmt.Fprintf(os.Stderr, "%s -> %s\n", k, res.Task)
+		}
+		if res.Keys > 0 {
+			fmt.Fprintf(os.Stderr, "%d table key(s)\n", res.Keys)
+		}
+		return nil
+	},
+}
+
+var transportRemoveCmd = &cobra.Command{
+	Use:   "remove <REQUEST> <\"TYPE NAME\">",
+	Short: "Take one object entry out of a request, as SE09 does (needs ZADT_VSP)",
+	Long: `Delete one entry, with the table keys it carries, from whichever task of
+the request holds it. The object is R3TR unless a PGMID is given.
+
+  SAP_ENABLE_TRANSPORTS=true vsp -s devsys transport remove TR-A "PROG ZDEMO"
+  SAP_ENABLE_TRANSPORTS=true vsp -s devsys transport remove TR-A "LIMU REPT ZDEMO"`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		key, err := adt.ParseTransportObject(args[1])
+		if err != nil {
+			return err
+		}
+		client, ws, closeWS, err := transportBridge(cmd)
+		if err != nil {
+			return err
+		}
+		defer closeWS()
+		res, err := client.RemoveTransportObject(context.Background(), ws, args[0], key)
+		if asJSON, _ := cmd.Flags().GetBool("json"); asJSON && res != nil {
+			if perr := printJSON(res); perr != nil {
+				return perr
+			}
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "%s removed from %s\n", key, res.Task)
+		return nil
+	},
+}
+
 // transportBridge is the ADT client and a connected WebSocket to ZADT_VSP.
 func transportBridge(cmd *cobra.Command) (*adt.Client, *adt.DebugWebSocketClient, func(), error) {
 	client, err := createADTClientFor(cmd)
@@ -124,5 +210,8 @@ func init() {
 	transportMoveCmd.Flags().String("from", "", "The request the entry leaves")
 	transportMoveCmd.Flags().String("to", "", "The request the entry goes into")
 	transportMoveCmd.Flags().Bool("json", false, "Emit JSON")
-	transportCmd.AddCommand(transportMergeCmd, transportMoveCmd)
+	transportAddCmd.Flags().StringArray("key", nil, "Table key of a TABU entry (repeatable)")
+	transportAddCmd.Flags().Bool("json", false, "Emit JSON")
+	transportRemoveCmd.Flags().Bool("json", false, "Emit JSON")
+	transportCmd.AddCommand(transportMergeCmd, transportMoveCmd, transportAddCmd, transportRemoveCmd)
 }

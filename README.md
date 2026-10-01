@@ -416,8 +416,20 @@ SAP_ENABLE_TRANSPORTS=true vsp -s a4h transport merge TR-A TR-B --into TR-C     
 SAP_ENABLE_TRANSPORTS=true vsp -s a4h transport move "PROG ZDEMO_RUN" --from TR-A --to TR-B
 ```
 
-MCP: `system` with `merge_transports` (`source`, `target`) and
-`move_transport_object` (`object`, `from`, `to`). Both need ZADT_VSP on the
+Adding an entry nobody edits -- a `LIMU REPT` for a report's texts, a `TABU`
+with the keys of the customizing rows it carries -- and taking one out go the
+same way:
+
+```bash
+SAP_ENABLE_TRANSPORTS=true vsp -s a4h transport add TR-A "LIMU REPT ZDEMO" "R3TR PROG ZDEMO2"
+SAP_ENABLE_TRANSPORTS=true vsp -s a4h transport add TR-A "R3TR TABU ZDEMO_CONF" --key 100KEY1 --key "100KEY2*"
+SAP_ENABLE_TRANSPORTS=true vsp -s a4h transport remove TR-A "PROG ZDEMO"
+```
+
+MCP: `system` with `merge_transports` (`source`, `target`),
+`move_transport_object` (`object`, `from`, `to`), `add_transport_object`
+(`transport`, `objects` or `object` + `keys`) and `remove_transport_object`
+(`transport`, `object`). All need ZADT_VSP on the
 system — redeploy it after this release, the bridge changed.
 
 `vsp update` fetches the latest release for this platform, compares it with

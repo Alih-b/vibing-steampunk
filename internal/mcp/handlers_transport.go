@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
+
 	"github.com/oisee/vibing-steampunk/pkg/adt"
 )
 
@@ -39,6 +40,10 @@ func (s *Server) routeTransportAction(ctx context.Context, action, objectType, o
 		return s.callHandler(ctx, s.handleMergeTransports, params)
 	case "move_transport_object", "move_object":
 		return s.callHandler(ctx, s.handleMoveTransportObject, params)
+	case "add_transport_object", "add_to_transport":
+		return s.callHandler(ctx, s.handleAddTransportObjects, params)
+	case "remove_transport_object", "remove_from_transport":
+		return s.callHandler(ctx, s.handleRemoveTransportObject, params)
 	}
 	return nil, false, nil
 }
@@ -477,4 +482,140 @@ func (s *Server) handleMoveTransportObject(ctx context.Context, request mcp.Call
 		return newToolResultError(err.Error()), nil
 	}
 	return newToolResultJSON(res), nil
+}
+
+// handleAddTransportObjects adds entries to a request, as SE09 does:
+//
+//	SAP(action="system", params={"type": "add_transport_object", "transport": "TR-A",
+//	    "objects": ["LIMU REPT ZDEMO", "R3TR PROG ZDEMO2"]})
+//	SAP(action="system", params={"type": "add_transport_object", "transport": "TR-A",
+//	    "object": "R3TR TABU ZDEMO_CONF", "keys": ["100KEY1", "100KEY2*"]})
+//
+// "objects" may also hold {"object": "…", "keys": […]} items, for several
+// tables with keys in one call.
+func (s *Server) handleAddTransportObjects(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	transport := transportParam(args)
+	if transport == "" {
+		return newToolResultError("transport (the request or task to add to) is required"), nil
+	}
+	entries, err := transportEntries(args)
+	if err != nil {
+		return newToolResultError(err.Error()), nil
+	}
+	if err = s.ensureDebugWSClient(ctx); err != nil {
+		return newToolResultError(fmt.Sprintf("adding entries to a request needs ZADT_VSP's function bridge: %v", err)), nil
+	}
+	res, err := s.adtClient.AddTransportObjects(ctx, s.debugWSClient, transport, entries)
+	if err != nil {
+		if res != nil {
+			return newToolResultJSON(map[string]any{"error": err.Error(), "result": res}), nil
+		}
+		return newToolResultError(err.Error()), nil
+	}
+	return newToolResultJSON(res), nil
+}
+
+// handleRemoveTransportObject takes one entry out of a request:
+// SAP(action="system", params={"type": "remove_transport_object", "transport": "TR-A", "object": "PROG ZDEMO"}).
+func (s *Server) handleRemoveTransportObject(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	transport := transportParam(args)
+	if transport == "" {
+		return newToolResultError("transport (the request the entry is in) is required"), nil
+	}
+	object := getStringParam(args, "object")
+	if object == "" {
+		object = strings.TrimSpace(getStringParam(args, "pgmid") + " " + getStringParam(args, "object_type") + " " + getStringParam(args, "object_name"))
+	}
+	key, err := adt.ParseTransportObject(object)
+	if err != nil {
+		return newToolResultError(err.Error()), nil
+	}
+	if err = s.ensureDebugWSClient(ctx); err != nil {
+		return newToolResultError(fmt.Sprintf("removing an entry from a request needs ZADT_VSP's function bridge: %v", err)), nil
+	}
+	res, err := s.adtClient.RemoveTransportObject(ctx, s.debugWSClient, transport, key)
+	if err != nil {
+		if res != nil {
+			return newToolResultJSON(map[string]any{"error": err.Error(), "result": res}), nil
+		}
+		return newToolResultError(err.Error()), nil
+	}
+	return newToolResultJSON(res), nil
+}
+
+func transportParam(args map[string]any) string {
+	for _, k := range []string{"transport", "request", "task"} {
+		if v := strings.TrimSpace(getStringParam(args, k)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// transportEntries reads the entries to add: "objects" as strings or
+// {"object", "keys"} items, or a single "object" with optional "keys".
+func transportEntries(args map[string]any) ([]adt.TransportEntry, error) {
+	var out []adt.TransportEntry
+	add := func(object string, keys any) error {
+		key, err := adt.ParseTransportObject(object)
+		if err != nil {
+			return err
+		}
+		e := adt.TransportEntry{TransportObjectKey: key}
+		switch ks := keys.(type) {
+		case nil:
+		case string:
+			e.Keys = []string{ks}
+		case []any:
+			// Strings only: a JSON number loses its leading zeroes, and a
+			// key such as 001... would then name another row.
+			for i, k := range ks {
+				s, ok := k.(string)
+				if !ok {
+					return fmt.Errorf("key %d of %s is %T, not a string; give table keys as strings", i+1, object, k)
+				}
+				e.Keys = append(e.Keys, s)
+			}
+		default:
+			return fmt.Errorf("keys of %s: a list of table keys", object)
+		}
+		out = append(out, e)
+		return nil
+	}
+	switch objs := args["objects"].(type) {
+	case nil:
+	case string:
+		if err := add(objs, nil); err != nil {
+			return nil, err
+		}
+	case []any:
+		for i, raw := range objs {
+			switch o := raw.(type) {
+			case string:
+				if err := add(o, nil); err != nil {
+					return nil, err
+				}
+			case map[string]any:
+				name, _ := o["object"].(string)
+				if err := add(name, o["keys"]); err != nil {
+					return nil, fmt.Errorf("objects[%d]: %w", i, err)
+				}
+			default:
+				return nil, fmt.Errorf("objects[%d]: \"PGMID TYPE NAME\" or {\"object\": …, \"keys\": […]}", i)
+			}
+		}
+	default:
+		return nil, fmt.Errorf("objects: a list of \"PGMID TYPE NAME\" strings or {\"object\", \"keys\"} items")
+	}
+	if object := getStringParam(args, "object"); object != "" {
+		if err := add(object, args["keys"]); err != nil {
+			return nil, err
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("objects (or object) to add are required, e.g. [\"LIMU REPT ZDEMO\"]")
+	}
+	return out, nil
 }
