@@ -477,36 +477,14 @@ func newToolResultError(message string) *mcp.CallToolResult {
 	return result
 }
 
-// applyWSAuth hands a WebSocket client the browser session, when the server is
-// running on one.
-//
-// The WebSocket clients were built with a password as their only credential, so
-// on a system reached through single sign-on — where no password exists — every
-// feature behind ZADT_VSP was unreachable for a client-side reason. The upgrade
-// request carries a cookie like any other HTTP request; this passes it on.
-func (s *Server) applyWSAuth(setCookies func(map[string]string)) {
-	// Ask the ADT client rather than the config. A session that expires is
-	// replaced wholesale, and the config holds the map handed over at startup —
-	// so a server that has been running long enough to re-authenticate would
-	// open every WebSocket with the dead session while its ordinary calls
-	// carried on working, which is a confusing way to fail.
-	if live := s.adtClient.CurrentCookies(); len(live) > 0 {
-		setCookies(live)
-		return
-	}
-	if len(s.config.Cookies) > 0 {
-		setCookies(s.config.Cookies)
-	}
-}
-
 // ensureWSConnected ensures the WebSocket client is connected, creating it if needed.
 // Returns error result if connection fails, nil on success.
 func (s *Server) ensureWSConnected(ctx context.Context, toolName string) *mcp.CallToolResult {
 	if s.amdpWSClient == nil || !s.amdpWSClient.IsConnected() {
-		s.amdpWSClient = adt.NewAMDPWebSocketClient(
-			s.config.BaseURL, s.config.Client, s.config.Username, s.config.Password, s.config.InsecureSkipVerify,
-		)
-		s.applyWSAuth(s.amdpWSClient.SetCookies)
+		// Built from the ADT client, so the upgrade carries the session that
+		// client holds at this moment (including the last refresh an HTTP call
+		// made; building it does not re-authenticate), or its password without one.
+		s.amdpWSClient = s.adtClient.NewAMDPWebSocketClient()
 		if err := s.amdpWSClient.Connect(ctx); err != nil {
 			s.amdpWSClient = nil
 			return newToolResultError(fmt.Sprintf("%s: WebSocket connect failed: %v", toolName, err))

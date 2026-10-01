@@ -1692,7 +1692,7 @@ SAP_PASSWORD=secret
 | `--sso` | `SAP_SSO` | Browser SSO; re-captures the session when it expires |
 | `--sso-system` | `SAP_SSO_SYSTEM` | Name for the cached session (default: URL host) |
 | `--sso-on-expiry` | `SAP_SSO_ON_EXPIRY` | `window` (default) or `error` when a sign-in is due |
-| `--insecure` | `SAP_INSECURE` | Skip TLS verification |
+| `--insecure` | `SAP_INSECURE` | Skip TLS verification. CLI subcommands on a `.vsp.json` system (`-s` or `default`) use that system's `insecure` setting instead, for ADT calls and the ZADT_VSP WebSocket alike |
 | `--terminal-id` | `SAP_TERMINAL_ID` | SAP GUI terminal ID for cross-tool debugging |
 | `--allow-transportable-edits` | `SAP_ALLOW_TRANSPORTABLE_EDITS` | Enable editing transportable objects |
 | `--allowed-transports` | `SAP_ALLOWED_TRANSPORTS` | Whitelist transports (wildcards: `A4HK*`) |

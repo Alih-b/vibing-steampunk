@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/oisee/vibing-steampunk/pkg/adt"
 )
 
 // routeAMDPAction routes "debug" AMDP sub-actions.
@@ -44,14 +43,7 @@ func (s *Server) handleAMDPDebuggerStart(ctx context.Context, request mcp.CallTo
 	}
 
 	// Create WebSocket-based AMDP client (connects to ZADT_VSP)
-	s.amdpWSClient = adt.NewAMDPWebSocketClient(
-		s.config.BaseURL,
-		s.config.Client,
-		s.config.Username,
-		s.config.Password,
-		s.config.InsecureSkipVerify,
-	)
-	s.applyWSAuth(s.amdpWSClient.SetCookies)
+	s.amdpWSClient = s.adtClient.NewAMDPWebSocketClient()
 
 	// Connect to ZADT_VSP WebSocket
 	if err := s.amdpWSClient.Connect(ctx); err != nil {

@@ -129,16 +129,7 @@ func runDebug(cmd *cobra.Command, args []string) error {
 	}()
 
 	// Create WebSocket client for breakpoints
-	wsClient := adt.NewDebugWebSocketClient(
-		cfg.BaseURL,
-		cfg.Client,
-		cfg.Username,
-		cfg.Password,
-		cfg.InsecureSkipVerify,
-	)
-	if len(cfg.Cookies) > 0 {
-		wsClient.SetCookies(cfg.Cookies)
-	}
+	wsClient := client.NewDebugWebSocketClient()
 
 	// Try to connect WebSocket (optional - falls back to HTTP if unavailable)
 	wsConnected := false

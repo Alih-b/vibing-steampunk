@@ -351,11 +351,7 @@ func (c *Client) probeAPCTunnel(ctx context.Context, check CompatCheck) CompatRe
 	started := time.Now()
 	defer func() { result.Elapsed = time.Since(started) }()
 
-	ws := NewDebugWebSocketClient(c.config.BaseURL, c.config.Client,
-		c.config.Username, c.config.Password, c.config.InsecureSkipVerify)
-	if len(c.config.Cookies) > 0 {
-		ws.SetCookies(c.config.Cookies)
-	}
+	ws := c.NewDebugWebSocketClient()
 
 	dialCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()

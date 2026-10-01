@@ -326,29 +326,16 @@ carry table contents, so this is treated as a sensitive read: it requires
 
 // transportServiceWS is a WebSocket to ZADT_VSP on the connected system,
 // opened only after every gate has passed. It authenticates as the
-// profile's HTTP client does: the session that client holds now -- from a
-// cookie_file, a cookie_string or single sign-on, refreshed if it expired --
-// and the password otherwise. The global cfg.Cookies alone missed every
-// profile-level cookie source.
+// profile's HTTP client does: the session that client holds at this moment --
+// from a cookie_file, a cookie_string or single sign-on, including the last
+// refresh an HTTP call made -- and the password otherwise. Building the
+// WebSocket does not itself re-authenticate.
 func transportServiceWS(client *adt.Client) (adt.TransportService, func(), error) {
-	ws := adt.NewDebugWebSocketClient(cfg.BaseURL, cfg.Client, cfg.Username, cfg.Password, cfg.InsecureSkipVerify)
-	if cookies := transportWSCookies(client); len(cookies) > 0 {
-		ws.SetCookies(cookies)
-	}
+	ws := client.NewDebugWebSocketClient()
 	if err := ws.Connect(context.Background()); err != nil {
 		return nil, nil, fmt.Errorf("ZADT_VSP (WebSocket) is not reachable: %w -- it needs ZADT_VSP with ZCL_VSP_TRANSPORT_SERVICE (vsp install zadt-vsp)", err)
 	}
 	return ws, func() { ws.Close() }, nil
-}
-
-// transportWSCookies is the session the WebSocket upgrade carries.
-func transportWSCookies(client *adt.Client) map[string]string {
-	if client != nil {
-		if live := client.CurrentCookies(); len(live) > 0 {
-			return live
-		}
-	}
-	return cfg.Cookies
 }
 
 func init() {

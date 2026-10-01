@@ -42,15 +42,10 @@ func (s *Server) ensureDebugWSClient(ctx context.Context) error {
 		return nil
 	}
 
-	// Create new client
-	s.debugWSClient = adt.NewDebugWebSocketClient(
-		s.config.BaseURL,
-		s.config.Client,
-		s.config.Username,
-		s.config.Password,
-		s.config.InsecureSkipVerify,
-	)
-	s.applyWSAuth(s.debugWSClient.SetCookies)
+	// Built from the ADT client, so the upgrade carries the session that
+	// client holds at this moment (including the last refresh an HTTP call
+	// made; building it does not re-authenticate), or its password without one.
+	s.debugWSClient = s.adtClient.NewDebugWebSocketClient()
 
 	return s.debugWSClient.Connect(ctx)
 }

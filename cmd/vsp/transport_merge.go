@@ -235,16 +235,17 @@ the request holds it. The object is R3TR unless a PGMID is given.
 	},
 }
 
-// transportBridge is the ADT client and a connected WebSocket to ZADT_VSP.
+// transportBridge is the ADT client and a connected WebSocket to ZADT_VSP,
+// authenticated as that client is: the profile's cookie_file, cookie_string or
+// single sign-on session, or its password when it has none. The global
+// cfg.Cookies it used to read is never set for a CLI subcommand, so a profile
+// on cookies reached ZADT_VSP with no credential at all.
 func transportBridge(cmd *cobra.Command) (*adt.Client, *adt.DebugWebSocketClient, func(), error) {
 	client, err := createADTClientFor(cmd)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	ws := adt.NewDebugWebSocketClient(cfg.BaseURL, cfg.Client, cfg.Username, cfg.Password, cfg.InsecureSkipVerify)
-	if len(cfg.Cookies) > 0 {
-		ws.SetCookies(cfg.Cookies)
-	}
+	ws := client.NewDebugWebSocketClient()
 	if err := ws.Connect(context.Background()); err != nil {
 		return nil, nil, nil, fmt.Errorf("ZADT_VSP's function bridge (WebSocket) is not reachable: %w — it needs ZADT_VSP installed (vsp system install_zadt_vsp)", err)
 	}

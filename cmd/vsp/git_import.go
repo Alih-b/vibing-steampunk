@@ -334,10 +334,7 @@ and --transport.
 // gitServiceWS is a WebSocket to ZADT_VSP, opened only after every gate has
 // passed, authenticated as the profile's HTTP client is.
 func gitServiceWS(client *adt.Client) (*adt.DebugWebSocketClient, func(), error) {
-	ws := adt.NewDebugWebSocketClient(cfg.BaseURL, cfg.Client, cfg.Username, cfg.Password, cfg.InsecureSkipVerify)
-	if cookies := transportWSCookies(client); len(cookies) > 0 {
-		ws.SetCookies(cookies)
-	}
+	ws := client.NewDebugWebSocketClient()
 	if err := ws.Connect(context.Background()); err != nil {
 		return nil, nil, fmt.Errorf("ZADT_VSP (WebSocket) is not reachable: %w -- the abapGit import needs ZADT_VSP with ZCL_VSP_GIT_SERVICE and abapGit (vsp install zadt-vsp)", err)
 	}
