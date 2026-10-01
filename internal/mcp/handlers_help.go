@@ -17,6 +17,11 @@ func handleHelp(topic string) *mcp.CallToolResult {
 	case "read":
 		return mcp.NewToolResultText(`SAP(action="read") - Read source code and metadata
 
+IDoc, as WE02 shows it (classic RFC; segment data EDID4-SDATA cannot be queried):
+  SAP(action="read", target="IDOC 28757955")
+  SAP(action="read", target="IDOC 28757955", params={"segment": "E1EDKA1"})   (prefix; "all_fields": true, "raw": true, "max_segments": 500)
+  Control record, status records newest first with their texts, segments cut into fields by the segment definition.
+
 Read source with context (recommended):
   SAP(action="read", target="CLAS ZCL_TEST")
   SAP(action="read", target="PROG ZREPORT")
@@ -621,7 +626,7 @@ func getUnhandledErrorMessage(action, objectType, objectName string) string {
 
 	switch action {
 	case "read":
-		sb.WriteString("Supported read targets: CLAS, PROG, INTF, FUNC, FUGR, INCL, DDLS, BDEF, SRVD, TABL, TABL_CONTENTS, DEVC, MSAG, TRAN, TYPE_INFO, STRUCT, CDS_DEPS\n")
+		sb.WriteString("Supported read targets: CLAS, PROG, INTF, FUNC, FUGR, INCL, DDLS, BDEF, SRVD, TABL, TABL_CONTENTS, DEVC, MSAG, TRAN, TYPE_INFO, STRUCT, CDS_DEPS, IDOC\n")
 		sb.WriteString("Use SAP(action=\"help\", target=\"read\") for examples.")
 	case "edit":
 		sb.WriteString("Supported edit targets: CLAS, PROG, INTF, FUNC, DDLS, BDEF, SRVD, TABL, LOCK, UNLOCK, UPDATE_SOURCE, ACTIVATE, ACTIVATE_PACKAGE, EDITSOURCE, PUBLISH_SERVICE, UNPUBLISH_SERVICE\n")

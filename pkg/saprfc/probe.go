@@ -222,7 +222,12 @@ func yesNo(v bool) string {
 	return "no"
 }
 
-func str(v any) string { return strings.TrimSpace(fmt.Sprint(v)) }
+func str(v any) string {
+	if v == nil {
+		return "" // a field the result does not carry, not the word "<nil>"
+	}
+	return strings.TrimSpace(fmt.Sprint(v))
+}
 
 func took(start time.Time) string { return fmt.Sprintf("%dms", time.Since(start).Milliseconds()) }
 

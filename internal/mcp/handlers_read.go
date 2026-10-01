@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/mark3labs/mcp-go/mcp"
+
 	"github.com/oisee/vibing-steampunk/pkg/adt"
 )
 
@@ -35,6 +36,8 @@ func (s *Server) routeReadAction(ctx context.Context, action, objectType, object
 			return s.callHandler(ctx, s.handleGetTable, map[string]any{"table_name": objectName})
 		case "DEVC":
 			return s.callHandler(ctx, s.handleGetPackage, map[string]any{"package_name": objectName})
+		case "IDOC":
+			return s.callHandler(ctx, s.handleReadIDoc, withIDocNumber(params, objectName))
 		case "MSAG":
 			return s.callHandler(ctx, s.handleGetMessages, map[string]any{"message_class": objectName})
 		case "TRAN":
