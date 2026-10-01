@@ -62,6 +62,53 @@ reached through ZADT_VSP's function bridge, since ADT has no such resource.
 	},
 }
 
+var transportTocCmd = &cobra.Command{
+	Use:   "toc <REQUEST> --target <SYSTEM|/GROUP/>",
+	Short: "Copy a request into a new transport of copies, the way SE01 does (needs ZADT_VSP)",
+	Long: `Create a transport of copies for a target and copy the request's object
+list into it: from each task that holds objects while the request is
+modifiable, from the request itself once it is released. The copy is
+TR_COPY_COMM with its dialog off, reached through ZADT_VSP's function bridge;
+the request is created over ADT. ADT takes a target without a client (QAS,
+not QAS.100). Nothing is released unless --release is given.
+
+  SAP_ENABLE_TRANSPORTS=true vsp -s devsys transport toc TR-A --target QAS
+  SAP_ENABLE_TRANSPORTS=true vsp -s devsys transport toc TR-A --target /GROUP/ --release`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var opts adt.TransportOfCopiesOptions
+		opts.Target, _ = cmd.Flags().GetString("target")
+		opts.Description, _ = cmd.Flags().GetString("description")
+		opts.CTSProject, _ = cmd.Flags().GetString("cts-project")
+		opts.Release, _ = cmd.Flags().GetBool("release")
+		if opts.Target == "" {
+			return fmt.Errorf("--target <SYSTEM|/GROUP/> is required")
+		}
+		client, ws, closeWS, err := transportBridge(cmd)
+		if err != nil {
+			return err
+		}
+		defer closeWS()
+		res, terr := client.CopyToTransportOfCopies(context.Background(), ws, args[0], opts)
+		if asJSON, _ := cmd.Flags().GetBool("json"); asJSON && res != nil {
+			if perr := printJSON(res); perr != nil {
+				return perr
+			}
+		} else if res != nil && res.Transport != "" {
+			fmt.Fprintf(os.Stderr, "%s: transport of copies of %s for %s, %d object(s) from %v",
+				res.Transport, res.Source, res.Target, len(res.Objects), res.CopiedFrom)
+			if res.Released {
+				fmt.Fprint(os.Stderr, ", released")
+			}
+			fmt.Fprintln(os.Stderr)
+			for _, sk := range res.Skipped {
+				fmt.Fprintf(os.Stderr, "  skipped %s: %s\n", sk.Entry, sk.Reason)
+			}
+		}
+		return terr
+	},
+}
+
 var transportMoveCmd = &cobra.Command{
 	Use:   "move <\"TYPE NAME\"> --from <REQUEST> --to <REQUEST>",
 	Short: "Move one object entry from one request to another (needs ZADT_VSP)",
@@ -210,8 +257,13 @@ func init() {
 	transportMoveCmd.Flags().String("from", "", "The request the entry leaves")
 	transportMoveCmd.Flags().String("to", "", "The request the entry goes into")
 	transportMoveCmd.Flags().Bool("json", false, "Emit JSON")
+	transportTocCmd.Flags().String("target", "", "The system (QAS) or target group (/GROUP/) the copy is for")
+	transportTocCmd.Flags().String("description", "", "Description; defaults to \"ToC \" and the original's")
+	transportTocCmd.Flags().String("cts-project", "", "CTS project; defaults to the system's cts_project")
+	transportTocCmd.Flags().Bool("release", false, "Release the transport of copies once it is filled")
+	transportTocCmd.Flags().Bool("json", false, "Emit JSON")
 	transportAddCmd.Flags().StringArray("key", nil, "Table key of a TABU entry (repeatable)")
 	transportAddCmd.Flags().Bool("json", false, "Emit JSON")
 	transportRemoveCmd.Flags().Bool("json", false, "Emit JSON")
-	transportCmd.AddCommand(transportMergeCmd, transportMoveCmd, transportAddCmd, transportRemoveCmd)
+	transportCmd.AddCommand(transportMergeCmd, transportMoveCmd, transportTocCmd, transportAddCmd, transportRemoveCmd)
 }

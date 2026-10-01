@@ -40,6 +40,8 @@ func (s *Server) routeTransportAction(ctx context.Context, action, objectType, o
 		return s.callHandler(ctx, s.handleMergeTransports, params)
 	case "move_transport_object", "move_object":
 		return s.callHandler(ctx, s.handleMoveTransportObject, params)
+	case "copy_to_toc", "transport_of_copies":
+		return s.callHandler(ctx, s.handleCopyToTransportOfCopies, params)
 	case "add_transport_object", "add_to_transport":
 		return s.callHandler(ctx, s.handleAddTransportObjects, params)
 	case "remove_transport_object", "remove_from_transport":
@@ -460,6 +462,50 @@ func (s *Server) handleMergeTransports(ctx context.Context, request mcp.CallTool
 		}
 	}
 	return newToolResultJSON(map[string]any{"target": strings.ToUpper(target), "merged": results}), nil
+}
+
+// handleCopyToTransportOfCopies creates a transport of copies of a request and
+// copies its objects into it, the way SE01 does, through ZADT_VSP's function
+// bridge: SAP(action="system", params={"type": "copy_to_toc", "transport": "TR-A",
+// "target": "QAS"}). "release": true releases it once filled.
+func (s *Server) handleCopyToTransportOfCopies(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	source := getStringParam(args, "transport")
+	if source == "" {
+		source = getStringParam(args, "source")
+	}
+	opts := adt.TransportOfCopiesOptions{
+		Target:      getStringParam(args, "target"),
+		Description: getStringParam(args, "description"),
+		CTSProject:  getStringParam(args, "cts_project"),
+	}
+	opts.Release, _ = getBoolParam(args, "release")
+	if source == "" || opts.Target == "" {
+		return newToolResultError("transport (the request to copy) and target (system or /GROUP/) are required"), nil
+	}
+	if err := s.adtClient.CheckTransportOfCopies(source); err != nil {
+		return newToolResultError(err.Error()), nil
+	}
+	if err := s.ensureDebugWSClient(ctx); err != nil {
+		return newToolResultError(fmt.Sprintf("copying a request's objects needs ZADT_VSP's function bridge: %v", err)), nil
+	}
+	return transportOfCopiesResult(s.adtClient.CopyToTransportOfCopies(ctx, s.debugWSClient, source, opts)), nil
+}
+
+// transportOfCopiesResult is the tool result for a copy. A transport of
+// copies that exists but is not what was asked for -- a list not copied, a
+// release that failed -- is reported with what was done, marked as an error,
+// never as success.
+func transportOfCopiesResult(res *adt.TransportOfCopiesResult, err error) *mcp.CallToolResult {
+	if err == nil {
+		return newToolResultJSON(res)
+	}
+	if res == nil {
+		return newToolResultError(err.Error())
+	}
+	out := newToolResultJSON(map[string]any{"error": err.Error(), "result": res})
+	out.IsError = true
+	return out
 }
 
 // handleMoveTransportObject moves one entry between requests:
