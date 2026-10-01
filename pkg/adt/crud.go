@@ -722,10 +722,7 @@ func (c *Client) CreateObject(ctx context.Context, opts CreateObjectOptions) err
 	}
 
 	// Build creation URL
-	creationURL := typeInfo.creationPath
-	if opts.ObjectType == ObjectTypeFunctionMod && opts.ParentName != "" {
-		creationURL = fmt.Sprintf(typeInfo.creationPath, strings.ToUpper(opts.ParentName))
-	}
+	creationURL := creationURLFor(opts, typeInfo)
 
 	// Build request body with current user as default responsible
 	defaultResponsible := c.config.Username
@@ -782,6 +779,17 @@ func (c *Client) CreateObject(ctx context.Context, opts CreateObjectOptions) err
 	}
 
 	return nil
+}
+
+// creationURLFor is the collection a new object is POSTed to. A function
+// module's is inside its group, and a namespaced group ("/NS/GROUP") has to be
+// escaped like every other object URL, or the POST goes to
+// .../groups//NS/GROUP/fmodules and comes back 404.
+func creationURLFor(opts CreateObjectOptions, typeInfo objectTypeInfo) string {
+	if opts.ObjectType == ObjectTypeFunctionMod && opts.ParentName != "" {
+		return fmt.Sprintf(typeInfo.creationPath, url.PathEscape(strings.ToLower(opts.ParentName)))
+	}
+	return typeInfo.creationPath
 }
 
 func buildCreateObjectBody(opts CreateObjectOptions, typeInfo objectTypeInfo, defaultResponsible string) string {
@@ -852,7 +860,7 @@ func buildCreateObjectBody(opts CreateObjectOptions, typeInfo objectTypeInfo, de
 			opts.ObjectType,
 			responsible,
 			strings.ToUpper(opts.ParentName),
-			strings.ToLower(opts.ParentName),
+			url.PathEscape(strings.ToLower(opts.ParentName)),
 			typeInfo.rootName)
 	}
 

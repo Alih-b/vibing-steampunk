@@ -3,6 +3,7 @@ package adt
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -26,7 +27,13 @@ func groupFromFunctionURI(uri string) string {
 	if slash <= 0 {
 		return ""
 	}
-	return strings.ToUpper(rest[:slash])
+	// The segment is escaped in the URI (a namespaced group reads
+	// "%2fns%2fgroup"); callers escape it again when they build a URL.
+	group := rest[:slash]
+	if unescaped, err := url.PathUnescape(group); err == nil {
+		group = unescaped
+	}
+	return strings.ToUpper(group)
 }
 
 // ResolveFunctionGroup finds the group that owns a function module.

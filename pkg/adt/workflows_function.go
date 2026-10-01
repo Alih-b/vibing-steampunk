@@ -222,7 +222,7 @@ func functionModuleMetadataXML(info *FunctionModuleInfo, processingType string) 
 		strings.ToUpper(info.Name),
 		attrs.String(),
 		strings.ToUpper(info.Group),
-		strings.ToLower(info.Group))
+		url.PathEscape(strings.ToLower(info.Group)))
 }
 
 // CreateFunctionModuleOptions describes a function module to create inside an
