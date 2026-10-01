@@ -100,3 +100,17 @@ func (c *Client) PrepareSourceUpdate(ctx context.Context, objectURL, transport s
 		Transport: transport,
 	})
 }
+
+// PrepareDelete is PrepareSourceUpdate for DeleteObject: it runs the gate
+// DeleteObject itself would run, before the lock is taken, and returns a
+// context in which the DELETE does not resolve the package again while holding
+// the lock (issue #238). The returned context must be used for the LOCK and the
+// DELETE alike.
+func (c *Client) PrepareDelete(ctx context.Context, objectURL, transport string) (context.Context, error) {
+	return c.gateAndMark(ctx, MutationContext{
+		Op:        OpDelete,
+		OpName:    "DeleteObject",
+		ObjectURL: objectURL,
+		Transport: transport,
+	})
+}

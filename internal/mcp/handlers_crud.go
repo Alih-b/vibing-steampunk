@@ -576,8 +576,21 @@ func (s *Server) handleDeleteObject(ctx context.Context, request mcp.CallToolReq
 		transport = t
 	}
 
-	err := s.withObjectLockConsumed(ctx, objectURL, lockHandle, func(handle string) error {
-		return s.adtClient.DeleteObject(ctx, objectURL, handle, transport)
+	// When the handler takes its own lock, run DeleteObject's gate first.
+	// Called under the lock, its package lookup is a stateless request that
+	// retires the session the handle belongs to, and the DELETE comes back
+	// 423 (issue #238). A supplied handle was taken in an earlier call, so no
+	// ordering here can protect it; that window is #169.
+	objCtx := ctx
+	if lockHandle == "" {
+		var err error
+		if objCtx, err = s.adtClient.PrepareDelete(ctx, objectURL, transport); err != nil {
+			return newToolResultError(fmt.Sprintf("Failed to delete object: %v", err)), nil
+		}
+	}
+
+	err := s.withObjectLockConsumed(objCtx, objectURL, lockHandle, func(handle string) error {
+		return s.adtClient.DeleteObject(objCtx, objectURL, handle, transport)
 	})
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("Failed to delete object: %v", err)), nil

@@ -526,6 +526,22 @@ func (c *Client) cleanupPartialObject(ctx context.Context, objectURL, pkg, trans
 		Transport: transport,
 	}
 
+	// Step 0: run DeleteObject's gate here, before any lock. Inside the lock
+	// window its package lookup is a stateless request that retires the
+	// session the handle belongs to, and the DELETE comes back 423
+	// (issue #238). Gating first also means an object outside the allowlist
+	// is refused before it is ever locked, rather than locked and then refused.
+	ctx, gateErr := c.PrepareDelete(ctx, objectURL, transport)
+	if gateErr != nil {
+		pce.CleanupActions = append(pce.CleanupActions,
+			fmt.Sprintf("delete refused by the mutation gate: %v", gateErr))
+		pce.ManualSteps = []string{
+			"check that the object's package is covered by --allowed-packages",
+			"otherwise delete the object manually via SE80",
+		}
+		return pce
+	}
+
 	// Step 1: orphan lock cleanup (cheap; reuses the existing helper).
 	c.tryCleanupOrphanLock(ctx, objectURL)
 	pce.CleanupActions = append(pce.CleanupActions, "tried orphan-lock cleanup")
