@@ -127,7 +127,11 @@ func slowSAP(t *testing.T, delay time.Duration) *Server {
 
 // The long calls are wired through longCall, from the universal tool too.
 func TestLongCallsHonourTimeoutParam(t *testing.T) {
-	s := slowSAP(t, 3*time.Second)
+	// Slower than any bound below, so only the budget can end a call in time.
+	// A throwaway create cut short still checks, detached and for at most
+	// adt's 5s probe bound, whether SAP committed it anyway; that is the
+	// only overrun allowed.
+	s := slowSAP(t, 20*time.Second)
 	file := filepath.Join(t.TempDir(), "zdemo_long.prog.abap")
 	if err := os.WriteFile(file, []byte("REPORT zdemo_long.\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -152,7 +156,7 @@ func TestLongCallsHonourTimeoutParam(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if time.Since(start) > 2*time.Second {
+			if time.Since(start) > 7*time.Second {
 				t.Fatalf("the call ran %s; its 0.2s budget did not end it", time.Since(start))
 			}
 			if text := resultText(res); !strings.Contains(text, c.op) {

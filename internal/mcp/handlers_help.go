@@ -467,6 +467,12 @@ Execute ABAP:
     Default: the server's --call-timeout (SAP_CALL_TIMEOUT); without one each request to SAP is limited to 60s.
     When it runs out the call says "timed out after Ns; the operation may still be running on SAP".
 
+Check ABAP without running it (SAP's syntax check, which type-checks):
+  SAP(action="analyze", params={"type": "check_abap", "code": "DATA ls TYPE t000. DATA(s) = |{ ls }|."})
+      wrapped as execute_abap wraps it; returns ok plus findings {line, column, severity, message}
+      in the snippet's own lines. Creates and deletes a temporary ZVSP_CHK_* program in $TMP
+      (never activated, never run), so it is refused under --read-only.
+
 Runtime errors (ST22) — a listing, and a post-mortem around one dump:
   SAP(action="analyze", params={"type": "list_dumps", "since": "2026-08-01", "program": "ZDEMO_POST"})
   SAP(action="analyze", params={"type": "group_dumps", "since": "2026-08-01"})

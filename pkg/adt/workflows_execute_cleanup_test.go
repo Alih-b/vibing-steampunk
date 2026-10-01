@@ -29,6 +29,8 @@ type executeCleanupServer struct {
 	putStatus    int
 	unlockStatus int
 	deleteStatus int
+	lockStatus   int
+	createStatus int
 	cancelOnPut  context.CancelFunc
 
 	mu    sync.Mutex
@@ -59,6 +61,10 @@ func (s *executeCleanupServer) start(t *testing.T) *Client {
 
 		case r.Method == http.MethodPost && r.URL.Query().Get("_action") == "LOCK":
 			s.record("lock")
+			if s.lockStatus != 0 {
+				w.WriteHeader(s.lockStatus)
+				return
+			}
 			w.Header().Set("Content-Type", "application/vnd.sap.as+xml")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
@@ -76,6 +82,10 @@ func (s *executeCleanupServer) start(t *testing.T) *Client {
 				s.cancelOnPut()
 			}
 			w.WriteHeader(s.statusOrOK(s.putStatus))
+
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/programs/programs"):
+			s.record("create")
+			w.WriteHeader(s.statusOrOK(s.createStatus))
 
 		case r.Method == http.MethodDelete:
 			s.record("delete")

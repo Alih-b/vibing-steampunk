@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"encoding/json"
@@ -648,7 +650,10 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ctx := context.Background()
+	// Ctrl-C cancels the run rather than killing the process, so ExecuteABAP
+	// gets to run its deferred delete of the temporary program.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	// What ST22 already held before any of this ran. It has to be read first —
 	// afterwards there is no way to tell an old dump from a new one — and it is
@@ -717,9 +722,13 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		reportDumpsAfterRun(dumped, result.ProgramName, watch.User)
 	}
 
-	// The exit code is the part scripts read, so both kinds of failure have to
-	// reach it. The detail is on stderr already; this only has to be short and
-	// true.
+	return executeExitError(result, dumped)
+}
+
+// executeExitError is what `vsp execute` exits with. The exit code is the part
+// scripts read, so every kind of failure has to reach it. The detail is on
+// stderr already; this only has to be short and true.
+func executeExitError(result *adt.ExecuteABAPResult, dumped []adt.Dump) error {
 	switch {
 	case result.Failure != nil && result.Failure.Kind == adt.ExecuteFailureSyntax:
 		// Said apart from "did not finish", because it did not start. That
@@ -734,6 +743,15 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("the code did not finish")
 	case len(dumped) > 0:
 		return fmt.Errorf("a runtime error appeared while this ran")
+	case result.Success && !result.CleanedUp:
+		// The code ran, but the temporary program is still in $TMP (the CLI
+		// never asks to keep it); the warning naming it is on stderr.
+		return fmt.Errorf("the code ran, but its temporary program %s was not deleted", result.ProgramName)
+	case !result.Success:
+		// No failure from the run, because there was no run: the temporary
+		// program could not be created, locked, written or activated. Its
+		// message is already on stderr; exiting 0 would call that a success.
+		return fmt.Errorf("the code did not run")
 	}
 	return nil
 }

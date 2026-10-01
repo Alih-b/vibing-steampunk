@@ -30,6 +30,16 @@ type SyntaxCheckResult struct {
 // pass the include URL directly - no /source/main suffix will be added.
 // content is the source code to check
 func (c *Client) SyntaxCheck(ctx context.Context, objectURL string, content string) ([]SyntaxCheckResult, error) {
+	body, err := c.postCheckRun(ctx, objectURL, content)
+	if err != nil {
+		return nil, fmt.Errorf("syntax check failed: %w", err)
+	}
+	return parseSyntaxCheckResults(body)
+}
+
+// postCheckRun sends content to the ABAP check run for objectURL and returns
+// SAP's answer. The content is checked, not saved.
+func (c *Client) postCheckRun(ctx context.Context, objectURL string, content string) ([]byte, error) {
 	// Build the request body
 	// The checkObject URI identifies the object being checked (no /source/main needed).
 	// The artifact URI identifies the source location:
@@ -64,10 +74,9 @@ func (c *Client) SyntaxCheck(ctx context.Context, objectURL string, content stri
 		ContentType: "application/*",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("syntax check failed: %w", err)
+		return nil, err
 	}
-
-	return parseSyntaxCheckResults(resp.Body)
+	return resp.Body, nil
 }
 
 func parseSyntaxCheckResults(data []byte) ([]SyntaxCheckResult, error) {

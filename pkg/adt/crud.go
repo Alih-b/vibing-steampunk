@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // --- Lock/Unlock Operations ---
@@ -339,6 +340,15 @@ type CreateObjectOptions struct {
 	// For SIA7: the IAM app being assigned.
 	AppID string `json:"appID,omitempty"`
 
+	// leavePartialObject is for the workflows that create a throwaway object
+	// under a generated name (CheckABAP, ExecuteABAP). When the create fails
+	// with anything but "already exists" and the probe then finds an object of
+	// that name, nothing shows that this call created it: the name could have
+	// been taken already, with the failure hiding the conflict. Such a caller
+	// must never delete a stranger's object to tidy up after itself, so with
+	// this set the object is left in place and reported, not deleted.
+	leavePartialObject bool
+
 	// For SRVB: category per SAP domain SRVB_BND_CATEGORY:
 	// "0" = UI (User Interface), "1" = A2X (Application to X users, i.e. Web API)
 	BindingCategory string `json:"bindingCategory,omitempty"`
@@ -470,12 +480,23 @@ type PartialCreateError struct {
 	CleanupActions []string
 	CleanupOK      bool
 	ManualSteps    []string
+	// LeftInPlace means no cleanup was attempted: the object exists, but
+	// the caller could not show it was the one that created it.
+	LeftInPlace bool
 }
 
 func (e *PartialCreateError) Error() string {
 	status := "cleanup attempted"
-	if e.CleanupOK {
+	switch {
+	case e.CleanupOK:
 		status = "cleanup ok"
+	case e.LeftInPlace:
+		status = "object left in place, not deleted"
+	}
+	if e.LeftInPlace {
+		// The object exists, but nothing shows this request created it.
+		return fmt.Sprintf("create failed and its outcome is unknown: the object exists, but it may not be this request's (%s): %s [object=%s package=%s transport=%s]",
+			status, e.OriginalErr, e.ObjectURL, e.Package, e.Transport)
 	}
 	return fmt.Sprintf("create failed after partial persistence (%s): %s [object=%s package=%s transport=%s]",
 		status, e.OriginalErr, e.ObjectURL, e.Package, e.Transport)
@@ -523,6 +544,10 @@ func (c *Client) objectExistsByURL(ctx context.Context, objectURL string) (bool,
 // create error is never lost — it is always the OriginalErr of the
 // returned PartialCreateError. Manual recovery hints are only added
 // when our best-effort attempt could not finish.
+// partialCreateProbeTimeout bounds the read that checks whether an
+// interrupted throwaway create was committed anyway.
+const partialCreateProbeTimeout = 5 * time.Second
+
 func (c *Client) reconcileFailedCreate(ctx context.Context, opts CreateObjectOptions, createErr error) error {
 	// An already-exists response proves the object predates this create attempt.
 	// It is not partial persistence owned by this request, so reconciliation
@@ -537,16 +562,57 @@ func (c *Client) reconcileFailedCreate(ctx context.Context, opts CreateObjectOpt
 		return createErr
 	}
 
-	exists, probeErr := c.objectExistsByURL(ctx, objectURL)
+	probeCtx := ctx
+	if opts.leavePartialObject {
+		// A throwaway object's create is most often cut short by the
+		// caller's own cancellation (Ctrl-C), after SAP may already have
+		// committed it. The probe is a read, so it may outlive that
+		// cancellation; with the caller's context it never leaves the
+		// process, and a program left behind would go unreported.
+		//
+		// It is bounded well below the cleanup timeout: it runs after the
+		// caller's own deadline, and a call given a time budget should not
+		// overrun it by much just to say what it left behind.
+		detached, cancelDetached := failureCleanupContext(ctx)
+		defer cancelDetached()
+		var cancel context.CancelFunc
+		probeCtx, cancel = context.WithTimeout(detached, partialCreateProbeTimeout)
+		defer cancel()
+	}
+	exists, probeErr := c.objectExistsByURL(probeCtx, objectURL)
 	if probeErr != nil {
+		if opts.leavePartialObject {
+			return fmt.Errorf("%w (whether %s was created anyway could not be checked: %v)", createErr, opts.Name, probeErr)
+		}
 		// Probe inconclusive (5xx, network, auth). Returning the
 		// original error keeps the existing failure semantics so we do
 		// not regress callers who already handle plain create errors.
 		return createErr
 	}
 	if !exists {
+		if opts.leavePartialObject && ctx.Err() != nil {
+			// Seen live: SAP goes on with a create whose client hung up,
+			// and can commit it after this probe came back 404.
+			return fmt.Errorf("%w (the create was interrupted and SAP may still complete it: look for %s in %s)", createErr, opts.Name, opts.PackageName)
+		}
 		// SAP did not persist anything — original error is final.
 		return createErr
+	}
+
+	if opts.leavePartialObject {
+		return &PartialCreateError{
+			ObjectURL:   objectURL,
+			Package:     opts.PackageName,
+			Transport:   opts.Transport,
+			OriginalErr: createErr,
+			LeftInPlace: true,
+			CleanupActions: []string{
+				"not deleted: the create failed, yet an object of this name exists, and nothing shows this call created it",
+			},
+			ManualSteps: []string{
+				fmt.Sprintf("look at %s (created by, created on); if it is an empty program this call left behind, delete it in SE80 or with vsp", opts.Name),
+			},
+		}
 	}
 
 	pce := c.cleanupPartialObject(ctx, objectURL, opts.PackageName, opts.Transport)

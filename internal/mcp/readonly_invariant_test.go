@@ -489,6 +489,11 @@ var readOnlyClasses = map[string]surfaceClass{
 	"SAP analyze type=abap_help":                   clsRead,
 	"SAP analyze type=syntax_check":                clsRead,
 	"SAP analyze type=execute_abap":                clsExecute,
+	// Creates a temporary program in $TMP and deletes it; never activates or
+	// runs. A content-only check of a program that does not exist would write
+	// nothing, but checks with fixed-point arithmetic off and so cannot see
+	// into ABAP SQL (see CheckABAP).
+	"SAP analyze type=check_abap": clsMutate,
 
 	// --- SAP(): analyze, table-routed (AnalyzeTypes) ---
 	"SAP analyze type=analyze_call_graph":  clsRead,
@@ -1062,6 +1067,7 @@ func actionCases() []actionCase {
 		an("set_pretty_printer_settings", "SetPrettyPrinterSettings"), an("type_hierarchy", "GetTypeHierarchy"),
 		an("class_components", "GetClassComponents"), an("inactive_objects", "GetInactiveObjects"),
 		an("abap_help", "GetAbapHelp"), an("syntax_check", "SyntaxCheck"), an("execute_abap", "ExecuteABAP"),
+		{Name: "SAP analyze type=check_abap", Action: "analyze", Exact: true, Params: kv("type", "check_abap", "code", "DATA lv TYPE i.")},
 
 		// debug
 		dbg("AMDP_ADT_START", "AMDPDebuggerStart"), dbg("AMDP_ADT_BREAKPOINT", "AMDPSetBreakpoint"),
