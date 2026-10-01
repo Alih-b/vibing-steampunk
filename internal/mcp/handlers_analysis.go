@@ -170,12 +170,19 @@ func (s *Server) callGraphAnswer(ctx context.Context, request mcp.CallToolReques
 
 	switch direction {
 	case "callers":
-		callers, err := s.adtClient.WhereUsed(ctx, objectURI)
+		callers, unresolved, err := s.adtClient.WhereUsed(ctx, objectURI)
 		if err != nil {
 			return nil, fmt.Errorf("the where-used list could not be read for %s: %v", objectURI, err)
 		}
 		answer["source"] = sourceWhereUsed
 		answer["total"] = len(callers)
+		if len(unresolved) > 0 {
+			// Those includes are in the list, as themselves. Said beside it so
+			// an include standing where its program should be is not read as
+			// the program having no callers here.
+			answer["unresolved_includes"] = unresolved
+			answer["gap"] = adt.UnresolvedIncludesNote(unresolved)
+		}
 		if len(callers) > limit {
 			// Said, not left to be inferred from comparing "total" against the
 			// length of the array. A reader who does not make that comparison
@@ -376,9 +383,30 @@ func (s *Server) handleAnalyzeCallGraph(ctx context.Context, request mcp.CallToo
 		// only ever a number in a request nobody answered.
 		"depth": 1,
 	}
+	if note := callGraphGapNote(graph, direction); note != "" {
+		// Beside the edges, not inside them: an include standing where its
+		// program should be is still an edge, and a table that could not be
+		// read leaves edges out. Either way the list is not the whole answer.
+		output["unsearched"] = graph.Unsearched
+		output["gap"] = note
+	}
 
 	result, _ := json.MarshalIndent(output, "", "  ")
 	return mcp.NewToolResultText(string(result)), nil
+}
+
+// callGraphGapNote says what a call graph's Unsearched means, which depends
+// on the direction it was asked in: for callers it is includes whose main
+// program could not be read, for callees the cross-reference tables that could
+// not be.
+func callGraphGapNote(graph *adt.CallGraphNode, direction string) string {
+	if graph == nil || len(graph.Unsearched) == 0 {
+		return ""
+	}
+	if direction == "callers" {
+		return adt.UnresolvedIncludesNote(graph.Unsearched)
+	}
+	return adt.UnsearchedNote(graph.Unsearched, 2, "cross-reference table")
 }
 
 func (s *Server) handleCompareCallGraphs(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

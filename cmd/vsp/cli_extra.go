@@ -912,12 +912,12 @@ func runGraph(cmd *cobra.Command, args []string) error {
 	// succeeded.
 	switch direction {
 	case "callers":
-		callers, err := whereUsedCallers(ctx, client, objURI)
+		callers, unresolved, err := whereUsedCallers(ctx, client, objURI)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "The where-used list could not be read (%v); falling back to the cross-reference tables.\n\n", err)
 			return graphFromCross(ctx, client, name, objType, "callers")
 		}
-		printWhereUsedCallers(callers)
+		printWhereUsedCallers(callers, unresolved)
 		return nil
 	case "both":
 		fmt.Println("=== CALLEES (what this uses) ===")
@@ -925,12 +925,12 @@ func runGraph(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		fmt.Println("\n=== CALLERS (what uses this) ===")
-		callers, err := whereUsedCallers(ctx, client, objURI)
+		callers, unresolved, err := whereUsedCallers(ctx, client, objURI)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "The where-used list could not be read (%v); falling back to the cross-reference tables.\n\n", err)
 			return graphFromCross(ctx, client, name, objType, "callers")
 		}
-		printWhereUsedCallers(callers)
+		printWhereUsedCallers(callers, unresolved)
 		return nil
 	default: // callees
 		return printCalleesOf(ctx, client, objURI, name, objType)
@@ -1156,11 +1156,16 @@ func crossToADTType(crossType string) string {
 }
 
 // whereUsedCallers asks the SE84 where-used list who calls an object.
-func whereUsedCallers(ctx context.Context, client *adt.Client, objURI string) ([]adt.ExposedCaller, error) {
+func whereUsedCallers(ctx context.Context, client *adt.Client, objURI string) ([]adt.ExposedCaller, []adt.Unsearched, error) {
 	return client.WhereUsed(ctx, objURI)
 }
 
-func printWhereUsedCallers(callers []adt.ExposedCaller) {
+func printWhereUsedCallers(callers []adt.ExposedCaller, unresolved []adt.Unsearched) {
+	// Printed ahead of the table, as the callee gap is: an include standing in
+	// for its program is still a caller, but the list is not the whole answer.
+	if note := adt.UnresolvedIncludesNote(unresolved); note != "" {
+		fmt.Printf("%s\n\n", note)
+	}
 	if len(callers) == 0 {
 		// Checked live: a name that does not exist gets the same 200 and the
 		// same empty list as a real object nobody calls. The list cannot tell

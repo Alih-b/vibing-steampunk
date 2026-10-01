@@ -325,6 +325,20 @@ func callGraphToLua(L *lua.LState, node *adt.CallGraphNode) *lua.LTable {
 	L.SetField(tbl, "uri", lua.LString(node.URI))
 	L.SetField(tbl, "name", lua.LString(node.Name))
 	L.SetField(tbl, "type", lua.LString(node.Type))
+	if len(node.Unsearched) > 0 {
+		// What the graph could not search: for callers, includes whose main
+		// program could not be read; for callees, a cross-reference table.
+		// A script that only walks children would otherwise take a short
+		// answer for a whole one.
+		gaps := L.NewTable()
+		for i, u := range node.Unsearched {
+			g := L.NewTable()
+			L.SetField(g, "object", lua.LString(u.Object))
+			L.SetField(g, "reason", lua.LString(u.Reason))
+			gaps.RawSetInt(i+1, g)
+		}
+		L.SetField(tbl, "unsearched", gaps)
+	}
 
 	if len(node.Children) > 0 {
 		children := L.NewTable()

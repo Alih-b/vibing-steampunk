@@ -306,6 +306,14 @@ func (s *Server) handleDumpImpact(ctx context.Context, request mcp.CallToolReque
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("Failed to compute dump impact: %v", err)), nil
 	}
+	notes = append(notes, impactNotes(result)...)
+	return newToolResultJSON(dumpImpactResult{DumpImpactResult: result, Notes: notes}), nil
+}
+
+// impactNotes is everything a reader must know before trusting an impact
+// answer, worked out from the answer itself.
+func impactNotes(result *adt.DumpImpactResult) []string {
+	var notes []string
 	if result.StackUnavailable {
 		notes = append(notes, "the call stack could not be read, so only the dump's own program was asked about")
 	}
@@ -320,9 +328,28 @@ func (s *Server) handleDumpImpact(ctx context.Context, request mcp.CallToolReque
 			"%d of %d units could not be asked about, so the exposure below is a floor, not a total: %s",
 			len(unanswered), len(result.Units), strings.Join(unanswered, "; ")))
 	}
+	if gaps := unitsWithUnresolvedIncludes(result); len(gaps) > 0 {
+		// Those callers are in the answer, but as an include, which a stack
+		// naming their program will not match: on_path can be short by them.
+		notes = append(notes, fmt.Sprintf(
+			"%d of %d units list program includes whose main program could not be read; "+
+				"they are reported as the include, so exposure and on_path are not complete: %s",
+			len(gaps), len(result.Units), strings.Join(gaps, "; ")))
+	}
 	notes = append(notes, noteImpactIsNotBlame)
+	return notes
+}
 
-	return newToolResultJSON(dumpImpactResult{DumpImpactResult: result, Notes: notes}), nil
+// unitsWithUnresolvedIncludes names the units whose callers include program
+// includes that were not resolved to their main program, with how many.
+func unitsWithUnresolvedIncludes(result *adt.DumpImpactResult) []string {
+	var out []string
+	for _, u := range result.Units {
+		if len(u.Unresolved) > 0 {
+			out = append(out, fmt.Sprintf("%s (%d)", u.Object, len(u.Unresolved)))
+		}
+	}
+	return out
 }
 
 // unansweredUnits names the units whose where-used list is missing from the

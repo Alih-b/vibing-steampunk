@@ -2,11 +2,14 @@ package adt
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // A dump says what failed. This file answers the other half of the question:
@@ -47,9 +50,10 @@ type ExposedCaller struct {
 	// rather than flattened, because the second half distinguishes a function
 	// module from its group and that distinction is the useful part.
 	Type string `json:"type,omitempty"`
-	// URI is the caller's own ADT path, taken from the container row rather
-	// than rebuilt from the name — a namespaced object or a function module is
-	// not addressable by any rule this side could apply.
+	// URI is the caller's own ADT path, taken from the row SAP sent (the
+	// container, or the row itself for a module or a program) rather than
+	// rebuilt from the name — a namespaced object or a function module is not
+	// addressable by any rule this side could apply.
 	URI       string `json:"uri,omitempty"`
 	Package   string `json:"package,omitempty"`
 	Component string `json:"component,omitempty"` // the method or routine holding the reference
@@ -75,6 +79,13 @@ type ImpactUnit struct {
 	// answer that quietly drops a unit is worse than one that says which unit
 	// it could not ask about.
 	Err string `json:"error,omitempty"`
+	// Unresolved names the program includes among this unit's callers that
+	// could not be resolved to their main program, and Gap says so in a
+	// sentence. They are kept apart from Note on purpose: Note means the unit
+	// could not be asked at all, while this unit was asked and answered, only
+	// with some callers reported as an include rather than as its program.
+	Unresolved []Unsearched `json:"unresolved,omitempty"`
+	Gap        string       `json:"gap,omitempty"`
 	// Note records a unit the query reached but cannot answer for, which is a
 	// different and more dangerous thing than an error: it comes back 200 with
 	// an empty list, and an empty list reads as "nobody calls this".
@@ -154,17 +165,25 @@ func (c *Client) DumpImpact(ctx context.Context, dump Dump, opts DumpImpactOptio
 		return nil, fmt.Errorf("this dump names no program, so there is nothing to ask a where-used list about")
 	}
 
+	includes := c.newIncludeResolver()
 	for i := range units {
 		if note := unanswerable(units[i]); note != "" {
 			units[i].Note = note
 			continue
 		}
-		refs, err := c.FindReferences(ctx, units[i].URI, 0, 0)
+		callers, unresolved, err := c.callersOf(ctx, units[i].URI, units[i].Object, includes)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				// Out of time is not one unit's problem: every unit after this
+				// would fail the same way, and a partial answer would read as
+				// a whole one.
+				return nil, fmt.Errorf("dump impact stopped at %s: %w", units[i].Object, ctxErr)
+			}
 			units[i].Err = err.Error()
 			continue
 		}
-		callers := exposedCallers(refs, units[i].Object)
+		units[i].Unresolved = unresolved
+		units[i].Gap = UnresolvedIncludesNote(unresolved)
 		units[i].Total = len(callers)
 		for j := range callers {
 			callers[j].Distance = units[i].Distance
@@ -361,12 +380,26 @@ func adtSegment(name string) string {
 //
 // The name the object goes by is taken from its own URI, which is what lets the
 // self-references be dropped.
-func (c *Client) WhereUsed(ctx context.Context, objectURI string) ([]ExposedCaller, error) {
+//
+// The second result names the program includes that could not be resolved to
+// their main program; an empty one means every include was.
+func (c *Client) WhereUsed(ctx context.Context, objectURI string) ([]ExposedCaller, []Unsearched, error) {
+	return c.callersOf(ctx, objectURI, objectNameFromURI(objectURI), c.newIncludeResolver())
+}
+
+// callersOf is the one route from a where-used list to callers, shared by
+// WhereUsed and DumpImpact so that graph, explain, the MCP tools and dumps
+// --impact cannot disagree about who calls what.
+//
+// The Unsearched list names the program includes that could not be resolved
+// to their main program. They are still in the caller list, as themselves; the
+// list says the answer is less complete than it looks.
+func (c *Client) callersOf(ctx context.Context, objectURI, target string, includes *includeResolver) ([]ExposedCaller, []Unsearched, error) {
 	refs, err := c.FindReferences(ctx, objectURI, 0, 0)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return exposedCallers(refs, objectNameFromURI(objectURI)), nil
+	return includes.resolve(ctx, exposedCallers(refs, target), target)
 }
 
 // objectNameFromURI recovers the object's own name from its ADT path. The
@@ -407,7 +440,18 @@ func objectNameFromURI(objectURI string) string {
 // packages come back as containers of their own, with the package interfaces
 // listed under them as direct references. A package naming an object in its
 // interface is visibility, not a call — it cannot reach the broken code and it
-// cannot be paged about — so DEVC containers are not callers.
+// cannot be paged about — so package interfaces are not callers.
+//
+// What is dropped is decided by the row, never by its container. A package is
+// also the container of every object that has no other parent, and that is
+// every standalone program: on a live 8.16 developer edition, 11 of the 59
+// direct references to BAPI_USER_GET_DETAIL were programs and program
+// includes filed under a package, and judging them by their parent dropped all
+// of them (#281). Which object a row stands for is callerOf's question.
+//
+// The answer still has program includes in it. Saying which program an
+// include belongs to takes a request per include, so that is resolveIncludes'
+// job, on the Client, and not this function's.
 func exposedCallers(refs []UsageReference, target string) []ExposedCaller {
 	containers := map[string]UsageReference{}
 	for _, r := range refs {
@@ -416,42 +460,84 @@ func exposedCallers(refs []UsageReference, target string) []ExposedCaller {
 		}
 	}
 
-	// An index rather than a pointer: appending to out reallocates, and a
-	// pointer into the old backing array would silently update nothing.
-	byName := map[string]int{}
 	var out []ExposedCaller
 	for _, r := range refs {
 		if !strings.Contains(r.UsageInformation, "gradeDirect") {
 			continue
 		}
-		owner := containers[r.ParentURI]
-		if isPackaging(owner.Type) || isPackaging(r.Type) {
+		if isPackaging(r.Type) || isPackageAddress(r.URI) {
 			continue
 		}
-		name := strings.TrimSpace(owner.Name)
-		if name == "" {
-			name = strings.TrimSpace(r.Name)
+		caller := callerOf(r, containers[r.ParentURI])
+		caller.IsTest = strings.Contains(strings.ToLower(r.UsageInformation), "test")
+		out = append(out, caller)
+	}
+	return mergeCallers(out, target)
+}
+
+// callerOf decides which object a reference row stands for.
+//
+// Usually that is the container: a row under a class is one of its methods,
+// and the class is the unit that can be paged about. Three kinds of row are
+// their own caller instead:
+//
+//   - a row filed under a package. The package is only where the object lives;
+//     a standalone program or a program include has no other parent.
+//   - a row with no container at all, for the same reason.
+//   - a function module. It sits under its group, but it has its own address
+//     and its own where-used list, and "BAPI_X calls this" is the answer while
+//     "something in function group SU_USER calls this" is a search left to do.
+//     A dump frame names the module too, so this is also what lets a caller on
+//     the dump's own stack be recognised as one.
+func callerOf(r, owner UsageReference) ExposedCaller {
+	if strings.TrimSpace(owner.Name) == "" || isPackaging(owner.Type) || isFunctionModule(r.Type) {
+		pkg := r.PackageName
+		if isPackaging(owner.Type) {
+			pkg = firstNonEmpty(pkg, owner.Name)
 		}
-		if name == "" || equalFoldTrim(name, target) {
-			// A class listing a reference to itself is not exposure.
+		return ExposedCaller{
+			Name:    strings.TrimSpace(r.Name),
+			Type:    strings.TrimSpace(r.Type),
+			URI:     addressOf(r.URI),
+			Package: strings.TrimSpace(firstNonEmpty(pkg, owner.PackageName)),
+		}
+	}
+	return ExposedCaller{
+		Name:      strings.TrimSpace(owner.Name),
+		Type:      strings.TrimSpace(owner.Type),
+		URI:       strings.TrimSpace(owner.URI),
+		Package:   strings.TrimSpace(firstNonEmpty(owner.PackageName, r.PackageName)),
+		Component: strings.TrimSpace(r.Name),
+	}
+}
+
+// mergeCallers folds rows naming one object into one caller and puts the
+// answer in its reading order. It drops the target itself, which is not
+// exposure: a class listing a reference to itself is the class.
+func mergeCallers(in []ExposedCaller, target string) []ExposedCaller {
+	// An index rather than a pointer: appending to out reallocates, and a
+	// pointer into the old backing array would silently update nothing.
+	byName := map[string]int{}
+	var out []ExposedCaller
+	for _, caller := range in {
+		if caller.Name == "" || equalFoldTrim(caller.Name, target) {
 			continue
-		}
-		caller := ExposedCaller{
-			Name:      name,
-			Type:      owner.Type,
-			URI:       strings.TrimSpace(owner.URI),
-			Package:   firstNonEmpty(owner.PackageName, r.PackageName),
-			Component: strings.TrimSpace(r.Name),
-			IsTest:    strings.Contains(strings.ToLower(r.UsageInformation), "test"),
 		}
 		key := trimUpper(caller.Name)
 		if at, seen := byName[key]; seen {
 			// One object can reference the target from several routines; the
 			// object is the unit of exposure, so the extra rows only add to the
 			// component list rather than becoming separate callers.
-			if caller.Component != "" && !strings.Contains(out[at].Component, caller.Component) {
-				out[at].Component += ", " + caller.Component
+			for _, part := range strings.Split(caller.Component, ", ") {
+				if part != "" && !containsPart(out[at].Component, part) {
+					if out[at].Component != "" {
+						out[at].Component += ", "
+					}
+					out[at].Component += part
+				}
 			}
+			// Productive use anywhere makes the object productive exposure.
+			out[at].IsTest = out[at].IsTest && caller.IsTest
 			continue
 		}
 		out = append(out, caller)
@@ -469,6 +555,197 @@ func exposedCallers(refs []UsageReference, target string) []ExposedCaller {
 	return out
 }
 
+func containsPart(list, part string) bool {
+	for _, p := range strings.Split(list, ", ") {
+		if p == part {
+			return true
+		}
+	}
+	return false
+}
+
+// maxIncludeLookups bounds the requests one answer makes to resolve includes.
+// Each include costs a round trip, and a where-used list of a hub can name
+// hundreds. Past the bound an include is reported as itself, which is still
+// a true caller but not the program a dump stack names, so every include left
+// over is listed in the answer's unresolved gap rather than passed off as
+// resolved.
+const maxIncludeLookups = 50
+
+// includeLookupWorkers is how many mainprograms requests run at once. Small:
+// these share the user's ICM session budget with everything else vsp does.
+const includeLookupWorkers = 4
+
+// includeLookup is the answer for one include: its main programs, or why
+// there are none.
+type includeLookup struct {
+	mains []SearchResult
+	err   error
+}
+
+// includeResolver resolves program includes to their main programs for one
+// answer. It is shared across the units of a dump impact query, so an
+// include that two units both name is asked about once, and the lookup cap
+// counts across the whole answer rather than per unit.
+type includeResolver struct {
+	c       *Client
+	mu      sync.Mutex
+	cache   map[string]includeLookup
+	lookups int
+}
+
+func (c *Client) newIncludeResolver() *includeResolver {
+	return &includeResolver{c: c, cache: map[string]includeLookup{}}
+}
+
+// resolve replaces each program include in a caller list with the program it
+// belongs to.
+//
+// An include is not a program anybody runs, and a dump stack names the main
+// program, not the include. Reported as itself, RSCUA_USER_COMPARE_INIT would
+// never match the RSCUA_USER_COMPARE frame on a stack, and a reader would be
+// left to find the program by hand. The include's name is kept as the
+// component, since that is where the reference actually sits.
+//
+// An include that could not be resolved — the lookup failed, or the cap was
+// reached — stays in the list as itself, because dropping it would turn
+// "could not ask" into "does not call". It is also returned as Unsearched, so
+// the answer says it is incomplete rather than reading as whole. A cancelled
+// or expired context is not a gap but a failed answer, and is returned as the
+// error.
+func (r *includeResolver) resolve(ctx context.Context, callers []ExposedCaller, target string) ([]ExposedCaller, []Unsearched, error) {
+	// Decide which includes this call will ask about, under the shared cap,
+	// before any request goes out — so which ones are left over does not
+	// depend on which request finished first.
+	var ask []string
+	planned := map[string]bool{}
+	r.mu.Lock()
+	for _, caller := range callers {
+		if !isProgramInclude(caller.Type) || caller.URI == "" {
+			continue
+		}
+		if _, done := r.cache[caller.URI]; done || planned[caller.URI] {
+			continue
+		}
+		if r.lookups >= maxIncludeLookups {
+			continue
+		}
+		r.lookups++
+		planned[caller.URI] = true
+		ask = append(ask, caller.URI)
+	}
+	r.mu.Unlock()
+
+	results := make([]includeLookup, len(ask))
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for w := 0; w < includeLookupWorkers && w < len(ask); w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				if err := ctx.Err(); err != nil {
+					results[i] = includeLookup{err: err}
+					continue
+				}
+				mains, err := r.c.includeMainPrograms(ctx, ask[i])
+				results[i] = includeLookup{mains: mains, err: err}
+			}
+		}()
+	}
+	for i := range ask {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+
+	if err := ctx.Err(); err != nil {
+		return nil, nil, fmt.Errorf("resolving includes to their programs: %w", err)
+	}
+
+	r.mu.Lock()
+	for i, uri := range ask {
+		r.cache[uri] = results[i]
+	}
+	cache := make(map[string]includeLookup, len(r.cache))
+	for k, v := range r.cache {
+		cache[k] = v
+	}
+	r.mu.Unlock()
+
+	var out []ExposedCaller
+	var gaps []Unsearched
+	for _, caller := range callers {
+		if !isProgramInclude(caller.Type) || caller.URI == "" {
+			out = append(out, caller)
+			continue
+		}
+		res, asked := cache[caller.URI]
+		switch {
+		case !asked:
+			gaps = append(gaps, Unsearched{
+				Object: caller.Name,
+				Reason: fmt.Sprintf("not resolved to its main program: the cap of %d include lookups per answer was reached", maxIncludeLookups),
+			})
+			out = append(out, caller)
+			continue
+		case res.err != nil:
+			gaps = append(gaps, Unsearched{Object: caller.Name, Reason: "not resolved to its main program: " + res.err.Error()})
+			out = append(out, caller)
+			continue
+		case len(res.mains) == 0:
+			// Answered, and the answer is that no program includes it. That is
+			// a fact about the include, not a gap in this answer.
+			out = append(out, caller)
+			continue
+		}
+		for _, m := range res.mains {
+			out = append(out, ExposedCaller{
+				Name:      strings.TrimSpace(m.Name),
+				Type:      strings.TrimSpace(m.Type),
+				URI:       strings.TrimSpace(m.URI),
+				Package:   firstNonEmpty(strings.TrimSpace(m.PackageName), caller.Package),
+				Component: firstNonEmpty(caller.Component, caller.Name),
+				IsTest:    caller.IsTest,
+			})
+		}
+	}
+	sort.SliceStable(gaps, func(i, j int) bool { return gaps[i].Object < gaps[j].Object })
+	return mergeCallers(out, target), gaps, nil
+}
+
+// includeMainProgramsAccept is the only content type the mainprograms
+// resource accepts: plain application/xml is answered 406. A refused lookup
+// only leaves the include unresolved, so getting this wrong would never show
+// as an error.
+const includeMainProgramsAccept = "application/vnd.sap.adt.programs.includes.mainprograms+xml"
+
+// includeMainPrograms asks ADT which programs an include is part of. The
+// answer is an adtcore:objectReferences list, checked live on an 8.16
+// developer edition: RSCUA_USER_COMPARE_INIT answers RSCUA_USER_COMPARE
+// (PROG/P), and a function group's include answers the group (FUGR/F).
+func (c *Client) includeMainPrograms(ctx context.Context, includeURI string) ([]SearchResult, error) {
+	resp, err := c.transport.Request(ctx, strings.TrimRight(includeURI, "/")+"/mainprograms", &RequestOptions{
+		Method: http.MethodGet,
+		Accept: includeMainProgramsAccept,
+	})
+	if err != nil {
+		return nil, err
+	}
+	xmlStr := strings.ReplaceAll(string(resp.Body), "adtcore:", "")
+	var refs SearchResults
+	if err := xml.Unmarshal([]byte(xmlStr), &refs); err != nil {
+		return nil, fmt.Errorf("parsing the main programs of %s: %w", includeURI, err)
+	}
+	var out []SearchResult
+	for _, r := range refs.Results {
+		if strings.TrimSpace(r.Name) != "" {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
 // rankExposure flattens the per-unit answers into one ranked list and splits
 // off the callers that are on the dump's own stack.
 //
@@ -480,6 +757,13 @@ func rankExposure(units []ImpactUnit, dump Dump, stack []DumpFrame) (exposed, on
 	onStack := map[string]bool{}
 	for _, name := range StackPrograms(stack) {
 		if u, ok := unitForFrame(DumpFrame{Program: name}); ok {
+			onStack[trimUpper(u.Object)] = true
+		}
+	}
+	// A FUNCTION frame also names its module, and a module is a caller in its
+	// own right, so the module counts as on the stack beside its group.
+	for _, frame := range stack {
+		if u, ok := unitForFrame(frame); ok {
 			onStack[trimUpper(u.Object)] = true
 		}
 	}
@@ -519,6 +803,53 @@ func rankExposure(units []ImpactUnit, dump Dump, stack []DumpFrame) (exposed, on
 func isPackaging(adtType string) bool {
 	t := strings.ToUpper(strings.TrimSpace(adtType))
 	return strings.HasPrefix(t, "DEVC") || strings.HasPrefix(t, "PINF")
+}
+
+// isPackageAddress catches a package interface row that arrives without a
+// type: its URI is the package's own, with the interface in the fragment.
+func isPackageAddress(uri string) bool {
+	path := strings.ToLower(addressOf(uri))
+	return strings.HasPrefix(path, "/sap/bc/adt/packages/") ||
+		strings.Contains(path, "/object_type/pinf")
+}
+
+// addressOf drops the fragment from a row URI. A row's fragment points at a
+// position in the source, which is not part of the object's address.
+func addressOf(uri string) string {
+	if i := strings.Index(uri, "#"); i >= 0 {
+		uri = uri[:i]
+	}
+	return strings.TrimSpace(uri)
+}
+
+func isFunctionModule(adtType string) bool {
+	return strings.EqualFold(strings.TrimSpace(adtType), "FUGR/FF")
+}
+
+// UnresolvedIncludesNote says which program includes in a caller list are
+// listed as themselves because their main program could not be read. Empty
+// when there are none. Every surface that prints a caller list prints this
+// beside it, so a capped or failed lookup never reads as a complete answer.
+func UnresolvedIncludesNote(unresolved []Unsearched) string {
+	if len(unresolved) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d program includes are listed as themselves because their main program could not be read, "+
+		"so this is not a complete answer and a dump stack naming that program will not match them:", len(unresolved))
+	const named = 5
+	for i, u := range unresolved {
+		if i >= named {
+			fmt.Fprintf(&b, "\n  … and %d more", len(unresolved)-named)
+			break
+		}
+		fmt.Fprintf(&b, "\n  %s: %s", u.Object, oneLine(u.Reason))
+	}
+	return b.String()
+}
+
+func isProgramInclude(adtType string) bool {
+	return strings.EqualFold(strings.TrimSpace(adtType), "PROG/I")
 }
 
 func firstNonEmpty(values ...string) string {

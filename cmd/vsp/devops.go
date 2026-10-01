@@ -1657,10 +1657,13 @@ func runSourceContext(cmd *cobra.Command, args []string) error {
 		}
 		if uri != "" {
 			uri = strings.TrimSuffix(uri, "/source/main")
-			found, err := client.WhereUsed(ctx, uri)
+			found, unresolved, err := client.WhereUsed(ctx, uri)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "  the caller list could not be read: %v\n", err)
 			} else {
+				if note := adt.UnresolvedIncludesNote(unresolved); note != "" {
+					fmt.Fprintf(os.Stderr, "  %s\n", note)
+				}
 				list := make([]ctxcomp.Caller, 0, len(found))
 				for _, f := range found {
 					list = append(list, ctxcomp.Caller{

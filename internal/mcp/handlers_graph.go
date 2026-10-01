@@ -1651,6 +1651,10 @@ func usageTypeNameFromURI(uri, fallbackName string) (objType, name, parent strin
 		objType = "INTF"
 	case strings.Contains(lowerURI, "/programs/programs/"):
 		objType = "PROG"
+	case strings.Contains(lowerURI, "/programs/includes/"):
+		// A program include whose main program could not be read. Its own
+		// source is where the reference sits, so it is still worth reading.
+		objType = "INCL"
 	case strings.Contains(lowerURI, "/functions/groups/") && strings.Contains(lowerURI, "/fmodules/"):
 		objType = "FUNC"
 	default:
@@ -1661,13 +1665,22 @@ func usageTypeNameFromURI(uri, fallbackName string) (objType, name, parent strin
 		name = strings.ToUpper(fallbackName)
 	}
 	if objType == "FUNC" {
-		parts := strings.Split(lowerURI, "/")
+		// Segments are unescaped: a namespaced module arrives as
+		// %2fsdf%2fewa_sdccn, and that is not a name GetSource can find.
+		parts := strings.Split(strings.SplitN(lowerURI, "#", 2)[0], "/")
+		segment := func(i int) string {
+			seg := parts[i]
+			if unescaped, err := url.PathUnescape(seg); err == nil {
+				seg = unescaped
+			}
+			return strings.ToUpper(seg)
+		}
 		for i := range parts {
 			if parts[i] == "groups" && i+1 < len(parts) {
-				parent = strings.ToUpper(parts[i+1])
+				parent = segment(i + 1)
 			}
 			if parts[i] == "fmodules" && i+1 < len(parts) {
-				name = strings.ToUpper(parts[i+1])
+				name = segment(i + 1)
 			}
 		}
 	}
@@ -1752,7 +1765,7 @@ func (s *Server) fetchUsageCandidatesFallback(ctx context.Context, target graph.
 
 func (s *Server) fetchUsageCandidateSource(ctx context.Context, cand usageCallerCandidate) (string, error) {
 	switch cand.Type {
-	case "CLAS", "PROG", "INTF":
+	case "CLAS", "PROG", "INTF", "INCL":
 		// Four class sections have an address of their own. Everything else —
 		// CP, CU, CO, CI and every CM### — lives in the main source and must
 		// not be given a path by pattern: ADT answers 404 to an invented one,
