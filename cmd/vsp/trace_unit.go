@@ -45,6 +45,13 @@ The workload has to come from elsewhere: a session cannot catch itself.`,
 		user, _ := cmd.Flags().GetString("user")
 		call, _ := cmd.Flags().GetBool("call")
 
+		// --call runs the object; waiting for someone else to run it does not.
+		if call {
+			if err := rfcWriteGate(cmd, "TraceCall"); err != nil {
+				return err
+			}
+		}
+
 		writer := os.Stdout
 		if out != "" {
 			f, err := os.Create(out)

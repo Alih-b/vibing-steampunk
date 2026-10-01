@@ -40,10 +40,22 @@ func (c *Client) LockObject(ctx context.Context, objectURL string, accessMode st
 	if len(corrNr) > 0 {
 		transport = corrNr[0]
 	}
-	// Safety check - only check for MODIFY locks, READ locks are safe
-	if accessMode == "" || accessMode == "MODIFY" {
+	// Safety check - only a READ lock is safe. Every other mode (MODIFY, the
+	// empty default which becomes MODIFY, or anything else SAP may accept) is
+	// checked as a lock, and refused under --read-only: a write lock serves
+	// no write there and only leaves an ENQUEUE entry in SM12. The mode is
+	// compared case-insensitively.
+	accessMode = strings.ToUpper(strings.TrimSpace(accessMode))
+	if accessMode != "READ" {
 		if err := c.checkSafety(OpLock, "LockObject"); err != nil {
 			return nil, err
+		}
+		if c.config.Safety.ReadOnly && !c.config.Safety.DryRun {
+			mode := accessMode
+			if mode == "" {
+				mode = "MODIFY"
+			}
+			return nil, fmt.Errorf("operation 'LockObject' (%s) is blocked: read-only mode enabled (only READ locks are allowed)", mode)
 		}
 	}
 
@@ -1342,6 +1354,16 @@ func (c *Client) UnpublishServiceBinding(ctx context.Context, serviceName string
 }
 
 func (c *Client) publishUnpublishServiceBinding(ctx context.Context, action, serviceName, serviceVersion string) (*PublishResult, error) {
+	// Publishing or unpublishing activates or removes an OData service in
+	// the gateway: an object change, refused under --read-only before any
+	// request. Here rather than in a handler, so every caller is covered.
+	opName := "PublishServiceBinding"
+	if action == "unpublishjobs" {
+		opName = "UnpublishServiceBinding"
+	}
+	if err := c.checkSafety(OpUpdate, opName); err != nil {
+		return nil, err
+	}
 	if serviceVersion == "" {
 		serviceVersion = "0001"
 	}

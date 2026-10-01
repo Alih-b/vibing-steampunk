@@ -63,7 +63,7 @@ func TestRFCDestination_TheClientSelectsTheSystem(t *testing.T) {
 }
 
 func TestRFCDestination_ANamedSystemWins(t *testing.T) {
-	s := serverFor(t, "https://elsewhere.example:44300", "100", "prodsys-a")
+	s := serverFor(t, "https://prodsys-a.example:44300", "100", "prodsys-a")
 
 	dest, err := s.rfcDestination(map[string]any{})
 	if err != nil {
@@ -106,7 +106,7 @@ func TestRFCDestination_TheDefaultSystemStillGetsItsSettings(t *testing.T) {
 // A server connected to one system logs on over RFC as itself, not as the
 // SAP_USER a .env of another system puts into every server's environment.
 func TestRFCDestination_TheLogonIsTheServersOwnNotSAPUser(t *testing.T) {
-	s := serverFor(t, "https://elsewhere.example:44300", "100", "prodsys-a")
+	s := serverFor(t, "https://prodsys-a.example:44300", "100", "prodsys-a")
 	s.config.Username, s.config.Password = "READER", "reader-secret"
 	t.Setenv("SAP_USER", "OTHERSYS")
 	t.Setenv("SAP_PASSWORD", "other-secret")

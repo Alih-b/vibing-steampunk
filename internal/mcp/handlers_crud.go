@@ -632,6 +632,14 @@ func (s *Server) handleMoveObject(ctx context.Context, request mcp.CallToolReque
 		return newToolResultError("new_package is required"), nil
 	}
 
+	// Reassigning an object's package changes TADIR: an object change,
+	// refused under --read-only before the WebSocket connects. The
+	// WebSocket client carries no safety config of its own, so the gate is
+	// here, where both routes (edit MOVE, debug MOVE) and the tool meet.
+	if err := s.adtClient.Safety().CheckOperation(adt.OpUpdate, "MoveObject"); err != nil {
+		return newToolResultError(err.Error()), nil
+	}
+
 	// Ensure WebSocket client is connected
 	if err := s.ensureDebugWSClient(ctx); err != nil {
 		return newToolResultError(fmt.Sprintf("Failed to connect to ZADT_VSP WebSocket: %v. Ensure ZADT_VSP is deployed and SAPC/SICF are configured.", err)), nil

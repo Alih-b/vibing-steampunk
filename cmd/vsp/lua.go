@@ -81,9 +81,15 @@ func runLua(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	params, err := resolveSystemParams(cmd)
+	if err != nil {
+		return err
+	}
+
 	// Create Lua engine
 	engine := scripting.NewLuaEngine(client)
 	defer engine.Close()
+	engine.SetReadOnly(cliReadOnly(params))
 
 	// A debug session, opened only if the script asks for one. Debugging needs a
 	// session that survives between calls, which the ordinary ADT client above

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/oisee/open-rfc-go/rfc"
+	"github.com/oisee/vibing-steampunk/pkg/adt"
 	"github.com/oisee/vibing-steampunk/pkg/config"
 	"github.com/oisee/vibing-steampunk/pkg/saprfc"
 	"github.com/spf13/cobra"
@@ -76,6 +77,9 @@ var rfcCallCmd = &cobra.Command{
 inline, with --file, or on stdin; values are coerced to each parameter's type.`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := rfcWriteGate(cmd, "RFCCall"); err != nil {
+			return err
+		}
 		raw := ""
 		if len(args) > 1 {
 			raw = args[1]
@@ -128,13 +132,19 @@ piped or redirected as it stands.
   vsp rfc adt GET /sap/bc/adt/programs/programs/RSUSR000/source/main -H Accept=text/plain
 
 No CSRF token is fetched and no session is kept, so this is a read-only door:
-use ADT over HTTP for stateful, token-protected flows.`,
+use ADT over HTTP for stateful, token-protected flows. On a read-only system
+(read_only in .vsp.json, or SAP_READ_ONLY) only GET, HEAD and OPTIONS are sent.`,
 	Args: cobra.ExactArgs(2),
 	// A 4xx/5xx from ADT is a result, not a usage mistake: report it and exit
 	// non-zero without dumping the flag list over the response body.
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := saprfc.ADTRequest{Method: args[0], URI: args[1]}
+		if !rfcADTReadMethod(req.Method) {
+			if err := rfcWriteGate(cmd, "RFCADT "+strings.ToUpper(req.Method)); err != nil {
+				return err
+			}
+		}
 		raw, _ := cmd.Flags().GetStringArray("header")
 		for _, kv := range raw {
 			name, value, found := strings.Cut(kv, "=")
@@ -234,6 +244,9 @@ WebSocket path cannot do — APC forbids SUBMIT — and it needs no helper on th
   vsp rfc run ZMY_REPORT -p P_WERKS=1000 -p S_MATNR=M1 --wait 120 --spool`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := rfcWriteGate(cmd, "RFCRunReport"); err != nil {
+			return err
+		}
 		raw, _ := cmd.Flags().GetStringArray("param")
 		var params []saprfc.ReportParam
 		for _, kv := range raw {
@@ -387,6 +400,9 @@ var rfcReadTableCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		where, _ := cmd.Flags().GetString("where")
+		if err := rfcFreeSQLGate(cmd, where); err != nil {
+			return err
+		}
 		top, _ := cmd.Flags().GetInt("top")
 		var fields []string
 		if f, _ := cmd.Flags().GetString("fields"); f != "" {
@@ -404,6 +420,58 @@ var rfcReadTableCmd = &cobra.Command{
 			return emitRFC(rows)
 		})
 	},
+}
+
+// rfcWriteGate refuses an rfc subcommand that can change the system — calling
+// a function module, running a report, a non-GET ADT request — when the
+// selected system is read-only: read_only in .vsp.json, or SAP_READ_ONLY. It
+// is the same workflow-operation check the MCP server applies to rfc call and
+// RunReport, made before any logon to the gateway.
+func rfcWriteGate(cmd *cobra.Command, opName string) error {
+	params, err := resolveSystemParams(cmd)
+	if err != nil {
+		return err
+	}
+	return cliWorkflowGate(cliReadOnly(params), opName)
+}
+
+// rfcFreeSQLGate refuses a caller's WHERE clause for RFC_READ_TABLE when the
+// system blocks free SQL (block_free_sql in .vsp.json, or SAP_BLOCK_FREE_SQL):
+// it is a free query on any table, as the MCP server's read_table treats it.
+// A read without one, and search's own TFDIR filter, are not affected.
+func rfcFreeSQLGate(cmd *cobra.Command, where string) error {
+	if strings.TrimSpace(where) == "" {
+		return nil
+	}
+	params, err := resolveSystemParams(cmd)
+	if err != nil {
+		return err
+	}
+	safety := adt.SafetyConfig{BlockFreeSQL: params.BlockFreeSQL} // block_free_sql or SAP_BLOCK_FREE_SQL
+	return safety.CheckOperation(adt.OpFreeSQL, "RFCReadTable")
+}
+
+// cliReadOnly says whether the selected system is read-only for the CLI:
+// read_only in .vsp.json, or SAP_READ_ONLY.
+func cliReadOnly(params *systemParams) bool {
+	return params.ReadOnly || envFlag("SAP_READ_ONLY")
+}
+
+// cliWorkflowGate is the workflow-operation check the MCP server applies to
+// rfc call and RunReport, for a CLI command on a system that may be read-only.
+func cliWorkflowGate(readOnly bool, opName string) error {
+	safety := adt.SafetyConfig{ReadOnly: readOnly}
+	return safety.CheckOperation(adt.OpWorkflow, opName)
+}
+
+// rfcADTReadMethod says whether an ADT request through the RFC tunnel only
+// reads. Anything else may write, and is gated.
+func rfcADTReadMethod(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case "GET", "HEAD", "OPTIONS":
+		return true
+	}
+	return false
 }
 
 // withRFC resolves the RFC destination for the selected system and runs fn.
@@ -516,7 +584,7 @@ func init() {
 	rfcCallCmd.Flags().Bool("stdin", false, "read JSON parameters from stdin")
 	rfcSearchCmd.Flags().Bool("all", false, "include function modules that are not RFC-enabled")
 	rfcSearchCmd.Flags().Int("top", 100, "maximum rows")
-	rfcReadTableCmd.Flags().String("where", "", "WHERE clause")
+	rfcReadTableCmd.Flags().String("where", "", "WHERE clause (refused when the system blocks free SQL)")
 	rfcReadTableCmd.Flags().String("fields", "", "comma-separated column list")
 	rfcReadTableCmd.Flags().Int("top", 0, "maximum rows (0 = all)")
 

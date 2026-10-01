@@ -387,6 +387,11 @@ func (e *LuaEngine) luaListCheckpoints(L *lua.LState) int {
 
 // injectCheckpoint(name) - Inject all variables from checkpoint into live debug session (FORCE REPLAY!)
 func (e *LuaEngine) luaInjectCheckpoint(L *lua.LState) int {
+	if err := e.checkVariableWrite("injectCheckpoint"); err != nil {
+		L.Push(lua.LBool(false))
+		L.Push(lua.LString(err.Error()))
+		return 2
+	}
 	name := getString(L, 1)
 
 	checkpoint, ok := e.checkpoints[name]
@@ -911,6 +916,11 @@ func (e *LuaEngine) luaCompareRecordings(L *lua.LState) int {
 // forceReplay(recordingId, [stepNumber]) - Inject state from recording into live debug session
 // This is the killer feature: inject production state into dev session for debugging!
 func (e *LuaEngine) luaForceReplay(L *lua.LState) int {
+	if err := e.checkVariableWrite("forceReplay"); err != nil {
+		L.Push(lua.LBool(false))
+		L.Push(lua.LString(err.Error()))
+		return 2
+	}
 	recordingID := getString(L, 1)
 	stepNumber := getOptInt(L, 2, -1) // -1 means last step
 	storePath := getOptString(L, 3, ".vsp-recordings")
@@ -994,6 +1004,11 @@ func (e *LuaEngine) luaForceReplay(L *lua.LState) int {
 
 // replayFromStep(stepNumber) - Inject state from current recording at specific step
 func (e *LuaEngine) luaReplayFromStep(L *lua.LState) int {
+	if err := e.checkVariableWrite("replayFromStep"); err != nil {
+		L.Push(lua.LBool(false))
+		L.Push(lua.LString(err.Error()))
+		return 2
+	}
 	stepNumber := int(L.ToNumber(1))
 
 	if e.recorder == nil {

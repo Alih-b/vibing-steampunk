@@ -201,7 +201,15 @@ gateway is a different port and is often closed.
 
 Only remote-enabled function modules can be called. A module that is not
 marked remote is unreachable by every transport — a property of the module,
-not of the connection.`)
+not of the connection.
+
+The gateway is this server's own: rfc_host / rfc_sysnr / rfc_port of its
+.vsp.json entry, else derived from its URL. params host, sysnr and port may
+only repeat that destination; one that differs is refused, so the configured
+credentials never go elsewhere. params user picks another logon user.
+
+Under --read-only, "call" is refused. Under --block-free-sql, read_table with
+a "where" is refused.`)
 
 	case "i18n":
 		return mcp.NewToolResultText(`SAP(action="i18n") - Translation texts and language comparison

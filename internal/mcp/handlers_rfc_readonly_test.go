@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -48,8 +50,18 @@ func rfcTestServer(t *testing.T, readOnly bool) *Server {
 	})
 }
 
-func rfcParams(port int, extra map[string]any) map[string]any {
-	p := map[string]any{"host": "127.0.0.1", "sysnr": "00", "port": float64(port)}
+// rfcParams points this server's own gateway at the fake one, through a
+// .vsp.json entry for its URL and client in the test's working directory, and
+// returns the call's params. A per-call host/sysnr/port override would be
+// refused: the configured credentials only go to the server's own gateway.
+func rfcParams(t *testing.T, port int, extra map[string]any) map[string]any {
+	t.Helper()
+	cfg := fmt.Sprintf(`{"systems": {"own": {"url": "http://127.0.0.1:1", "client": "001",
+	  "rfc_host": "127.0.0.1", "rfc_sysnr": "00", "rfc_port": %d}}}`, port)
+	if err := os.WriteFile(".vsp.json", []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := map[string]any{}
 	for k, v := range extra {
 		p[k] = v
 	}
@@ -77,7 +89,7 @@ func TestRFCReadOnly_CallRefusedBeforeLogon(t *testing.T) {
 			port, dials := fakeGateway(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			_, handled, err := s.routeRFCAction(ctx, "rfc", "Z_DOUBLE", "", rfcParams(port, extra))
+			_, handled, err := s.routeRFCAction(ctx, "rfc", "Z_DOUBLE", "", rfcParams(t, port, extra))
 			if !handled {
 				t.Fatal("rfc action not handled")
 			}
@@ -110,7 +122,7 @@ func TestRFCReadOnly_ReadOpsStillReachGateway(t *testing.T) {
 			port, dials := fakeGateway(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			_, handled, err := s.routeRFCAction(ctx, "rfc", tc.target, "", rfcParams(port, tc.extra))
+			_, handled, err := s.routeRFCAction(ctx, "rfc", tc.target, "", rfcParams(t, port, tc.extra))
 			if !handled {
 				t.Fatal("rfc action not handled")
 			}
@@ -129,7 +141,7 @@ func TestRFCWritable_CallReachesGateway(t *testing.T) {
 	port, dials := fakeGateway(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, _, err := s.routeRFCAction(ctx, "rfc", "Z_DOUBLE", "", rfcParams(port, map[string]any{"op": "call"}))
+	_, _, err := s.routeRFCAction(ctx, "rfc", "Z_DOUBLE", "", rfcParams(t, port, map[string]any{"op": "call"}))
 	if err != nil && strings.Contains(err.Error(), "blocked") {
 		t.Fatalf("call refused without --read-only: %v", err)
 	}

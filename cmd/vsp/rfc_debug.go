@@ -81,6 +81,12 @@ semicolon-separated script and exits. Commands:
 		script, _ := cmd.Flags().GetString("command")
 		timeout, _ := cmd.Flags().GetInt("timeout")
 
+		params, err := resolveSystemParams(cmd)
+		if err != nil {
+			return err
+		}
+		debugREPLReadOnly = cliReadOnly(params)
+
 		return withRFCDestTimeout(cmd, time.Duration(timeout)*time.Second, func(ctx context.Context, c *rfc.Client, dest saprfc.Params) error {
 			dbg, err := saprfc.NewDebugger(ctx, c, user)
 			if err != nil {
@@ -143,6 +149,12 @@ const adtTerminalID = "56535000000000000000000000006462"
 // rfcDebugUser is whose debuggees the ADT flow listens for; the REPL sets it
 // from --user, defaulting to the connection's logon user.
 var rfcDebugUser string
+
+// debugREPLReadOnly is the selected system's read_only / SAP_READ_ONLY, set by
+// vsp rfc debug and vsp adt debug before their loop. Commands that change the
+// running program or the system (eset, adt with a writing method) are refused
+// when it is set.
+var debugREPLReadOnly bool
 
 // rfcDebugValues turns off redaction. A recording is business data by
 // construction, so the shape of a value is reported and the value is not,
@@ -360,6 +372,9 @@ func runDebugCommand(ctx context.Context, dbg *saprfc.Debugger, line string) err
 	case "eset":
 		if len(fields) < 3 {
 			return fmt.Errorf("usage: eset <NAME> <VALUE> — overwrites a variable in the stopped frame")
+		}
+		if gerr := cliWorkflowGate(debugREPLReadOnly, "DebuggerSetVariable"); gerr != nil {
+			return gerr
 		}
 		if serr := dbg.SetVariable(ctx, strings.ToUpper(arg(1)), strings.Join(fields[2:], " ")); serr != nil {
 			return serr
@@ -644,6 +659,11 @@ func runDebugCommand(ctx context.Context, dbg *saprfc.Debugger, line string) err
 	case "adt":
 		if len(fields) < 3 {
 			return fmt.Errorf("usage: adt <METHOD> <URI> [NAME=VALUE …]")
+		}
+		if !rfcADTReadMethod(arg(1)) {
+			if gerr := cliWorkflowGate(debugREPLReadOnly, "DebugADT "+strings.ToUpper(arg(1))); gerr != nil {
+				return gerr
+			}
 		}
 		// A missing Accept is filled in by the tunnel itself.
 		var headers []saprfc.ADTHeader

@@ -37,6 +37,22 @@ type LuaEngine struct {
 	dbgFactory DebuggerFactory
 	dbg        *saprfc.Debugger
 	dbgRelease func()
+
+	// readOnly refuses the bindings that overwrite variables in a live
+	// program (setVariable, injectCheckpoint, forceReplay, replayFromStep).
+	readOnly bool
+}
+
+// SetReadOnly marks the engine's system read-only. The command line sets it
+// from read_only / SAP_READ_ONLY; the bindings that change a live program's
+// variables are then refused before anything is sent.
+func (e *LuaEngine) SetReadOnly(readOnly bool) { e.readOnly = readOnly }
+
+// checkVariableWrite is the gate for those bindings: a workflow operation, as
+// DebuggerSetVariableValue and the CLI debug REPLs check it.
+func (e *LuaEngine) checkVariableWrite(opName string) error {
+	safety := adt.SafetyConfig{ReadOnly: e.readOnly}
+	return safety.CheckOperation(adt.OpWorkflow, opName)
 }
 
 // NewLuaEngine creates a new Lua engine with ADT client bindings.

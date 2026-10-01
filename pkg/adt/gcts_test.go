@@ -255,3 +255,76 @@ func TestGctsListRepositories_EmptyResult(t *testing.T) {
 		t.Errorf("Expected 0 repositories, got %d", len(repos))
 	}
 }
+
+// gCTS writes change the system as surely as a transport release does, so
+// --read-only refuses them even with transports enabled, before any request.
+// Reads stay allowed.
+func TestGcts_WritesRefusedUnderReadOnly(t *testing.T) {
+	newClient := func() (*Client, *mockTransportClient) {
+		mock := &mockTransportClient{responses: map[string]*http.Response{}}
+		cfg := NewConfig("https://sap.example.com:44300", "user", "pass")
+		cfg.Safety.EnableTransports = true
+		cfg.Safety.ReadOnly = true
+		return NewClientWithTransport(cfg, NewTransportWithClient(cfg, mock)), mock
+	}
+	ctx := context.Background()
+	writes := map[string]func(*Client) error{
+		"create": func(c *Client) error {
+			_, err := c.GctsCreateRepository(ctx, GctsCreateOptions{Rid: "r", Name: "r", URL: "https://git.example.com/r.git"})
+			return err
+		},
+		"delete": func(c *Client) error { return c.GctsDeleteRepository(ctx, "r") },
+		"clone":  func(c *Client) error { return c.GctsCloneRepository(ctx, "r") },
+		"pull": func(c *Client) error {
+			_, err := c.GctsPull(ctx, "r", "")
+			return err
+		},
+		"commit": func(c *Client) error {
+			_, err := c.GctsCommit(ctx, "r", GctsCommitOptions{Message: "m"})
+			return err
+		},
+		"switch-branch": func(c *Client) error { return c.GctsSwitchBranch(ctx, "r", "main") },
+	}
+	for name, write := range writes {
+		t.Run(name, func(t *testing.T) {
+			c, mock := newClient()
+			err := write(c)
+			if err == nil || !strings.Contains(err.Error(), "is blocked: read-only mode enabled") {
+				t.Fatalf("want a read-only refusal, got %v", err)
+			}
+			if len(mock.requests) != 0 {
+				t.Errorf("a refused gCTS write sent %d request(s)", len(mock.requests))
+			}
+		})
+	}
+
+	reads := map[string]func(*Client) error{
+		"list": func(c *Client) error {
+			_, err := c.GctsListRepositories(ctx)
+			return err
+		},
+		"get": func(c *Client) error {
+			_, err := c.GctsGetRepository(ctx, "r")
+			return err
+		},
+		"branches": func(c *Client) error {
+			_, err := c.GctsListBranches(ctx, "r")
+			return err
+		},
+		"history": func(c *Client) error {
+			_, err := c.GctsGetHistory(ctx, "r")
+			return err
+		},
+	}
+	for name, read := range reads {
+		t.Run("read "+name, func(t *testing.T) {
+			c, mock := newClient()
+			if err := read(c); err != nil && strings.Contains(err.Error(), "blocked") {
+				t.Fatalf("read refused under --read-only: %v", err)
+			}
+			if len(mock.requests) == 0 {
+				t.Error("read never reached SAP")
+			}
+		})
+	}
+}

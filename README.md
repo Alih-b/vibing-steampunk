@@ -625,7 +625,8 @@ URL, system number from its port, gateway port `3300 + sysnr`. Override per syst
 `--sysnr`, `--port`). RFC logon uses `rfc_user`/`rfc_password`, else `SAP_USER`/
 `SAP_PASSWORD`, else the system's own credentials. An MCP server takes the RFC
 settings of its own system (the one named by `-s`/`SAP_SYSTEM`, else the entry whose
-URL and client match its own), and logs on with that entry's `rfc_user`/`rfc_password`,
+URL and client match its own; a named entry whose URL or client is not the server's
+is refused), and logs on with that entry's `rfc_user`/`rfc_password`,
 else its own credentials. `SAP_USER`/`SAP_PASSWORD` are used only by a server without
 credentials of its own (cookie or SSO logon), and only when `SAP_URL` and
 `SAP_CLIENT` name its system.
@@ -798,6 +799,57 @@ Earlier: **[Still Only 5%](articles/2026-08-25-still-five-percent.md)** · **[VS
 ## What's New
 
 The headline changes are in the **"New in the last three releases"** callout at the top of this README; the full version history is in [CHANGELOG.md](CHANGELOG.md). Latest release: **[v2.57.0 — the dump's own why](https://github.com/oisee/vibing-steampunk/releases/tag/v2.57.0)**.
+
+### Unreleased — behaviour changes since v2.58.0
+
+**`--read-only` now also refuses**, each before anything reaches SAP:
+
+- transport writes (create, release, delete, merge, move, entry add/remove),
+  even with `--enable-transports`;
+- gCTS create, delete, clone, pull, commit and switch-branch;
+- code execution: `SAP(action="rfc")` `call`, `CallRFC` (`debug CALL_RFC`),
+  `RunReport` / `RunReportAsync`, and unit test and code coverage runs
+  (`RunUnitTests`, `GetCodeCoverage`) that include dangerous or critical tests
+  (`include_dangerous`). Ordinary runs still work;
+- object and system changes: `SetTextElements`, `MoveObject` (`edit MOVE`,
+  `debug MOVE`), publishing and unpublishing service bindings,
+  `SetPrettyPrinterSettings`, and every lock except a READ lock
+  (`LockObject`, `edit LOCK`);
+- debugger variable writes through the ADT client (`DebuggerSetVariableValue`).
+
+**The CLI honours `read_only` in `.vsp.json` and `SAP_READ_ONLY`** for
+`vsp rfc call`, `rfc run`, `rfc adt` with a method other than GET/HEAD/OPTIONS,
+`vsp trace run --call`, `vsp trace unit --call`, the Run button of
+`vsp debug ui`, `run` and `call` in the `vsp debug` REPL, `eset` and
+writing `adt` requests in the `vsp rfc debug` / `vsp adt debug` REPLs, and the
+`vsp lua` bindings that overwrite variables (`setVariable`, `injectCheckpoint`,
+`forceReplay`, `replayFromStep`).
+
+**`--block-free-sql`** (and `block_free_sql` / `SAP_BLOCK_FREE_SQL` on the
+CLI) refuses `rfc read_table` / `vsp rfc read-table` with a caller's WHERE.
+Reads without one, and `search`, are unchanged.
+
+**RFC goes only to the server's own system.** When `-s` / `SAP_SYSTEM` names a
+`.vsp.json` entry whose `url`/`client` differ from `SAP_URL`/`SAP_CLIENT`, the
+server warns at startup and refuses RFC use. An entry without a `url` (gateway
+only) still applies. A per-call `host`, `sysnr` or `port` on
+`SAP(action="rfc")` that differs from the server's own gateway is refused, so
+the configured RFC credentials never go to a caller-chosen destination.
+
+**Known gaps** (not gated by `--read-only` yet): setting and deleting
+breakpoints, debugger stepping, starting an AMDP debug session, arming and
+removing traces (`vsp trace run` without `--call`, `vsp trace rm`), and the
+per-call RFC `user` override, which can still try other users' logons with the
+configured password and so risks locking an account. The name mask of
+`rfc search` is not escaped. `vsp rfc adt POST` is checked as a workflow
+operation (`W`), while `vsp adt request` checks the same kind of request as an
+update (`U`). Both are refused under read-only, but they use different
+operation letters.
+
+**Build and transport:** `go.mod` pins `toolchain go1.26.8`. mcp-go v1.1.0
+answers 403 to a request from a loopback address that carries a non-loopback
+`Host` header (DNS-rebinding protection), so a reverse proxy on the same host
+must rewrite `Host` to reach vsp over HTTP.
 
 ### Hyperfocused Mode — 1 Tool to Rule Them All (Recommended)
 
@@ -1933,7 +1985,7 @@ Uses **ABAP SQL syntax**, not standard SQL:
 make build          # Current platform
 make build-all      # All 9 platforms
 
-# Test
+# Test (go.mod pins toolchain go1.26.8)
 go test ./...                              # Unit tests (1354)
 go test -tags=integration -v ./pkg/adt/    # Integration tests (34+)
 ```

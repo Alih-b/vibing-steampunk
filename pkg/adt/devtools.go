@@ -777,6 +777,18 @@ func DefaultUnitTestFlags() UnitTestRunFlags {
 	}
 }
 
+// checkUnitTestRisk refuses a test run that includes test classes declared
+// RISK LEVEL DANGEROUS or CRITICAL under --read-only: such tests may change
+// persistent data or system settings, which is what the level says. Every
+// path that posts an ABAP Unit run (RunUnitTests, GetCodeCoverage) calls it.
+// Harmless runs are unchanged.
+func (c *Client) checkUnitTestRisk(flags *UnitTestRunFlags, opName string) error {
+	if flags != nil && (flags.Dangerous || flags.Critical) && c.config.Safety.ReadOnly && !c.config.Safety.DryRun {
+		return fmt.Errorf("operation '%s' with dangerous or critical tests is blocked: read-only mode enabled (run without include_dangerous)", opName)
+	}
+	return nil
+}
+
 // UnitTestResult represents the complete result of a unit test run.
 type UnitTestResult struct {
 	Classes []UnitTestClass `json:"classes"`
@@ -841,6 +853,9 @@ func (c *Client) RunUnitTests(ctx context.Context, objectURL string, flags *Unit
 	if flags == nil {
 		defaultFlags := DefaultUnitTestFlags()
 		flags = &defaultFlags
+	}
+	if err := c.checkUnitTestRisk(flags, "RunUnitTests"); err != nil {
+		return nil, err
 	}
 
 	body := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>

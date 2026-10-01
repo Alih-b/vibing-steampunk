@@ -1121,6 +1121,13 @@ func (c *Client) DebuggerGetChildVariables(ctx context.Context, parentIDs []stri
 // variableName: The name of the variable to modify
 // value: The new value as a string
 func (c *Client) DebuggerSetVariableValue(ctx context.Context, variableName, value string) (string, error) {
+	// Overwriting a variable steers a live program to a state its own code
+	// did not produce, and whatever it then writes, it writes. Gated like the
+	// other ways of making code run differently: a workflow operation,
+	// refused under --read-only before the request.
+	if err := c.checkSafety(OpWorkflow, "DebuggerSetVariableValue"); err != nil {
+		return "", err
+	}
 	query := url.Values{}
 	query.Set("method", "setVariableValue")
 	query.Set("variableName", variableName)

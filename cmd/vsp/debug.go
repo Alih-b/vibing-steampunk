@@ -76,8 +76,11 @@ type debugSession struct {
 	user       string
 	attached   bool
 	debuggeeID string
-	ctx        context.Context
-	cancel     context.CancelFunc
+	// readOnly is the system's read_only / SAP_READ_ONLY: "run" and "call"
+	// execute code on the system, and are refused when it is set.
+	readOnly bool
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 func runDebug(cmd *cobra.Command, args []string) error {
@@ -95,6 +98,10 @@ func runDebug(cmd *cobra.Command, args []string) error {
 
 	// Create ADT client
 	client, err := createADTClientFor(cmd)
+	if err != nil {
+		return err
+	}
+	params, err := resolveSystemParams(cmd)
 	if err != nil {
 		return err
 	}
@@ -148,6 +155,7 @@ func runDebug(cmd *cobra.Command, args []string) error {
 		client:   client,
 		wsClient: wsClient,
 		user:     user,
+		readOnly: cliReadOnly(params),
 		ctx:      ctx,
 		cancel:   cancel,
 	}
@@ -623,6 +631,11 @@ func (s *debugSession) runProgram(args []string) error {
 		return nil
 	}
 
+	// Before the listener starts or anything is submitted.
+	if err := cliWorkflowGate(s.readOnly, "RunReport"); err != nil {
+		return err
+	}
+
 	if s.wsClient == nil {
 		return fmt.Errorf("WebSocket not connected - cannot run programs")
 	}
@@ -726,6 +739,10 @@ func (s *debugSession) callRFC(args []string) error {
 		fmt.Println("Example: call RFC_PING")
 		fmt.Println("         call BAPI_USER_GET_DETAIL USERNAME=TESTUSER")
 		return nil
+	}
+
+	if err := cliWorkflowGate(s.readOnly, "RFCCall"); err != nil {
+		return err
 	}
 
 	if s.wsClient == nil {

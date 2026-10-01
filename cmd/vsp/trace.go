@@ -108,6 +108,13 @@ session too, and vsp is usually the next thing to talk to the system.`,
 		call, _ := cmd.Flags().GetBool("call")
 		keep, _ := cmd.Flags().GetBool("keep")
 
+		// --call runs the object; arming and reading a trace do not.
+		if call {
+			if err := rfcWriteGate(cmd, "TraceCall"); err != nil {
+				return err
+			}
+		}
+
 		return withRFCDest(cmd, func(ctx context.Context, c *rfc.Client, dest saprfc.Params) error {
 			t := saprfc.NewTracer(saprfc.RFCTunnel(c), dest.User, dest.Client)
 

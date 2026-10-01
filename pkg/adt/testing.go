@@ -41,6 +41,9 @@ func (c *Client) GetCodeCoverage(ctx context.Context, objectURL string, flags *U
 		defaultFlags := DefaultUnitTestFlags()
 		flags = &defaultFlags
 	}
+	if err := c.checkUnitTestRisk(flags, "GetCodeCoverage"); err != nil {
+		return nil, err
+	}
 
 	body := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <aunit:runConfiguration xmlns:aunit="http://www.sap.com/adt/aunit">

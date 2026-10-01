@@ -165,6 +165,13 @@ func (s *Server) handleDeleteBreakpoint(ctx context.Context, request mcp.CallToo
 }
 
 func (s *Server) handleCallRFC(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// A function module does whatever it is written to do, so this is gated
+	// like rfc call and RunReport: a workflow operation, refused under
+	// --read-only before the WebSocket connects.
+	if err := s.adtClient.Safety().CheckOperation(adt.OpWorkflow, "CallRFC"); err != nil {
+		return newToolResultError(err.Error()), nil
+	}
+
 	function, ok := request.GetArguments()["function"].(string)
 	if !ok || function == "" {
 		return newToolResultError("function is required"), nil

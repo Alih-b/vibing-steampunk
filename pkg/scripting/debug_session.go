@@ -394,6 +394,10 @@ func (e *LuaEngine) sesGetVariable(L *lua.LState) int {
 // sesSetVariable overwrites a value in the stopped frame. The next statement
 // computes with it — this changes real execution, database writes included.
 func (e *LuaEngine) sesSetVariable(L *lua.LState) int {
+	// Before the session is opened: a refused write sends nothing.
+	if err := e.checkVariableWrite("setVariable"); err != nil {
+		return fail(L, err)
+	}
 	dbg, err := e.debugger()
 	if err != nil {
 		return fail(L, err)

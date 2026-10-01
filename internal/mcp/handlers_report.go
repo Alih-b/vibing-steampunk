@@ -38,6 +38,13 @@ func (s *Server) routeReportAction(ctx context.Context, action, objectType, obje
 // --- Report Execution Handlers ---
 
 func (s *Server) handleRunReport(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// A report does whatever it is written to do, so it is gated like
+	// ExecuteABAP and rfc call: a workflow operation, which --read-only
+	// refuses, checked before the WebSocket connects or a job is scheduled.
+	if err := s.adtClient.Safety().CheckOperation(adt.OpWorkflow, "RunReport"); err != nil {
+		return newToolResultError(err.Error()), nil
+	}
+
 	// Ensure WebSocket is connected
 	if errResult := s.ensureWSConnected(ctx, "RunReport"); errResult != nil {
 		return errResult, nil
@@ -126,6 +133,13 @@ func (s *Server) handleRunReport(ctx context.Context, request mcp.CallToolReques
 }
 
 func (s *Server) handleRunReportAsync(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// A report does whatever it is written to do, so it is gated like
+	// ExecuteABAP and rfc call: a workflow operation, which --read-only
+	// refuses, checked before the WebSocket connects or a job is scheduled.
+	if err := s.adtClient.Safety().CheckOperation(adt.OpWorkflow, "RunReportAsync"); err != nil {
+		return newToolResultError(err.Error()), nil
+	}
+
 	// Ensure WebSocket is connected
 	if errResult := s.ensureWSConnected(ctx, "RunReportAsync"); errResult != nil {
 		return errResult, nil
@@ -399,6 +413,12 @@ func (s *Server) handleGetTextElements(ctx context.Context, request mcp.CallTool
 }
 
 func (s *Server) handleSetTextElements(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Writing a program's text pool changes the system, so --read-only
+	// refuses it, as it refuses RunReport, before the WebSocket connects.
+	if err := s.adtClient.Safety().CheckOperation(adt.OpUpdate, "SetTextElements"); err != nil {
+		return newToolResultError(err.Error()), nil
+	}
+
 	if errResult := s.ensureWSConnected(ctx, "SetTextElements"); errResult != nil {
 		return errResult, nil
 	}
