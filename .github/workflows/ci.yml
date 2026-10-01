@@ -5,6 +5,11 @@ name: CI
 # cross-platform work belongs to the release pipeline, and lint is advisory and
 # pull-request-only.
 # Nothing here talks to a SAP system: live tests sit behind the `integration` tag.
+#
+# One job per check, so each check is one row in the PR comment that
+# ci-report.yml writes. This workflow stays read-only: almost every pull request
+# here comes from a fork, and the comment is posted from the default branch by
+# ci-report.yml, never from here.
 on:
   push:
     branches: [main]
@@ -19,31 +24,17 @@ concurrency:
 
 jobs:
   build:
-    name: build · vet · test
+    name: build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Build
         run: go build ./...
-
-      - name: Vet
-        run: go vet ./...
-
-      # Compile the integration-tagged tests too, so a live test cannot rot
-      # unnoticed just because CI never runs it.
-      - name: Vet (integration tag)
-        run: go vet -tags integration ./...
-
-      - name: Test
-        run: go test ./...
 
       # Cross-compilation only guards main; a release already builds all nine
       # targets, and PRs do not need to pay for it.
@@ -53,6 +44,62 @@ jobs:
           for target in linux/amd64 linux/386 windows/amd64; do
             GOOS=${target%/*} GOARCH=${target#*/} go build ./... || exit 1
           done
+
+  vet:
+    name: vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      # Compile the integration-tagged tests too, so a live test cannot rot
+      # unnoticed just because CI never runs it.
+      - name: Vet (integration tag)
+        run: go vet -tags integration ./...
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # -json for the counts. -json implies -v, so the log is printed back the
+      # way plain `go test` would: package lines, plus the output of the tests
+      # that failed.
+      - name: Test
+        run: |
+          status=0
+          go test -json -coverprofile=cover.out ./... > test.json || status=$?
+          jq -rsj '(map(select(.Action == "fail" and .Test != null) | .Package + " " + .Test)) as $failed
+            | .[] | select(.Action == "output")
+            | select(.Test == null or ((.Package + " " + .Test) as $k | $failed | index($k)))
+            | .Output' test.json
+          exit $status
+
+      # One annotation the report reads back as the row's detail. Coverage is
+      # over ./pkg/... only: cmd/ and internal/mcp move with whatever tool was
+      # last registered, which makes a whole-repo total too noisy to compare.
+      - name: Summarise
+        if: always() && hashFiles('test.json') != ''
+        run: |
+          counts=$(jq -rs '[.[] | select(.Test != null and (.Action == "pass" or .Action == "fail" or .Action == "skip"))]
+            | "\(map(select(.Action == "pass")) | length) passed, \(map(select(.Action == "fail")) | length) failed, \(map(select(.Action == "skip")) | length) skipped"' test.json)
+          cov=""
+          if [ -s cover.out ]; then
+            { head -1 cover.out; grep '/pkg/' cover.out; } > cover-pkg.out
+            cov=$(go tool cover -func=cover-pkg.out | awk '/^total:/ {print $3}')
+          fi
+          echo "::notice title=ci-report::${counts}${cov:+, pkg coverage $cov}"
 
   lint:
     name: lint (advisory)
@@ -66,14 +113,11 @@ jobs:
     # contributor. Read the output, do not gate on it.
     continue-on-error: true
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           # only-new-issues needs the merge base to diff against.
           fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
@@ -83,13 +127,10 @@ jobs:
         with:
           # Pinned, not `latest`. `latest` is what broke this job: v2 shipped,
           # refused the v1 .golangci.yml, and failed in 67ms without reading a
-          # line of Go. Every run in the retained history failed that way, and
-          # because the job is advisory nobody had reason to look. A major
-          # version must move because someone moved it.
+          # line of Go. A major version must move because someone moved it.
           version: v2.13.2
-          # The repo carries 264 findings that predate this job ever running.
+          # The repo carries findings that predate this job ever running.
           # Reporting them on every PR would bury whatever the PR itself
-          # introduced, which is the only part its author can act on. Raise the
-          # backlog separately; this flag keeps the signal.
+          # introduced, which is the only part its author can act on.
           only-new-issues: true
           args: --timeout=5m
