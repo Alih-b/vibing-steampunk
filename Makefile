@@ -169,12 +169,8 @@ deploy-windows: ## Build vsp.exe + vsp-sso.exe (amd64) and copy both to $(WINDOW
 	@# printf, not echo: echo eats the backslash in a Windows path and prints C:in.
 	@printf 'On the Windows side: %s\n' "$$(wslpath -w $(WINDOWS_DEPLOY_DIR) 2>/dev/null || echo $(WINDOWS_DEPLOY_DIR))"
 
-sync-embedded: build ## Export $ZADT_VSP from SAP to embedded/abap/ (requires SAP_* env vars)
-	@echo "Exporting ZADT_VSP package from SAP..."
-	@mkdir -p embedded/abap
-	VSP_OUTPUT_DIR=embedded/abap $(BUILD_DIR)/$(BINARY_NAME) lua scripts/sync-embedded.lua
-	@echo "Files in embedded/abap/"
-	@ls -lh embedded/abap/*.abap 2>/dev/null || echo "No files exported"
+sync-embedded: ## Copy the ZADT_VSP sources vsp install deploys from src/ into embedded/abap/
+	$(GOCMD) generate ./embedded/abap
 
 # SAP system for dependency refresh (override with: make release SAP_SYSTEM=prod)
 SAP_SYSTEM ?= a4h

@@ -158,7 +158,7 @@ type MoveObjectResult struct {
 }
 
 // MoveObject moves an ABAP object to a different package via WebSocket.
-// Uses the rfc domain's moveToPackage action which calls ZADT_CL_TADIR_MOVE.
+// Uses the rfc domain's moveToPackage action which calls ZCL_VSP_TADIR_MOVE.
 // objectType: CLAS, PROG, INTF, FUGR, etc.
 // objectName: Name of the object (e.g., ZCL_TEST)
 // newPackage: Target package (e.g., $ZRAY)

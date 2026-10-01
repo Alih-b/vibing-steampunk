@@ -618,7 +618,7 @@ CLASS zcl_vsp_amdp_service IMPLEMENTATION.
 
     " Defaults
     IF lv_class IS INITIAL.
-      lv_class = 'ZCL_ADT_00_AMDP_TEST'.
+      lv_class = 'ZCL_VSP_00_AMDP_TEST'.
     ENDIF.
     IF lv_method IS INITIAL.
       lv_method = 'CALCULATE_SQUARES'.
@@ -709,15 +709,31 @@ CLASS zcl_vsp_amdp_service IMPLEMENTATION.
         ENDIF.
 
         " Step 3: Execute AMDP (this will pause at breakpoint)
-        DATA lt_result TYPE zcl_adt_00_amdp_test=>tt_result.
+        " The fixture is called dynamically: it is a test class that a plain
+        " install does not deploy, and a static reference would keep this
+        " service from activating without it. The class executed is the one
+        " the breakpoint was set in.
+        DATA lr_result TYPE REF TO data.
         DATA lv_execution_error TYPE string.
+        DATA(lv_fixture) = to_upper( lv_class ).
+        DATA(lv_result_type) = |{ lv_fixture }=>TT_RESULT|.
+        FIELD-SYMBOLS <lt_result> TYPE STANDARD TABLE.
 
-        IF to_upper( lv_class ) = 'ZCL_ADT_00_AMDP_TEST' AND to_upper( lv_method ) = 'CALCULATE_SQUARES'.
+        IF ( lv_fixture = 'ZCL_VSP_00_AMDP_TEST' OR lv_fixture = 'ZCL_ADT_00_AMDP_TEST' )
+           AND to_upper( lv_method ) = 'CALCULATE_SQUARES'.
           TRY.
-              zcl_adt_00_amdp_test=>calculate_squares(
+              CREATE DATA lr_result TYPE (lv_result_type).
+              ASSIGN lr_result->* TO <lt_result>.
+              CALL METHOD (lv_fixture)=>calculate_squares
                 EXPORTING iv_count  = lv_count
-                IMPORTING et_result = lt_result
+                IMPORTING et_result = <lt_result>.
+            CATCH cx_sy_create_data_error cx_sy_dyn_call_error INTO DATA(lx_missing).
+              rs_response = error_response(
+                iv_id      = is_message-id
+                iv_code    = 'FIXTURE_MISSING'
+                iv_message = |{ lv_fixture } is not installed: { lx_missing->get_text( ) }|
               ).
+              RETURN.
             CATCH cx_root INTO DATA(lx_exec).
               lv_execution_error = lx_exec->get_text( ).
           ENDTRY.
@@ -725,7 +741,7 @@ CLASS zcl_vsp_amdp_service IMPLEMENTATION.
           rs_response = error_response(
             iv_id      = is_message-id
             iv_code    = 'UNSUPPORTED'
-            iv_message = |Only ZCL_ADT_00_AMDP_TEST=>CALCULATE_SQUARES supported|
+            iv_message = |Only ZCL_VSP_00_AMDP_TEST=>CALCULATE_SQUARES supported|
           ).
           RETURN.
         ENDIF.
@@ -741,7 +757,7 @@ CLASS zcl_vsp_amdp_service IMPLEMENTATION.
         DATA lv_json TYPE string.
         lv_json = |{ lv_brace_open }"status":"completed"|.
         lv_json = |{ lv_json },"class":"{ lv_class }","method":"{ lv_method }","line":{ lv_line }|.
-        lv_json = |{ lv_json },"execution_rows":{ lines( lt_result ) }|.
+        lv_json = |{ lv_json },"execution_rows":{ COND i( WHEN <lt_result> IS ASSIGNED THEN lines( <lt_result> ) ELSE 0 ) }|.
 
         IF lv_execution_error IS NOT INITIAL.
           lv_json = |{ lv_json },"execution_error":"{ escape_json( lv_execution_error ) }"|.

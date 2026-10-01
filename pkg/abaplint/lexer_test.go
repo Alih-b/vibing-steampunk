@@ -118,7 +118,7 @@ func TestLexer_OracleDifferential(t *testing.T) {
 
 	// Find the ABAP source files to lex
 	sourceDirs := []string{
-		"../../embedded/abap",
+		"testdata/corpus",
 		"../../abap-adt-api/testdata/src",
 	}
 
@@ -288,8 +288,8 @@ func max(a, b int) int {
 
 // BenchmarkLexer benchmarks the Go lexer on a real ABAP file.
 func BenchmarkLexer(b *testing.B) {
-	// Use the largest embedded ABAP file
-	data, err := os.ReadFile("../../embedded/abap/zcl_vsp_apc_handler.clas.abap")
+	// Use the largest ABAP file in the corpus
+	data, err := os.ReadFile("testdata/corpus/zcl_vsp_apc_handler.clas.abap")
 	if err != nil {
 		b.Skipf("source not found: %v", err)
 	}
@@ -311,7 +311,9 @@ func TestLexer_OracleBulk(t *testing.T) {
 
 	// Find all .abap files
 	var files []string
-	for _, dir := range []string{"../../embedded/abap", "../../abap-adt-api/testdata/src", "../../abap/src"} {
+	jseval, _ := filepath.Glob("../../embedded/abap/*jseval*.abap")
+	files = append(files, jseval...)
+	for _, dir := range []string{"testdata/corpus", "../../abap-adt-api/testdata/src", "../../abap/src"} {
 		matches, _ := filepath.Glob(filepath.Join(dir, "*.abap"))
 		files = append(files, matches...)
 		// Also recurse one level

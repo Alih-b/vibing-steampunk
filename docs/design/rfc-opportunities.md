@@ -331,7 +331,7 @@ the one that needs the most new work. The honest answer has three parts.
 ### 6.1 Can ZADT_VSP's existing services be reached as RFC FMs? Not as they stand.
 
 `ZCL_VSP_DEBUG_SERVICE` (1 037 lines,
-`abap/src/zadt_vsp/zcl_vsp_debug_service.clas.abap`) is a **class implementing
+`src/zcl_vsp_debug_service.clas.abap`) is a **class implementing
 `ZIF_VSP_SERVICE`**, dispatching a `{id, domain, action, params, timeout}`
 envelope. Classes are not remote-enabled; only function modules are. So "just
 RFC-enable the existing thing" is not available. What *is* available is a **thin

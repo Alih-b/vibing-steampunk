@@ -481,7 +481,7 @@ var installZadtVspCmd = &cobra.Command{
 	Long: `Install the ZADT_VSP WebSocket handler to enable advanced features.
 
 Deploys 9 ABAP objects (1 interface, 8 classes) in dependency order:
-  ZIF_VSP_SERVICE, ZCL_VSP_UTILS, ZADT_CL_TADIR_MOVE, ZCL_VSP_RFC_SERVICE,
+  ZIF_VSP_SERVICE, ZCL_VSP_UTILS, ZCL_VSP_TADIR_MOVE, ZCL_VSP_RFC_SERVICE,
   ZCL_VSP_DEBUG_SERVICE, ZCL_VSP_AMDP_SERVICE, ZCL_VSP_GIT_SERVICE,
   ZCL_VSP_REPORT_SERVICE, ZCL_VSP_APC_HANDLER
 

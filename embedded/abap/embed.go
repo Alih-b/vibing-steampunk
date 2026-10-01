@@ -1,7 +1,20 @@
 // Package embedded provides embedded ABAP source files for ZADT_VSP deployment.
+//
+// The .abap files this package embeds are copies of src/, the abapGit
+// repository and the only place they are maintained. go:embed cannot reach a
+// parent directory, so they are copied here by go generate, and
+// TestEmbeddedSourcesMatchSrc fails when a copy has drifted from src/. Edit the
+// class in src/, then run:
+//
+//	go generate ./embedded/abap
 package embedded
 
-import _ "embed"
+import (
+	_ "embed"
+	"strings"
+)
+
+//go:generate go run sync_from_src.go
 
 // ZADT_VSP WebSocket Handler Components
 // These files are deployed to SAP systems to enable WebSocket-based operations.
@@ -12,8 +25,8 @@ var ZifVspService string
 //go:embed zcl_vsp_utils.clas.abap
 var ZclVspUtils string
 
-//go:embed zadt_cl_tadir_move.clas.abap
-var ZadtClTadirMove string
+//go:embed zcl_vsp_tadir_move.clas.abap
+var ZclVspTadirMove string
 
 //go:embed zcl_vsp_rfc_service.clas.abap
 var ZclVspRfcService string
@@ -42,6 +55,15 @@ type ObjectInfo struct {
 	Optional    bool   // If true, can be skipped (e.g., Git service without abapGit)
 }
 
+// FileName is the abapGit file name of an object, the same in src/ and here.
+func FileName(o ObjectInfo) string {
+	ext := ".clas.abap"
+	if o.Type == "INTF" {
+		ext = ".intf.abap"
+	}
+	return strings.ToLower(o.Name) + ext
+}
+
 // GetObjects returns all ZADT_VSP objects in deployment order.
 func GetObjects() []ObjectInfo {
 	return []ObjectInfo{
@@ -61,8 +83,8 @@ func GetObjects() []ObjectInfo {
 		},
 		{
 			Type:        "CLAS",
-			Name:        "ZADT_CL_TADIR_MOVE",
-			Source:      ZadtClTadirMove,
+			Name:        "ZCL_VSP_TADIR_MOVE",
+			Source:      ZclVspTadirMove,
 			Description: "Helper class for moving objects between packages",
 			Optional:    false,
 		},

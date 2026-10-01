@@ -2,6 +2,13 @@
 
 This directory contains optional ABAP objects that can be deployed to SAP systems for enhanced vsp functionality.
 
+> **The ZADT_VSP files here are generated — do not edit them.** Their source is
+> [`src/`](../../src/), the abapGit repository. `go:embed` cannot reach a parent
+> directory, so `go generate ./embedded/abap` (or `make sync-embedded`) copies
+> the objects `vsp install` deploys, and `TestEmbeddedSourcesMatchSrc` fails when
+> a copy has drifted. The `zcl_jseval*` / `zif_jseval` files are not part of
+> ZADT_VSP and are maintained here.
+
 ---
 
 ## WebSocket Handler (ZADT_VSP) v2.0.0
@@ -39,8 +46,9 @@ The WebSocket handler enables **stateful operations** not available through stan
 | `zcl_vsp_debug_service.clas.abap` | Class | Debug domain - TPDAPI integration |
 | `zcl_vsp_amdp_service.clas.abap` | Class | AMDP domain - HANA/SQLScript debugging |
 | `zcl_vsp_git_service.clas.abap` | Class | Git domain - abapGit integration (158 object types) |
+| `zcl_vsp_report_service.clas.abap` | Class | Report domain - runs a report synchronously (SUBMIT ... AND RETURN), optionally capturing its ALV output |
+| `zcl_vsp_utils.clas.abap` | Class | Shared JSON and parameter helpers |
 | `zcl_vsp_tadir_move.clas.abap` | Class | TADIR package reassignment helper |
-| `zcl_adt_00_amdp_test.clas.abap` | Class | AMDP test class for debugging demos |
 
 **Note:** The Git service requires abapGit to be installed (optional dependency, handled gracefully).
 

@@ -29,14 +29,14 @@ The single most useful discovery in this study is not on the SAP side — it is 
 
 > "Each MCP tool call may spawn a separate process / HTTP sessions are not shared between tool calls / **The debugger listener catches the debuggee, but attach/step operations fail due to session mismatch** / Go's HTTP client is stateless by design"
 
-and `abap/src/zadt_vsp/README.md:19-30` states the WebSocket's whole purpose:
+and `embedded/abap/README.md:16-30` states the WebSocket's whole purpose:
 
 > "The WebSocket handler enables **stateful operations** not available through standard ADT REST APIs … HTTP REST: Cannot maintain debug context / **No TPDAPI access**. WebSocket: Persistent debug session / Full debugger integration."
 
 So the requirement is **not** push messaging. It is *"keep one ABAP roll area alive across many client operations, and be able to block a call for up to 240 s."* Two independent confirmations that push is not needed:
 
 - The Go WS client defines `DebugEvent` and an `Events chan` (`pkg/adt/websocket.go:22-34`) — **nothing ever writes to it**. Every WS message is strict request/response keyed by `id` (`pkg/adt/websocket_base.go:219-227`).
-- The ABAP handler's listen is itself a blocking call: `start_listener_for_user( i_timeout )` then `get_waiting_debuggees( )` (`abap/src/zadt_vsp/zcl_vsp_debug_service.clas.abap:263-305`).
+- The ABAP handler's listen is itself a blocking call: `start_listener_for_user( i_timeout )` then `get_waiting_debuggees( )` (`src/zcl_vsp_debug_service.clas.abap:263-305`).
 
 A classic **stateful RFC connection** satisfies both requirements natively: the same CPIC conversation reuses the same ABAP user session, so function-group globals and object references survive between calls, and an RFC call can block for as long as the gateway/`rdisp` timeouts allow.
 
@@ -155,7 +155,7 @@ Asked directly by the coordinator, and the evidence answers it in two parts.
 
 - `ABDBG_LISTENER` stores `SERVER` + `CONTEXT_ID` per listener. A listener *is* a registered ABAP session context, not a row of intent.
 - `IF_TPDAPI_SERVICE~ATTACH_DEBUGGEE` returns a `REF TO if_tpdapi_session`; everything else (`GET_CONTROL_SERVICES`, `GET_DATA_SERVICES`, `GET_STACK_HANDLER`) hangs off that object reference. Object references live in a roll area. There is no "re-materialise session from an id" API in `IF_TPDAPI_SERVICE` — the closest is `GET_ATTACHED_SESSION`, which returns the session attached *to the calling session*.
-- ZADT_VSP holds precisely these as instance attributes for the socket's lifetime — `mo_dbg_session TYPE REF TO if_tpdapi_session`, `mo_static_bp_services`, `mt_bp_mappings TYPE … REF TO if_tpdapi_bp` (`abap/src/zadt_vsp/zcl_vsp_debug_service.clas.abap:30-44`) — and tears them all down in `on_disconnect` (`:173-199`). SAP's own ADT resources do the same via a **stateful ICF session**; vsp's ADT client even models this (`SessionStateful` / `sap-contextid`, `pkg/adt/http.go:255`, `:412-445`) but never turns it on for debugger calls.
+- ZADT_VSP holds precisely these as instance attributes for the socket's lifetime — `mo_dbg_session TYPE REF TO if_tpdapi_session`, `mo_static_bp_services`, `mt_bp_mappings TYPE … REF TO if_tpdapi_bp` (`src/zcl_vsp_debug_service.clas.abap:30-44`) — and tears them all down in `on_disconnect` (`:173-202`). SAP's own ADT resources do the same via a **stateful ICF session**; vsp's ADT client even models this (`SessionStateful` / `sap-contextid`, `pkg/adt/http.go:255`, `:412-445`) but never turns it on for debugger calls.
 
 Breakpoints sit in between and deserve their own note: **external** breakpoints persist server-side in `ABDBG_EXTDBPS` keyed by user, so they outlive any session — but the *handle* used to delete one (`IF_TPDAPI_BP` object reference) does not. ZADT_VSP works around this with its own `mt_bp_mappings` UUID→ref table, which is why breakpoint deletion breaks when the socket drops. A facade should key deletion off `BP_INDEX` / `GET_BREAKPOINT_FROM_ID` instead of a live reference, so breakpoint management becomes genuinely stateless.
 
@@ -360,13 +360,13 @@ $V rfc call TH_GET_DEBUG_INFO '{}'
 | Claim | Evidence |
 |---|---|
 | Debugger tools disabled by default | `/Users/alice/dev/vibing-steampunk/pkg/config/systems.go:273-286` |
-| WebSocket exists for statefulness, not push | `/Users/alice/dev/vibing-steampunk/abap/src/zadt_vsp/README.md:19-30`; `reports/2025-12-19-001-websocket-debugging-deep-dive.md:78` |
+| WebSocket exists for statefulness, not push | `embedded/abap/README.md:16-30`; `reports/2025-12-19-001-websocket-debugging-deep-dive.md:78` |
 | No server-initiated events on the WS | `/Users/alice/dev/vibing-steampunk/pkg/adt/websocket.go:22-34`; `pkg/adt/websocket_base.go:219-227` |
 | Session-mismatch is the root cause | `/Users/alice/dev/vibing-steampunk/docs/adr/001-websocket-stateful-debugging.md` |
 | Debugger HTTP calls go out stateless | `/Users/alice/dev/vibing-steampunk/pkg/adt/config.go:192`; `pkg/adt/http.go:406-409` |
 | ADT endpoints being replaced | `/Users/alice/dev/vibing-steampunk/pkg/adt/debugger.go:567-634, 980-1111` |
 | ABAP side already calls TPDAPI | `/Users/alice/dev/vibing-steampunk/src/zcl_vsp_debug_service.clas.abap:206, 294-305, 451, 507-520, 826-840` |
-| TPDAPI refs held for socket lifetime | `/Users/alice/dev/vibing-steampunk/abap/src/zadt_vsp/zcl_vsp_debug_service.clas.abap:30-44, 173-199` |
+| TPDAPI refs held for socket lifetime | `src/zcl_vsp_debug_service.clas.abap:30-44, 173-202` |
 | Detach failure symptom | `/Users/alice/dev/vibing-steampunk/reports/2025-12-05-016-debugger-session-timeout-analysis.md:9-14` |
 | Breakpoint REST returns 403 CSRF | `/Users/alice/dev/vibing-steampunk/pkg/adt/debugger.go:145-146` |
 | RFC callbacks are serviced mid-call | `/Users/alice/dev/open-rfc-go/internal/client/session.go:565`; `/Users/alice/dev/open-rfc-go/rfc/call.go:90`; `rfc/client.go:52-55` |

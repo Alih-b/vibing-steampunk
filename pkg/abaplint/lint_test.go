@@ -94,13 +94,15 @@ func TestLinter_MaxOneStatement(t *testing.T) {
 // TestLinter_RealCorpus runs the linter on real ABAP files and reports findings.
 func TestLinter_RealCorpus(t *testing.T) {
 	l := NewLinter()
-	dirs := []string{"../../embedded/abap", "../../abap-adt-api/testdata/src"}
+	// The jseval classes live in embedded/abap; the ZADT_VSP files next to
+	// them are generated copies of src/ and already in the corpus.
+	patterns := []string{"testdata/corpus/*.abap", "../../embedded/abap/*jseval*.abap", "../../abap-adt-api/testdata/src/*.abap"}
 
 	totalIssues := 0
 	ruleCount := map[string]int{}
 
-	for _, dir := range dirs {
-		files, _ := filepath.Glob(filepath.Join(dir, "*.abap"))
+	for _, pattern := range patterns {
+		files, _ := filepath.Glob(pattern)
 		for _, f := range files {
 			data, err := os.ReadFile(f)
 			if err != nil {
@@ -170,7 +172,7 @@ func TestLinter_OracleDifferential(t *testing.T) {
 	}
 
 	sourceDirs := []string{
-		"../../embedded/abap",
+		"testdata/corpus",
 		"../../abap-adt-api/testdata/src",
 		"../../abap/src",
 	}
@@ -533,7 +535,7 @@ func TestDynamicCallNoTryRule_Detect(t *testing.T) {
 }
 
 func BenchmarkLinter(b *testing.B) {
-	data, err := os.ReadFile("../../embedded/abap/zcl_vsp_apc_handler.clas.abap")
+	data, err := os.ReadFile("testdata/corpus/zcl_vsp_apc_handler.clas.abap")
 	if err != nil {
 		b.Skipf("file not found: %v", err)
 	}

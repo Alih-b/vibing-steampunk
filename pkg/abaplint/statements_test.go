@@ -105,7 +105,7 @@ func TestStatementMatcher_OracleDifferential(t *testing.T) {
 	}
 
 	sourceDirs := []string{
-		"../../embedded/abap",
+		"testdata/corpus",
 		"../../abap-adt-api/testdata/src",
 		"../../abap/src",
 	}
@@ -201,7 +201,7 @@ func TestStatementParser_OracleDifferential(t *testing.T) {
 	}
 
 	sourceDirs := []string{
-		"../../embedded/abap",
+		"testdata/corpus",
 		"../../abap-adt-api/testdata/src",
 		"../../abap/src",
 	}
