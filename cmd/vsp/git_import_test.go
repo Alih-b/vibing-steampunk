@@ -5,10 +5,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/oisee/vibing-steampunk/pkg/adt"
 )
 
 func writeCLIDemoZip(t *testing.T) string {
@@ -42,15 +45,16 @@ func TestGitCLI_RefusesBeforeContact(t *testing.T) {
 		del     bool
 		wantErr string
 	}{
-		"read_only system":       {`,"read_only":true`, nil, "$ZDEMO", false, "read-only"},
-		"SAP_READ_ONLY":          {``, map[string]string{"SAP_READ_ONLY": "true"}, "$ZDEMO", false, "read-only"},
-		"outside allowed":        {`,"allowed_packages":["$ZOTHER"]`, nil, "$ZDEMO", false, "blocked"},
-		"subpackage not allowed": {`,"allowed_packages":["$ZDEMO"]`, nil, "$ZDEMO", false, "$ZDEMO_SUB"},
-		"transportable":          {``, nil, "ZDEMO", false, "transportable"},
-		"delete read_only":       {`,"read_only":true`, nil, "$ZDEMO", true, "read-only"},
-		"delete outside allowed": {`,"allowed_packages":["$ZOTHER"]`, nil, "$ZDEMO", true, "blocked"},
-		"delete transportable":   {`,"allow_transportable_edits":true`, nil, "ZDEMO", true, "needs a transport"},
-		"delete SAP_READ_ONLY":   {``, map[string]string{"SAP_READ_ONLY": "true"}, "$ZDEMO", true, "read-only"},
+		"read_only system":                        {`,"read_only":true`, nil, "$ZDEMO", false, "read-only"},
+		"SAP_READ_ONLY":                           {``, map[string]string{"SAP_READ_ONLY": "true"}, "$ZDEMO", false, "read-only"},
+		"outside allowed":                         {`,"allowed_packages":["$ZOTHER"]`, nil, "$ZDEMO", false, "blocked"},
+		"subpackage not allowed":                  {`,"allowed_packages":["$ZDEMO"]`, nil, "$ZDEMO", false, "$ZDEMO_SUB"},
+		"transportable":                           {``, nil, "ZDEMO", false, "transportable"},
+		"transportable, choice off, no transport": {`,"allow_transportable_edits":true`, map[string]string{"SAP_TRANSPORT_CHOICE": "off"}, "ZDEMO", false, "name the transport"},
+		"delete read_only":                        {`,"read_only":true`, nil, "$ZDEMO", true, "read-only"},
+		"delete outside allowed":                  {`,"allowed_packages":["$ZOTHER"]`, nil, "$ZDEMO", true, "blocked"},
+		"delete transportable":                    {`,"allow_transportable_edits":true`, nil, "ZDEMO", true, "needs a transport"},
+		"delete SAP_READ_ONLY":                    {``, map[string]string{"SAP_READ_ONLY": "true"}, "$ZDEMO", true, "read-only"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -92,6 +96,9 @@ func TestGitWaitError(t *testing.T) {
 		{context.Canceled, context.Canceled},
 		{context.DeadlineExceeded, context.Canceled},
 		{errors.New("git.import_status: NOT_YOUR_JOB: no"), nil},
+		// The connection lost while waiting: a failure, not a timeout.
+		{fmt.Errorf("the push channel failed while waiting for job ZVSP_GIT_IMPORT 12345678: %w", adt.ErrWebSocketClosed), nil},
+		{errors.New("reading the state of job ZVSP_GIT_IMPORT 12345678: git.import_status: not connected"), nil},
 	} {
 		err := gitWaitError("ZVSP_GIT_IMPORT", "12345678", c.werr, c.parent)
 		if err == nil || !strings.Contains(err.Error(), "12345678") || !errors.Is(err, c.werr) {

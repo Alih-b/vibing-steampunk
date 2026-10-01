@@ -282,6 +282,31 @@ type fakeGitWS struct {
 	// it with a refusal.
 	commitErr     error
 	commitRefusal *WSError
+	// beginErr fails begin without an answer, beginRefusal answers it
+	// with a refusal; abortErr fails abort without an answer.
+	beginErr     error
+	beginRefusal *WSError
+	// beginNoID answers begin without an assembly id.
+	beginNoID bool
+	abortErr  error
+	// statusErr fails import_status without an answer once the status
+	// answers are used up.
+	statusErr error
+	// closes counts Close: the connection reset.
+	closes int
+}
+
+func (f *fakeGitWS) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closes++
+	return nil
+}
+
+func (f *fakeGitWS) closed() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.closes
 }
 
 func (f *fakeGitWS) SendDomainRequest(_ context.Context, domain, action string, params map[string]any, _ time.Duration) (*WSResponse, error) {
@@ -302,11 +327,21 @@ func (f *fakeGitWS) SendDomainRequest(_ context.Context, domain, action string, 
 	case "import_zip":
 		switch p["step"] {
 		case "begin":
+			if f.beginErr != nil {
+				return nil, f.beginErr
+			}
+			if f.beginRefusal != nil {
+				return &WSResponse{Success: false, Error: f.beginRefusal}, nil
+			}
 			pkg := p["package"].(string)
 			if f.beginPackage != "" {
 				pkg = f.beginPackage
 			}
-			return ok(map[string]any{"assembly_id": "A1", "package": pkg, "system": "XYZ", "client": orDefaultString(f.client, "001")})
+			id := "A1"
+			if f.beginNoID {
+				id = ""
+			}
+			return ok(map[string]any{"assembly_id": id, "package": pkg, "system": "XYZ", "client": orDefaultString(f.client, "001")})
 		case "chunk":
 			c, _ := base64.StdEncoding.DecodeString(p["chunk_b64"].(string))
 			if int(p["offset"].(float64)) != len(f.got) {
@@ -323,14 +358,20 @@ func (f *fakeGitWS) SendDomainRequest(_ context.Context, domain, action string, 
 			}
 			return ok(map[string]any{"status": "pending", "job": "ZVSP_GIT_IMPORT", "job_count": "12345678", "package": "$ZDEMO"})
 		case "abort":
+			if f.abortErr != nil {
+				return nil, f.abortErr
+			}
 			return ok(map[string]any{"aborted": true})
 		}
 	case "import_status":
+		if f.statusErr != nil && len(f.status) == 0 {
+			return nil, f.statusErr
+		}
 		if len(f.status) == 0 {
 			return ok(map[string]any{"outcome": "unknown"})
 		}
 		s := f.status[0]
-		if len(f.status) > 1 {
+		if len(f.status) > 1 || f.statusErr != nil {
 			f.status = f.status[1:]
 		}
 		return ok(s)
@@ -639,7 +680,8 @@ func gitDeleteRoute(pkgOf map[string]string, uris map[string]string, failDelete 
 			q := strings.ToUpper(strings.Trim(r.URL.Query().Get("query"), "*"))
 			var b strings.Builder
 			b.WriteString(`<?xml version="1.0" encoding="UTF-8"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">`)
-			if p, ok := pkgOf[q]; ok {
+			// A type filter is honoured, as SAP does: PROG means PROG/P only.
+			if p, ok := pkgOf[q]; ok && searchTypeMatches(r, "PROG/P") {
 				fmt.Fprintf(&b, `<adtcore:objectReference adtcore:uri="%s" adtcore:type="PROG/P" adtcore:name="%s" adtcore:packageName="%s"/>`, uris[q], q, p)
 			}
 			b.WriteString(`</adtcore:objectReferences>`)
@@ -660,6 +702,14 @@ func gitDeleteRoute(pkgOf map[string]string, uris map[string]string, failDelete 
 			w.WriteHeader(http.StatusOK)
 		}
 	}
+}
+
+// searchTypeMatches says whether a hit of ADT type adtType passes the
+// search's objectType filter, as SAP applies it: exactly, after the short
+// form is expanded (PROG -> PROG/P, TABL -> TABL/DT).
+func searchTypeMatches(r *http.Request, adtType string) bool {
+	ot := r.URL.Query().Get("objectType")
+	return ot == "" || strings.EqualFold(ot, adtType)
 }
 
 func deletedPaths(calls []wireCall) []string {
@@ -937,7 +987,7 @@ func TestDeleteGitObjectsResolvesTheADTAddress(t *testing.T) {
 			q := strings.ToUpper(strings.Trim(r.URL.Query().Get("query"), "*"))
 			var b strings.Builder
 			b.WriteString(`<?xml version="1.0" encoding="UTF-8"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">`)
-			if o, ok := objs[q]; ok {
+			if o, ok := objs[q]; ok && searchTypeMatches(r, o.adtType) {
 				fmt.Fprintf(&b, `<adtcore:objectReference adtcore:uri="%s" adtcore:type="%s" adtcore:name="%s" adtcore:packageName="$ZDEMO"/>`, o.uri, o.adtType, q)
 			}
 			b.WriteString(`</adtcore:objectReferences>`)
@@ -1013,5 +1063,331 @@ func TestStartGitImportOneUploadAtATime(t *testing.T) {
 		case "import_zip:commit", "import_zip:abort":
 			open = false
 		}
+	}
+}
+
+// gitUploadEntries is how many connections have an upload lock entry.
+func gitUploadEntries() int {
+	gitUploadsMu.Lock()
+	defer gitUploadsMu.Unlock()
+	return len(gitUploads)
+}
+
+// An object TADIR listed in the package, which the search then finds in
+// another package, moved in between: it is not deleted -- not at the address
+// the search gives, not at the static one -- even with no whitelist at all.
+// A search that fails cannot confirm the package either.
+func TestDeleteGitObjectsRefusesAMovedObject(t *testing.T) {
+	uris := map[string]string{"ZDEMO_MOVED": "/sap/bc/adt/programs/programs/zdemo_moved"}
+	for name, route := range map[string]http.HandlerFunc{
+		"moved": gitDeleteRoute(map[string]string{"ZDEMO_MOVED": "$ZOTHER"}, uris, nil),
+		"hit without a package": func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "informationsystem/search") {
+				w.Header().Set("Content-Type", "application/xml")
+				fmt.Fprint(w, `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:uri="/sap/bc/adt/programs/programs/zdemo_moved" adtcore:type="PROG/P" adtcore:name="ZDEMO_MOVED"/></adtcore:objectReferences>`)
+				return
+			}
+			gitDeleteRoute(nil, uris, nil)(w, r)
+		},
+		"search window full": func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "informationsystem/search") {
+				// A full window of other types: a PROG hit may be past it.
+				var b strings.Builder
+				b.WriteString(`<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">`)
+				for i := 0; i < 1000; i++ {
+					fmt.Fprintf(&b, `<adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/dataelements/zdemo_moved%d" adtcore:type="DTEL/DE" adtcore:name="ZDEMO_MOVED" adtcore:packageName="$ZDEMO"/>`, i)
+				}
+				b.WriteString(`</adtcore:objectReferences>`)
+				w.Header().Set("Content-Type", "application/xml")
+				fmt.Fprint(w, b.String())
+				return
+			}
+			gitDeleteRoute(nil, uris, nil)(w, r)
+		},
+		"search fails": func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "informationsystem/search") {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			gitDeleteRoute(nil, uris, nil)(w, r)
+		},
+	} {
+		rec := &adtRecorder{}
+		cl := newStubbedClient(t, rec, route) // no whitelist: the gate would allow any package
+		ws := &fakeGitWS{contents: []map[string]any{pkgContents("$ZDEMO", [][2]string{{"PROG", "ZDEMO_MOVED"}}, nil, false)}}
+		res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{"PROG", "ZDEMO_MOVED"}}, "", false)
+		if err == nil || res == nil || res.Objects[0].Status != "failed" || res.PackageDeleted {
+			t.Fatalf("%s: got %+v, %v", name, res, err)
+		}
+		if name == "moved" && !strings.Contains(res.Objects[0].Reason, "$ZOTHER") {
+			t.Errorf("%s: the reason does not name the new package: %s", name, res.Objects[0].Reason)
+		}
+		if want := map[string]string{"hit without a package": "did not say which package", "search window full": "may be incomplete"}[name]; want != "" && !strings.Contains(res.Objects[0].Reason, want) {
+			t.Errorf("%s: reason %q, want it to say %q", name, res.Objects[0].Reason, want)
+		}
+		for _, c := range rec.snapshot() {
+			if c.method == http.MethodDelete || (c.method == http.MethodPost && c.query.Get("_action") == "LOCK") {
+				t.Errorf("%s: %s sent for an object that is not confirmed in the package", name, c)
+			}
+		}
+		if a := strings.Join(ws.actions(), ","); a != "package_objects" {
+			t.Errorf("%s: git actions %s", name, a)
+		}
+	}
+}
+
+// A direct caller's lower-case types meet the same checks: "devc" is the
+// package, never deleted as an item.
+func TestDeleteGitObjectsNormalizesTypes(t *testing.T) {
+	uris := map[string]string{
+		"ZDEMO_REPORT": "/sap/bc/adt/programs/programs/zdemo_report",
+		"$ZDEMO":       "/sap/bc/adt/packages/%24zdemo",
+	}
+	pkgOf := map[string]string{"ZDEMO_REPORT": "$ZDEMO", "$ZDEMO": "$ZDEMO"}
+	rec := &adtRecorder{}
+	cl := newStubbedClient(t, rec, gitDeleteRoute(pkgOf, uris, nil), WithAllowedPackages("$ZDEMO"))
+	ws := &fakeGitWS{contents: []map[string]any{
+		pkgContents("$ZDEMO", [][2]string{{"DEVC", "$ZDEMO"}, {"PROG", "ZDEMO_REPORT"}, {"PROG", "ZDEMO_KEEP"}}, nil, false),
+		pkgContents("$ZDEMO", [][2]string{{"DEVC", "$ZDEMO"}, {"PROG", "ZDEMO_KEEP"}}, nil, false),
+	}}
+	res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{"devc", "$zdemo"}, {"prog", "zdemo_report"}}, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Objects[0].Type != "DEVC" || res.Objects[0].Status != "skipped" || res.Objects[1].Status != "deleted" {
+		t.Errorf("outcomes %+v", res.Objects)
+	}
+	if d := deletedPaths(rec.snapshot()); len(d) != 1 || d[0] != uris["ZDEMO_REPORT"] {
+		t.Errorf("DELETEs %v; want only %s", d, uris["ZDEMO_REPORT"])
+	}
+}
+
+// Transportable, no transport named, and transport choice off: refused by
+// the policy, before the zip is read or anything sent.
+func TestStartGitImportTransportChoiceOffRefusesFirst(t *testing.T) {
+	cl := NewClient("http://sap.invalid", "TESTUSER", "pw", WithAllowTransportableEdits(), WithTransportChoice("off"))
+	if err := cl.CheckGitImportPolicy("ZDEMO", "", false); err == nil || !strings.Contains(err.Error(), "name the transport") {
+		t.Errorf("policy: %v", err)
+	}
+	ws := &fakeGitWS{}
+	if _, err := cl.StartGitImport(context.Background(), ws, []byte("not even a zip"), GitImportOptions{Package: "ZDEMO"}); err == nil ||
+		!strings.Contains(err.Error(), "name the transport") {
+		t.Errorf("import: %v", err)
+	}
+	if n := len(ws.actions()); n != 0 {
+		t.Errorf("%d messages sent", n)
+	}
+	// With a transport named, or choice on, the policy passes.
+	if err := cl.CheckGitImportPolicy("ZDEMO", "TRXK900001", false); err != nil {
+		t.Errorf("with a transport: %v", err)
+	}
+	if err := NewClient("http://sap.invalid", "TESTUSER", "pw", WithAllowTransportableEdits()).CheckGitImportPolicy("ZDEMO", "", false); err != nil {
+		t.Errorf("choice on: %v", err)
+	}
+}
+
+// A begin without an answer may have left an upload nobody can abort: the
+// connection is reset. A refused begin holds none: nothing is reset.
+// An abort or a commit without an answer reset it too.
+func TestStartGitImportResetsAnUnconfirmedUpload(t *testing.T) {
+	cases := []struct {
+		name      string
+		ws        *fakeGitWS
+		opts      []Option
+		wantReset int
+		wantActs  string
+	}{
+		{"begin timed out", &fakeGitWS{beginErr: errors.New("request timeout")}, nil, 1, "import_zip:begin"},
+		{"begin cancelled", &fakeGitWS{beginErr: context.Canceled}, nil, 1, "import_zip:begin"},
+		{"begin without an assembly id", &fakeGitWS{beginNoID: true}, nil, 1, "import_zip:begin"},
+		{"begin refused", &fakeGitWS{beginRefusal: &WSError{Code: "UPLOAD_IN_PROGRESS", Message: "busy"}}, nil, 0, "import_zip:begin"},
+		{"abort answered", &fakeGitWS{client: "200"}, []Option{WithClient("001")}, 0, "import_zip:begin,import_zip:abort"},
+		{"abort unanswered", &fakeGitWS{client: "200", abortErr: errors.New("request timeout")}, []Option{WithClient("001")}, 1, "import_zip:begin,import_zip:abort"},
+		{"commit unanswered", &fakeGitWS{commitErr: errors.New("request timeout")}, nil, 1, ""},
+	}
+	for _, c := range cases {
+		cl := NewClient("http://sap.invalid", "TESTUSER", "pw", c.opts...)
+		_, err := cl.StartGitImport(context.Background(), c.ws, demoZip(t, "PREFIX"), GitImportOptions{Package: "$ZDEMO"})
+		if err == nil {
+			t.Errorf("%s: accepted", c.name)
+			continue
+		}
+		if got := c.ws.closed(); got != c.wantReset {
+			t.Errorf("%s: %d resets, want %d (%v)", c.name, got, c.wantReset, err)
+		}
+		if c.wantReset > 0 && !strings.Contains(err.Error(), "connection was reset") {
+			t.Errorf("%s: the error does not say the connection was reset: %v", c.name, err)
+		}
+		if c.wantActs != "" {
+			if a := strings.Join(c.ws.actions(), ","); a != c.wantActs {
+				t.Errorf("%s: actions %s, want %s", c.name, a, c.wantActs)
+			}
+		}
+	}
+	if n := gitUploadEntries(); n != 0 {
+		t.Errorf("%d upload lock entries left behind", n)
+	}
+}
+
+// The upload lock of a connection lives while anyone holds or waits for it,
+// and goes with the last one; it stays one lock while it is shared.
+func TestGitUploadLockIsReleasedWithItsLastUser(t *testing.T) {
+	ws := &fakeGitWS{}
+	unlock1 := lockGitUpload(ws)
+	acquired := make(chan func())
+	go func() { acquired <- lockGitUpload(ws) }()
+	// The second user waits on the same entry.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		gitUploadsMu.Lock()
+		users := 0
+		if l := gitUploads[ws]; l != nil {
+			users = l.users
+		}
+		gitUploadsMu.Unlock()
+		if users == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the second user never registered")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-acquired:
+		t.Fatal("two users hold the lock at once")
+	case <-time.After(20 * time.Millisecond):
+	}
+	unlock1()
+	unlock1() // a second call is harmless
+	unlock2 := <-acquired
+	if n := gitUploadEntries(); n != 1 {
+		t.Errorf("%d entries while the second user holds the lock, want 1", n)
+	}
+	unlock2()
+	if n := gitUploadEntries(); n != 0 {
+		t.Errorf("%d entries after the last user, want 0", n)
+	}
+
+	// Many imports on many connections leave nothing behind.
+	cl := NewClient("http://sap.invalid", "TESTUSER", "pw")
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		w := &fakeGitWS{}
+		for j := 0; j < 2; j++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _ = cl.StartGitImport(context.Background(), w, demoZip(t, "PREFIX"), GitImportOptions{Package: "$ZDEMO"})
+			}()
+		}
+	}
+	wg.Wait()
+	if n := gitUploadEntries(); n != 0 {
+		t.Errorf("%d entries after every import ended, want 0", n)
+	}
+}
+
+// fakeGitPusher is a git connection whose push channel fails when told to,
+// and whose status reads block until cancelled once blockStatus is set.
+type fakeGitPusher struct {
+	*fakeGitWS
+	pushFail    chan struct{}
+	blockStatus bool
+	cancelled   chan struct{}
+}
+
+func (f *fakeGitPusher) SendDomainRequest(ctx context.Context, domain, action string, params map[string]any, timeout time.Duration) (*WSResponse, error) {
+	if action == "import_status" && f.blockStatus {
+		<-ctx.Done()
+		close(f.cancelled)
+		return nil, ctx.Err()
+	}
+	return f.fakeGitWS.SendDomainRequest(ctx, domain, action, params, timeout)
+}
+
+func (f *fakeGitPusher) AwaitPush(ctx context.Context, _ string) (*WSResponse, error) {
+	select {
+	case <-f.pushFail:
+		return nil, ErrWebSocketClosed
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (f *fakeGitPusher) TakePush(string) (*WSResponse, bool) { return nil, false }
+
+// A disconnect while waiting is a failure, not a wait that ran out: a status
+// read that fails is returned, and the push channel closing cancels the read
+// in flight and is returned. Only the caller's own deadline is a timeout.
+func TestWaitGitImportReportsADisconnect(t *testing.T) {
+	old := gitPollInterval
+	gitPollInterval = time.Millisecond
+	defer func() { gitPollInterval = old }()
+	cl := NewClient("http://sap.invalid", "TESTUSER", "pw")
+	pending := map[string]any{"job": "ZVSP_GIT_IMPORT", "job_count": "12345678", "job_found": true, "job_status": "R", "outcome": "pending"}
+
+	// A status read fails after one pending answer.
+	ws := &fakeGitWS{status: []map[string]any{pending}, statusErr: errors.New("not connected")}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	st, err := cl.WaitGitImport(ctx, ws, "12345678")
+	cancel()
+	if err == nil || errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "not connected") || !strings.Contains(err.Error(), "12345678") {
+		t.Errorf("status read failing: %v", err)
+	}
+	if st == nil || st.State != GitJobPending {
+		t.Errorf("the last state read is lost: %+v", st)
+	}
+
+	// The push channel closes while a status read is in flight.
+	p := &fakeGitPusher{fakeGitWS: &fakeGitWS{}, pushFail: make(chan struct{}), blockStatus: true, cancelled: make(chan struct{})}
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() { time.Sleep(10 * time.Millisecond); close(p.pushFail) }()
+	_, err = cl.WaitGitImport(ctx, p, "12345678")
+	if !errors.Is(err, ErrWebSocketClosed) || errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "12345678") {
+		t.Errorf("push channel closing: %v", err)
+	}
+	select {
+	case <-p.cancelled:
+	case <-time.After(time.Second):
+		t.Error("the status read in flight was not cancelled")
+	}
+	if ctx.Err() != nil {
+		t.Error("the wait ran until the caller's deadline")
+	}
+
+	// The caller's deadline, with the job still pending: a timeout, as before.
+	ws = &fakeGitWS{status: []map[string]any{pending}}
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel2()
+	st, err = cl.WaitGitImport(ctx2, ws, "12345678")
+	if !errors.Is(err, context.DeadlineExceeded) || st.State != GitJobPending {
+		t.Errorf("deadline: %+v, %v", st, err)
+	}
+}
+
+// A function module of the same name as its group comes first in the search,
+// even from another package: the group's own hit gives the address, and the
+// module neither stands in for it nor counts as the group having moved.
+func TestGitDeleteURLTakesTheObjectNotItsPart(t *testing.T) {
+	route := func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "informationsystem/search") {
+			w.Header().Set("Content-Type", "application/xml")
+			fmt.Fprint(w, `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">`+
+				`<adtcore:objectReference adtcore:uri="/sap/bc/adt/functions/groups/zother/fmodules/zdemo_fg" adtcore:type="FUGR/FF" adtcore:name="ZDEMO_FG" adtcore:packageName="$ZOTHER"/>`+
+				`<adtcore:objectReference adtcore:uri="/sap/bc/adt/functions/groups/zdemo_fg" adtcore:type="FUGR/F" adtcore:name="ZDEMO_FG" adtcore:packageName="$ZDEMO"/>`+
+				`</adtcore:objectReferences>`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+	cl := newStubbedClient(t, &adtRecorder{}, route)
+	u, err := cl.gitDeleteURL(context.Background(), "FUGR", "ZDEMO_FG", "$ZDEMO")
+	if err != nil || u != "/sap/bc/adt/functions/groups/zdemo_fg" {
+		t.Fatalf("got %q, %v; want the group's own address", u, err)
+	}
+	if !gitHitIsObject("PROG", "PROG/I") || gitHitIsObject("FUGR", "FUGR/FF") || !gitHitIsObject("ZZZZ", "ZZZZ/XY") {
+		t.Error("gitHitIsObject")
 	}
 }

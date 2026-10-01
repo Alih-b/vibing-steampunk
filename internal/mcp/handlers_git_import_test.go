@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,8 @@ type gitFakeWS struct {
 	pkg map[string]any
 	// commitErr fails the commit without an answer.
 	commitErr error
+	// statusErr fails import_status without an answer.
+	statusErr error
 }
 
 func (f *gitFakeWS) SendDomainRequest(_ context.Context, domain, action string, params map[string]any, _ time.Duration) (*adt.WSResponse, error) {
@@ -50,6 +53,9 @@ func (f *gitFakeWS) SendDomainRequest(_ context.Context, domain, action string, 
 	case "package_objects":
 		data = f.pkg
 	case "import_status":
+		if f.statusErr != nil {
+			return nil, f.statusErr
+		}
 		data = map[string]any{"job": "ZVSP_GIT_IMPORT", "job_count": params["job"], "job_found": true, "job_status": "F",
 			"outcome": "done", "result": f.result}
 	default:
@@ -147,6 +153,9 @@ func TestGitImportZipGates(t *testing.T) {
 		"both":                         {nil, map[string]any{"package": "$ZDEMO", "file_path": zipPath, "zip_base64": "AAAA"}, "not both"},
 		"no package":                   {nil, map[string]any{"file_path": zipPath}, "package is required"},
 		"missing file":                 {nil, map[string]any{"package": "$ZDEMO", "file_path": filepath.Join(t.TempDir(), "none.zip")}, "zip:"},
+		// The file does not exist: the refusal must come before it is read.
+		"transportable, no transport, choice off": {func(c *Config) { c.AllowTransportableEdits = true; c.TransportChoice = "off" },
+			map[string]any{"package": "ZDEMO", "file_path": filepath.Join(t.TempDir(), "none.zip")}, "name the transport"},
 		"overwrite, deletes disabled": {func(c *Config) { c.DisallowedOps = "D" },
 			map[string]any{"package": "$ZDEMO", "file_path": zipPath, "overwrite": true}, "blocked"},
 	}
@@ -279,5 +288,17 @@ func TestGitDeleteObjectsRefusesAnOnlineRepository(t *testing.T) {
 		if got := strings.Join(ws.calls(), ","); got != "git.package_objects" {
 			t.Errorf("%v: calls %s", flag, got)
 		}
+	}
+}
+
+// The connection lost while waiting is a failure with the job number, not
+// a pending import whose wait ran out.
+func TestGitImportZipWaitFailureIsAnError(t *testing.T) {
+	s, ws := gitServer(t, nil)
+	ws.statusErr = errors.New("not connected")
+	res := callGit(t, s, "git_import_zip", map[string]any{"package": "$ZDEMO", "file_path": gitDemoZip(t), "wait_seconds": 10.0})
+	text := uploadResultText(res)
+	if !res.IsError || !strings.Contains(text, "not connected") || !strings.Contains(text, "12345678") || !strings.Contains(text, `"error"`) {
+		t.Errorf("got %s", text)
 	}
 }

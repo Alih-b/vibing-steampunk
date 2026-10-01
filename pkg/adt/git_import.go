@@ -381,6 +381,11 @@ func (c *Client) CheckGitImportPolicy(pkg, transport string, overwrite bool) err
 		return fmt.Errorf("operation '%s' into %s is blocked: %s is not a local ($) package, and editing transportable objects is disabled "+
 			"(--allow-transportable-edits or SAP_ALLOW_TRANSPORTABLE_EDITS=true, plus a transport)", op, p, p)
 	}
+	// No transport named, and none may be chosen: refused here, before the
+	// zip is read or ZADT_VSP dialled, not later in resolveGitImportTransport.
+	if transport == "" && c.config.Safety.TransportChoice == "off" {
+		return fmt.Errorf("operation '%s' into %s is blocked: %s is transportable, no transport was named, and transport choice is off: name the transport", op, p, p)
+	}
 	return c.checkTransportableEdit(transport, op)
 }
 
@@ -542,7 +547,7 @@ func (c *Client) StartGitImport(ctx context.Context, ws GitService, zipData []by
 	defer unlock()
 
 	var begin gitBeginAnswer
-	if err := gitCall(ctx, ws, "import_zip", map[string]any{
+	err = gitCall(ctx, ws, "import_zip", map[string]any{
 		"step":      "begin",
 		"size":      len(zipData),
 		"sha256":    plan.SHA256,
@@ -551,25 +556,41 @@ func (c *Client) StartGitImport(ctx context.Context, ws GitService, zipData []by
 		"overwrite": fmt.Sprintf("%t", opts.Overwrite),
 		"transport": transport,
 		"packages":  strings.Join(plan.Packages, ","),
-	}, time.Minute, &begin); err != nil {
+	}, time.Minute, &begin)
+	var se *GitServiceError
+	switch {
+	case errors.As(err, &se):
+		// ZADT_VSP answered with a refusal: it holds no upload.
 		return nil, err
+	case err != nil:
+		// No answer (time ran out, the call was cancelled, the connection
+		// failed): begin may have been accepted, and its assembly id is
+		// lost with the answer -- an upload nobody can abort, which would
+		// refuse every later import on this connection (UPLOAD_IN_PROGRESS).
+		// A new session holds none, so the connection is reset.
+		return nil, fmt.Errorf("%w; nothing was imported%s", err, resetGitConnection(ws))
 	}
-	abort := func() {
+	// abort discards the upload, bounded in time; when that is not
+	// confirmed, the connection is reset instead.
+	abort := func() string {
 		actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		_ = gitCall(actx, ws, "import_zip", map[string]any{"step": "abort", "assembly_id": begin.AssemblyID}, 30*time.Second, nil)
+		if aerr := gitCall(actx, ws, "import_zip", map[string]any{"step": "abort", "assembly_id": begin.AssemblyID}, 30*time.Second, nil); aerr != nil {
+			return resetGitConnection(ws)
+		}
+		return ""
 	}
 	if begin.AssemblyID == "" {
-		return nil, errors.New("git.import_zip: ZADT_VSP answered begin without an assembly id")
+		return nil, fmt.Errorf("git.import_zip: ZADT_VSP answered begin without an assembly id%s", resetGitConnection(ws))
 	}
 	if !strings.EqualFold(begin.Package, plan.Package) {
-		abort()
-		return nil, fmt.Errorf("ZADT_VSP read the package as %q, not %q; nothing was imported", begin.Package, plan.Package)
+		note := abort()
+		return nil, fmt.Errorf("ZADT_VSP read the package as %q, not %q; nothing was imported%s", begin.Package, plan.Package, note)
 	}
 	if !sameClient(begin.Client, c.config.Client) {
-		abort()
-		return nil, fmt.Errorf("ZADT_VSP answered from client %s of %s, but this connection is configured for client %s; nothing was imported",
-			begin.Client, begin.System, strings.TrimSpace(c.config.Client))
+		note := abort()
+		return nil, fmt.Errorf("ZADT_VSP answered from client %s of %s, but this connection is configured for client %s; nothing was imported%s",
+			begin.Client, begin.System, strings.TrimSpace(c.config.Client), note)
 	}
 	for off := 0; off < len(zipData); off += gitUploadChunk {
 		end := min(off+gitUploadChunk, len(zipData))
@@ -579,8 +600,8 @@ func (c *Client) StartGitImport(ctx context.Context, ws GitService, zipData []by
 			"offset":      off,
 			"chunk_b64":   base64.StdEncoding.EncodeToString(zipData[off:end]),
 		}, time.Minute, nil); err != nil {
-			abort()
-			return nil, fmt.Errorf("sending the zip at offset %d: %w; nothing was imported", off, err)
+			note := abort()
+			return nil, fmt.Errorf("sending the zip at offset %d: %w; nothing was imported%s", off, err, note)
 		}
 	}
 	var commit gitCommitAnswer
@@ -590,21 +611,23 @@ func (c *Client) StartGitImport(ctx context.Context, ws GitService, zipData []by
 		started.Note = "transport: " + reason
 	}
 	if err := gitCall(ctx, ws, "import_zip", map[string]any{"step": "commit", "assembly_id": begin.AssemblyID}, 2*time.Minute, &commit); err != nil {
-		var se *GitServiceError
 		if errors.As(err, &se) {
 			// ZADT_VSP answered: the commit was refused (size, SHA-256, the
 			// zip, the job), and nothing was started.
 			return nil, err
 		}
 		// No answer: the job may have been scheduled before the
-		// connection failed or the time ran out.
+		// connection failed or the time ran out. A commit that ran took
+		// the upload with it; one that never arrived left it held, so the
+		// connection is reset (that does not touch a scheduled job).
+		reset := resetGitConnection(ws)
 		owner := ""
 		if u := strings.TrimSpace(c.config.Username); u != "" {
 			owner = " of user " + strings.ToUpper(u)
 		}
 		started.Note = strings.TrimSpace(fmt.Sprintf("the import may be running: the commit got no answer (%v). Look for job %s%s in SM37, "+
-			"and read its outcome with git_import_status (vsp git import-status <job number>) before importing again. %s",
-			err, gitImportJobName, owner, started.Note))
+			"and read its outcome with git_import_status (vsp git import-status <job number>) before importing again.%s %s",
+			err, gitImportJobName, owner, reset, started.Note))
 		c.InvalidateCache()
 		return started, &GitImportUnconfirmedError{Err: err, Started: started}
 	}
@@ -624,20 +647,63 @@ type GitImportUnconfirmedError struct {
 func (e *GitImportUnconfirmedError) Error() string { return e.Started.Note }
 func (e *GitImportUnconfirmedError) Unwrap() error { return e.Err }
 
-// gitUploads serializes begin..commit per git service connection.
-var gitUploads sync.Map // GitService -> *sync.Mutex
+// gitConnectionCloser is a git service connection that can be closed: the
+// WebSocket client. ZADT_VSP drops an upload with its session.
+type gitConnectionCloser interface {
+	Close() error
+}
+
+// resetGitConnection closes ws when it can be closed, so that an upload
+// ZADT_VSP may hold for it goes with the session (the MCP server dials a
+// new connection on its next call). It returns what to tell the caller.
+func resetGitConnection(ws GitService) string {
+	cl, ok := ws.(gitConnectionCloser)
+	if !ok {
+		return ""
+	}
+	_ = cl.Close()
+	return " (the ZADT_VSP connection was reset, so that no upload stays held on it)"
+}
+
+// gitUploads serializes begin..commit per git service connection. An entry
+// lives while anyone holds or waits for its mutex, and goes with the last
+// of them, so that a connection the MCP server has replaced is not kept.
+var (
+	gitUploadsMu sync.Mutex
+	gitUploads   = map[GitService]*gitUploadLock{}
+)
+
+type gitUploadLock struct {
+	mu    sync.Mutex
+	users int // holding or waiting; guarded by gitUploadsMu
+}
 
 func lockGitUpload(ws GitService) func() {
 	if ws == nil {
 		return func() {}
 	}
-	m, _ := gitUploads.LoadOrStore(ws, &sync.Mutex{})
-	mu, ok := m.(*sync.Mutex)
-	if !ok {
-		return func() {}
+	gitUploadsMu.Lock()
+	l := gitUploads[ws]
+	if l == nil {
+		l = &gitUploadLock{}
+		gitUploads[ws] = l
 	}
-	mu.Lock()
-	return mu.Unlock
+	l.users++
+	gitUploadsMu.Unlock()
+
+	l.mu.Lock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			l.mu.Unlock()
+			gitUploadsMu.Lock()
+			l.users--
+			if l.users == 0 && gitUploads[ws] == l {
+				delete(gitUploads, ws)
+			}
+			gitUploadsMu.Unlock()
+		})
+	}
 }
 
 func orDefaultString(v, d string) string {
@@ -869,27 +935,43 @@ var gitPollInterval = 3 * time.Second
 // ends; then the last state read is returned, unknown if none was. When ws
 // receives pushes, the job's push wakes it early; the state is always
 // import_status's.
+//
+// Only ctx ending returns ctx's error (a --wait that ran out: the job may be
+// pending). Anything else that stops the wait is returned as itself, never
+// as a timeout: a status read that fails (a refusal, a lost connection), or
+// the push channel failing (ErrWebSocketClosed), which also cancels a
+// status read in flight.
 func (c *Client) WaitGitImport(ctx context.Context, ws GitService, jobCount string) (*GitImportStatus, error) {
+	wctx, fail := context.WithCancelCause(ctx)
+	defer fail(nil)
 	var pushed <-chan struct{}
 	if p, ok := ws.(GitPusher); ok {
 		ch := make(chan struct{}, 1)
-		pctx, cancel := context.WithCancel(ctx)
-		defer cancel()
 		go func() {
-			if _, err := p.AwaitPush(pctx, gitPushID(jobCount)); err == nil {
+			_, err := p.AwaitPush(wctx, gitPushID(jobCount))
+			switch {
+			case err == nil:
 				ch <- struct{}{}
+			case wctx.Err() == nil:
+				fail(fmt.Errorf("the push channel failed while waiting for job %s %s: %w", gitImportJobName, jobCount, err))
 			}
 		}()
 		pushed = ch
 	}
+	// stopped is why the wait cannot go on, nil while it can.
+	stopped := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if wctx.Err() != nil {
+			return context.Cause(wctx)
+		}
+		return nil
+	}
 	var last *GitImportStatus
 	got := false
 	for {
-		st, err := c.GitImportStatus(ctx, ws, jobCount)
-		var se *GitServiceError
-		if errors.As(err, &se) {
-			return gitUnknown(last, jobCount), err
-		}
+		st, err := c.GitImportStatus(wctx, ws, jobCount)
 		if err == nil {
 			st.Pushed = got
 			last = st
@@ -897,9 +979,16 @@ func (c *Client) WaitGitImport(ctx context.Context, ws GitService, jobCount stri
 				return st, nil
 			}
 		}
+		// A read cancelled because the wait stopped reports why it stopped.
+		if serr := stopped(); serr != nil {
+			return gitUnknown(last, jobCount), serr
+		}
+		if err != nil {
+			return gitUnknown(last, jobCount), fmt.Errorf("reading the state of job %s %s: %w", gitImportJobName, jobCount, err)
+		}
 		select {
-		case <-ctx.Done():
-			return gitUnknown(last, jobCount), ctx.Err()
+		case <-wctx.Done():
+			return gitUnknown(last, jobCount), stopped()
 		case <-pushed:
 			got = true
 			pushed = nil
@@ -1243,33 +1332,91 @@ func (c *Client) deleteGated(ctx context.Context, objectURL, transport string) (
 	return "", true, nil
 }
 
+// gitObjectADTTypes are the ADT types a search hit may carry for an object
+// of a TADIR type. The main type alone is not enough: FUGR/FF is a function
+// module, not its group, and the module's URI must never stand in for the
+// group's. A TADIR type not listed here is matched by its main type.
+var gitObjectADTTypes = map[string][]string{
+	"PROG": {"PROG/P", "PROG/I"},
+	"CLAS": {"CLAS/OC"},
+	"INTF": {"INTF/OI"},
+	"FUGR": {"FUGR/F"},
+	"TABL": {"TABL/DT", "TABL/DS"},
+	"DTEL": {"DTEL/DE"},
+	"DOMA": {"DOMA/DD"},
+	"TTYP": {"TTYP/DA"},
+	"DDLS": {"DDLS/DF"},
+}
+
+// gitHitIsObject says whether a search hit of ADT type adtType is the object
+// itself for TADIR type objType, not a part of it or another kind of object.
+func gitHitIsObject(objType, adtType string) bool {
+	adtType = strings.ToUpper(strings.TrimSpace(adtType))
+	if allowed, ok := gitObjectADTTypes[objType]; ok {
+		for _, a := range allowed {
+			if adtType == a {
+				return true
+			}
+		}
+		return false
+	}
+	main, _, _ := strings.Cut(adtType, "/")
+	return main == objType
+}
+
 // gitDeleteURL is the ADT URI of the object TADIR lists as type/name in
 // pkg. The TADIR type alone does not name the ADT collection -- a PROG may
 // be an include (/programs/includes), a TABL a structure or an append
-// (/ddic/structures) -- so the object is looked up by its exact name, and
-// the hit of that TADIR type in that package gives the URI. Without such a
-// hit, the collection the type usually lives in.
-func (c *Client) gitDeleteURL(ctx context.Context, objType, name, pkg string) (string, bool) {
+// (/ddic/structures) -- so the object is looked up by its exact name, of
+// any ADT type (an ADT type filter would expand PROG to PROG/P and TABL to
+// TABL/DT, and miss exactly those), and the hit whose main type is the
+// TADIR type gives the URI.
+//
+// The hit must be in pkg. One in another package means the object moved
+// after the package was read: that is an error, and the object is not
+// deleted -- the static address would reach it in its new package, and
+// DeleteObject's gate checks only the whitelist, not this package. A search
+// that fails, comes back incomplete, or returns a hit without a package is
+// an error too: the package cannot be confirmed. Only when
+// the search finds no object of that type at all is the collection the
+// type usually lives in used (a DELETE there of something absent fails).
+func (c *Client) gitDeleteURL(ctx context.Context, objType, name, pkg string) (string, error) {
+	objType = strings.ToUpper(objType)
 	fallback, ok := GitObjectURL(objType, name)
 	if !ok {
-		return "", false
+		return "", fmt.Errorf("no ADT delete for type %s here; delete it in SE80", objType)
 	}
-	hits, _, err := c.SearchObjectExact(ctx, name, objType, 0)
+	hits, incomplete, err := c.SearchObjectExact(ctx, name, "", 0)
 	if err != nil {
-		return fallback, true
+		return "", fmt.Errorf("its ADT address could not be looked up, so its package could not be confirmed: %w; not deleted", err)
 	}
+	if incomplete != "" {
+		// The window filled: a hit of this type may be past it, so "none
+		// found" cannot pick the fallback.
+		return "", fmt.Errorf("the search for its ADT address may be incomplete, so its package could not be confirmed; not deleted")
+	}
+	found := ""
 	for _, h := range hits {
-		main, _, _ := strings.Cut(strings.ToUpper(strings.TrimSpace(h.Type)), "/")
+		if !gitHitIsObject(objType, h.Type) {
+			continue
+		}
+		hp := strings.TrimSpace(h.PackageName)
+		if hp == "" {
+			// No package on the hit: it cannot be shown to be still in pkg.
+			return "", fmt.Errorf("the search did not say which package it is in, so that could not be confirmed; not deleted")
+		}
+		if !strings.EqualFold(hp, pkg) {
+			return "", fmt.Errorf("it is in package %s now, not %s (it moved after the package was read); not deleted", strings.ToUpper(hp), pkg)
+		}
 		u := strings.TrimSpace(h.URI)
-		if main != strings.ToUpper(objType) || !strings.HasPrefix(u, "/sap/bc/adt/") || strings.ContainsAny(u, "?#") {
-			continue
+		if found == "" && strings.HasPrefix(u, "/sap/bc/adt/") && !strings.ContainsAny(u, "?#") {
+			found = u
 		}
-		if h.PackageName != "" && !strings.EqualFold(strings.TrimSpace(h.PackageName), pkg) {
-			continue
-		}
-		return u, true
 	}
-	return fallback, true
+	if found != "" {
+		return found, nil
+	}
+	return fallback, nil
 }
 
 // DeleteGitObjects deletes exactly the given objects of pkg, then -- only
@@ -1297,6 +1444,14 @@ func (c *Client) DeleteGitObjects(ctx context.Context, ws GitService, pkg string
 	if len(items) == 0 {
 		return nil, errors.New("no objects to delete")
 	}
+	// Types and names in upper case, once, here: every check below compares
+	// them exactly (a "devc" item must meet the DEVC exclusion), whatever a
+	// direct caller passed.
+	norm := make([]GitDeleteItem, 0, len(items))
+	for _, it := range items {
+		norm = append(norm, GitDeleteItem{Type: strings.ToUpper(strings.TrimSpace(it.Type)), Name: strings.ToUpper(strings.TrimSpace(it.Name))})
+	}
+	items = norm
 	contents, err := c.GitPackageObjects(ctx, ws, p)
 	if err != nil {
 		return nil, err
@@ -1333,8 +1488,13 @@ func (c *Client) DeleteGitObjects(ctx context.Context, ws GitService, pkg string
 		case !ok:
 			o.Status, o.Reason = "failed", fmt.Sprintf("no ADT delete for type %s here; delete it in SE80", it.Type)
 		default:
-			// In the package's TADIR: now its real ADT address.
-			u, _ := c.gitDeleteURL(ctx, it.Type, it.Name, p)
+			// In the package's TADIR: now its real ADT address, still in
+			// this package.
+			u, uerr := c.gitDeleteURL(ctx, it.Type, it.Name, p)
+			if uerr != nil {
+				o.Status, o.Reason = "failed", uerr.Error()
+				break
+			}
 			queue = append(queue, todo{len(res.Objects), u})
 		}
 		res.Objects = append(res.Objects, o)

@@ -427,9 +427,9 @@ func (c *BaseWebSocketClient) SendDomainRequest(ctx context.Context, domain, act
 		return nil, err
 	}
 
-	c.mu.Lock()
-	err = c.conn.WriteMessage(websocket.TextMessage, data)
-	c.mu.Unlock()
+	// Through WriteMessage, which checks the connection under the lock: a
+	// Close between the check above and this write leaves c.conn nil.
+	err = c.WriteMessage(data)
 	if err != nil {
 		c.pendingMu.Lock()
 		delete(c.pending, id)
@@ -476,9 +476,9 @@ func (c *BaseWebSocketClient) SendRawRequest(ctx context.Context, id string, raw
 		return nil, err
 	}
 
-	c.mu.Lock()
-	err = c.conn.WriteMessage(websocket.TextMessage, data)
-	c.mu.Unlock()
+	// Through WriteMessage, which checks the connection under the lock: a
+	// Close between the check above and this write leaves c.conn nil.
+	err = c.WriteMessage(data)
 	if err != nil {
 		c.pendingMu.Lock()
 		delete(c.pending, id)
