@@ -160,20 +160,44 @@ func (c *Client) GetMessageClassTexts(ctx context.Context, name, lang string) ([
 	return mc.Messages, nil
 }
 
-// WriteMessageClassTexts updates message class texts in a specific language.
-// Requires a lock handle from LockObject and optionally a transport request number.
-func (c *Client) WriteMessageClassTexts(ctx context.Context, name, lang string, texts []MessageClassMessage, lockHandle, transport string) error {
+// WriteMessageClassTexts writes messages of a message class in one language,
+// adding the numbers that do not exist yet; messages not named stay as they
+// are. With lockHandle empty it takes and releases the lock itself, after the
+// package gate -- the gate's lookup inside a lock window would retire the
+// session the lock belongs to (#91).
+func (c *Client) WriteMessageClassTexts(ctx context.Context, name, lang string, texts []MessageClassMessage, lockHandle, transport string) (err error) {
 	name = strings.ToUpper(name)
 	lang = strings.ToUpper(lang)
+	objectURL := fmt.Sprintf("/sap/bc/adt/messageclass/%s", url.PathEscape(strings.ToLower(name)))
 
 	// Unified mutation policy gate (op type + package + transport)
-	if err := c.checkMutation(ctx, MutationContext{
+	ctx, err = c.gateAndMark(ctx, MutationContext{
 		Op:        OpUpdate,
 		OpName:    "WriteMessageClassTexts",
-		ObjectURL: fmt.Sprintf("/sap/bc/adt/messageclass/%s", url.PathEscape(strings.ToLower(name))),
+		ObjectURL: objectURL,
 		Transport: transport,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
+	}
+	if lockHandle == "" {
+		lock, lerr := c.LockObject(ctx, objectURL, "MODIFY")
+		if lerr != nil {
+			return fmt.Errorf("locking message class %s: %w", name, lerr)
+		}
+		// The lock this call took is released on a context of its own -- a
+		// write that failed because ctx was cancelled must not strand it --
+		// and a release that fails is reported, also after a good write.
+		defer func() {
+			if uerr := c.releaseLockAfterFailure(ctx, objectURL, lock.LockHandle); uerr != nil {
+				if err == nil {
+					err = fmt.Errorf("message class %s written, but %s", name, strandedLockAdvice(objectURL, uerr))
+				} else {
+					err = fmt.Errorf("%w; %s", err, strandedLockAdvice(objectURL, uerr))
+				}
+			}
+		}()
+		lockHandle = lock.LockHandle
 	}
 
 	// Build the XML body in the shape ADT actually serves and expects: a
@@ -185,6 +209,7 @@ func (c *Client) WriteMessageClassTexts(ctx context.Context, name, lang string, 
 		XMLNSmc:      "http://www.sap.com/adt/MessageClass",
 		XMLNSadtcore: "http://www.sap.com/adt/core",
 		Name:         name,
+		Language:     lang,
 	}
 	for _, t := range texts {
 		mc.Messages = append(mc.Messages, messageWrite{Number: t.Number, Text: t.Text})
@@ -195,7 +220,7 @@ func (c *Client) WriteMessageClassTexts(ctx context.Context, name, lang string, 
 	}
 	body = append([]byte(xml.Header), body...)
 
-	path := fmt.Sprintf("/sap/bc/adt/messageclass/%s", url.PathEscape(strings.ToLower(name)))
+	path := objectURL
 
 	params := url.Values{}
 	params.Set("lockHandle", lockHandle)
@@ -415,6 +440,7 @@ type messageClassWrite struct {
 	XMLNSmc      string         `xml:"xmlns:mc,attr"`
 	XMLNSadtcore string         `xml:"xmlns:adtcore,attr"`
 	Name         string         `xml:"adtcore:name,attr"`
+	Language     string         `xml:"adtcore:language,attr,omitempty"`
 	Messages     []messageWrite `xml:"mc:messages"`
 }
 

@@ -279,6 +279,7 @@ const (
 	ObjectTypeFunctionMod   CreatableObjectType = "FUGR/FF"
 	ObjectTypeTable         CreatableObjectType = "TABL/DT"
 	ObjectTypePackage       CreatableObjectType = "DEVC/K"
+	ObjectTypeMessageClass  CreatableObjectType = "MSAG/N"
 	// RAP object types (read-only via ADT, created via RAP generators)
 	ObjectTypeDDLS CreatableObjectType = "DDLS/DF"  // CDS DDL Source
 	ObjectTypeBDEF CreatableObjectType = "BDEF/BDO" // Behavior Definition
@@ -332,6 +333,10 @@ type CreateObjectOptions struct {
 
 	// For BDEF: source code (required for creation - ADT API embeds source in creation request)
 	Source string `json:"source,omitempty"`
+
+	// For MSAG: the original language as an ISO code ("EN", "DE"); the
+	// session language when empty.
+	MasterLanguage string `json:"masterLanguage,omitempty"`
 }
 
 // objectTypeInfo contains metadata for creating object types.
@@ -376,6 +381,12 @@ var objectTypes = map[CreatableObjectType]objectTypeInfo{
 		creationPath: "/sap/bc/adt/functions/groups/%s/fmodules",
 		rootName:     "fmodule:abapFunctionModule",
 		namespace:    `xmlns:fmodule="http://www.sap.com/adt/functions/fmodules"`,
+	},
+	ObjectTypeMessageClass: {
+		creationPath: "/sap/bc/adt/messageclass",
+		rootName:     "mc:messageClass",
+		namespace:    `xmlns:mc="http://www.sap.com/adt/MessageClass"`,
+		bodyBuilder:  messageClassCreateBody,
 	},
 	ObjectTypePackage: {
 		creationPath: "/sap/bc/adt/packages",
@@ -795,6 +806,13 @@ func (c *Client) CreateObject(ctx context.Context, opts CreateObjectOptions) err
 	if opts.ObjectType == ObjectTypeBDEF {
 		contentType = "application/vnd.sap.adt.blues.v1+xml"
 	}
+	if opts.ObjectType == ObjectTypeMessageClass {
+		contentType = "application/vnd.sap.adt.mc.messageclass+xml"
+		if opts.MasterLanguage == "" {
+			opts.MasterLanguage = c.config.Language
+		}
+		body = buildCreateObjectBody(opts, typeInfo, defaultResponsible)
+	}
 
 	// First attempt
 	_, err := c.transport.Request(ctx, creationURL, &RequestOptions{
@@ -1098,6 +1116,8 @@ func GetObjectURL(objectType CreatableObjectType, name string, parentName string
 		return fmt.Sprintf("/sap/bc/adt/functions/groups/%s/fmodules/%s", encodedParent, encodedName)
 	case ObjectTypePackage:
 		return fmt.Sprintf("/sap/bc/adt/packages/%s", encodedName)
+	case ObjectTypeMessageClass:
+		return fmt.Sprintf("/sap/bc/adt/messageclass/%s", url.PathEscape(strings.ToLower(name)))
 	// RAP object types - use lowercase for CDS objects
 	case ObjectTypeDDLS:
 		return fmt.Sprintf("/sap/bc/adt/ddic/ddl/sources/%s", url.PathEscape(strings.ToLower(name)))

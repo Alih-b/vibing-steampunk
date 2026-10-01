@@ -90,6 +90,7 @@ Create object:
   SAP(action="create", target="OBJECT", params={"object_type": "FUGR/F", "name": "ZVSP_DEMO", "description": "Demo group", "package_name": "$TMP"})
   SAP(action="create", target="OBJECT", params={"object_type": "FUGR/FF", "name": "ZVSP_DEMO_FM", "parent_name": "ZVSP_DEMO", "description": "RFC demo", "package_name": "$TMP", "rfc_enabled": true, "source": "FUNCTION zvsp_demo_fm\n  IMPORTING VALUE(iv_n) TYPE i\n  EXPORTING VALUE(ev_result) TYPE i.\n  ev_result = iv_n * 2.\nENDFUNCTION."})
   SAP(action="create", target="DEVC", params={"name": "$ZNEW", "description": "New package"})
+  SAP(action="create", target="OBJECT", params={"object_type": "MSAG/N", "name": "ZDEMO", "description": "Demo messages", "package_name": "$TMP", "language": "DE", "messages": {"001": "Auftrag & nicht gefunden"}})
   SAP(action="create", target="TABL", params={"name": "ZTABLE", "description": "New table", "fields": "[...]", "package": "$TMP"})
   SAP(action="create", target="CLONE", params={"object_type": "CLAS", "source_name": "ZCL_OLD", "target_name": "ZCL_NEW", "package": "$TMP"})
 
@@ -197,7 +198,8 @@ A report's or a class's text pool — selection texts (S), text symbols (I), hea
 What differs between two languages — named separately, not as a list:
   SAP(action="i18n", params={"op": "compare_languages", "object_url": "/sap/bc/adt/oo/classes/zcl_demo", "source_language": "EN", "target_language": "DE"})
 
-Writing needs a lock_handle from a lock taken first, and changes the system:
+Writing changes the system; without lock_handle the call locks and unlocks itself.
+write_message_texts adds new message numbers and leaves the others as they are:
   SAP(action="i18n", params={"op": "write_message_texts", "name": "ZVSP_GIT", "language": "DE", "lock_handle": "...", "texts": []})
   SAP(action="i18n", params={"op": "texts_set", "program_name": "ZDEMO_RUN", "texts": {"P_DEVC": "Package to scan"}})
   SAP(action="i18n", params={"op": "texts_set", "program_name": "ZDEMO_RUN", "texts": {"selections": {"S_OBJ": "Object names"}, "symbols": {"001": "Nothing found"}}, "dry_run": true})

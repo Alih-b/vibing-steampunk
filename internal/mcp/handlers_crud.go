@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
+
 	"github.com/oisee/vibing-steampunk/pkg/adt"
 )
 
@@ -248,6 +249,10 @@ func (s *Server) handleCreateObject(ctx context.Context, request mcp.CallToolReq
 		}
 		output, _ := json.MarshalIndent(fmResult, "", "  ")
 		return mcp.NewToolResultText(string(output)), nil
+	}
+
+	if opts.ObjectType == adt.ObjectTypeMessageClass {
+		return s.createMessageClass(ctx, opts, request.GetArguments())
 	}
 
 	err := s.adtClient.CreateObject(ctx, opts)

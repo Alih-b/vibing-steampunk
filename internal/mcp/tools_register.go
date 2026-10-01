@@ -1006,10 +1006,10 @@ func (s *Server) registerCRUDTools(shouldRegister func(string) bool) {
 
 	if shouldRegister("CreateObject") {
 		s.mcpServer.AddTool(mcp.NewTool("CreateObject",
-			mcp.WithDescription("Create a new ABAP object. Supports: PROG/P (program), CLAS/OC (class), INTF/OI (interface), PROG/I (include), FUGR/F (function group), FUGR/FF (function module), DEVC/K (package), DDLS/DF (CDS view), BDEF/BDO (behavior definition), SRVD/SRV (service definition), SRVB/SVB (service binding)"),
+			mcp.WithDescription("Create a new ABAP object. Supports: PROG/P (program), CLAS/OC (class), INTF/OI (interface), PROG/I (include), FUGR/F (function group), FUGR/FF (function module), DEVC/K (package), DDLS/DF (CDS view), BDEF/BDO (behavior definition), SRVD/SRV (service definition), SRVB/SVB (service binding), MSAG/N (message class)"),
 			mcp.WithString("object_type",
 				mcp.Required(),
-				mcp.Description("Object type: PROG/P, CLAS/OC, INTF/OI, PROG/I, FUGR/F, FUGR/FF, DEVC/K, DDLS/DF, BDEF/BDO, SRVD/SRV, SRVB/SVB"),
+				mcp.Description("Object type: PROG/P, CLAS/OC, INTF/OI, PROG/I, FUGR/F, FUGR/FF, DEVC/K, DDLS/DF, BDEF/BDO, SRVD/SRV, SRVB/SVB, MSAG/N"),
 			),
 			mcp.WithString("name",
 				mcp.Required(),
@@ -1035,6 +1035,13 @@ func (s *Server) registerCRUDTools(shouldRegister func(string) bool) {
 			),
 			mcp.WithString("source",
 				mcp.Description("For FUGR/FF: full module source including the signature (FUNCTION ... IMPORTING VALUE(iv_x) TYPE i ... ENDFUNCTION.) - a function module's interface lives in its source"),
+			),
+			// Message class options (MSAG/N)
+			mcp.WithString("language",
+				mcp.Description("For MSAG/N: original language of the class and its messages (ISO, e.g. EN, DE); defaults to the session language"),
+			),
+			mcp.WithObject("messages",
+				mcp.Description("For MSAG/N: initial messages as {\"001\": \"text\", ...}"),
 			),
 			// RAP-specific options
 			mcp.WithString("service_definition",
@@ -2413,7 +2420,7 @@ func (s *Server) registerI18NTools(shouldRegister func(string) bool) {
 
 	if shouldRegister("WriteMessageClassTexts") {
 		s.mcpServer.AddTool(mcp.NewTool("WriteMessageClassTexts",
-			mcp.WithDescription("Update message class texts in a specific language. Requires a lock handle from LockObject. Use for translating message class entries."),
+			mcp.WithDescription("Update message class texts in a specific language. Takes and releases its own lock unless a lock handle from LockObject is given. Use for translating message class entries."),
 			mcp.WithString("name",
 				mcp.Required(),
 				mcp.Description("Message class name"),
@@ -2423,7 +2430,6 @@ func (s *Server) registerI18NTools(shouldRegister func(string) bool) {
 				mcp.Description("ISO language code (e.g., EN, DE, FR)"),
 			),
 			mcp.WithString("lock_handle",
-				mcp.Required(),
 				mcp.Description("Optional lock handle. Omit it and this call takes and releases its own lock (#169)."),
 			),
 			mcp.WithString("transport",
@@ -2456,7 +2462,6 @@ func (s *Server) registerI18NTools(shouldRegister func(string) bool) {
 				mcp.Description("ISO language code (e.g., EN, DE, FR)"),
 			),
 			mcp.WithString("lock_handle",
-				mcp.Required(),
 				mcp.Description("Optional lock handle. Omit it and this call takes and releases its own lock (#169)."),
 			),
 			mcp.WithString("transport",
