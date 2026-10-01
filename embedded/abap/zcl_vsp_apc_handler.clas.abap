@@ -55,16 +55,21 @@ CLASS zcl_vsp_apc_handler IMPLEMENTATION.
     APPEND NEW zcl_vsp_rfc_service( ) TO gt_services.
     APPEND NEW zcl_vsp_debug_service( ) TO gt_services.
     APPEND NEW zcl_vsp_amdp_service( ) TO gt_services.
-    APPEND NEW zcl_vsp_git_service( ) TO gt_services.
     APPEND NEW zcl_vsp_report_service( ) TO gt_services.
-    " The transport service is optional: an administrator may deploy ZADT_VSP
-    " without it, and the handler must still activate and run.
+    " The git and transport services are optional: the git service exists
+    " only where abapGit does (vsp install skips it otherwise), and an
+    " administrator may deploy ZADT_VSP without the transport service. The
+    " handler must activate and run without either, so neither is named
+    " statically; a domain that is missing answers UNKNOWN_DOMAIN.
     DATA lo_service TYPE REF TO zif_vsp_service.
-    TRY.
-        CREATE OBJECT lo_service TYPE ('ZCL_VSP_TRANSPORT_SERVICE').
-        APPEND lo_service TO gt_services.
-      CATCH cx_sy_create_object_error ##NO_HANDLER.
-    ENDTRY.
+    DATA(lt_optional) = VALUE string_table( ( `ZCL_VSP_GIT_SERVICE` ) ( `ZCL_VSP_TRANSPORT_SERVICE` ) ).
+    LOOP AT lt_optional INTO DATA(lv_class).
+      TRY.
+          CREATE OBJECT lo_service TYPE (lv_class).
+          APPEND lo_service TO gt_services.
+        CATCH cx_sy_create_object_error ##NO_HANDLER.
+      ENDTRY.
+    ENDLOOP.
   ENDMETHOD.
 
   METHOD if_apc_wsp_extension~on_start.
@@ -95,6 +100,18 @@ CLASS zcl_vsp_apc_handler IMPLEMENTATION.
       CATCH cx_root ##CATCH_ALL.
         lv_push = abap_false.
     ENDTRY.
+    " The same for the git service's import job: AMC ZVSP_GIT /import.
+    " Without it, an import's outcome is read with import_status.
+    DATA(lv_git_push) = abap_false.
+    TRY.
+        i_context->get_binding_manager( )->bind_amc_message_consumer(
+          i_application_id       = 'ZVSP_GIT'
+          i_channel_id           = '/import'
+          i_channel_extension_id = CONV #( mv_session_id ) ).
+        lv_git_push = abap_true.
+      CATCH cx_root ##CATCH_ALL.
+        lv_git_push = abap_false.
+    ENDTRY.
 
     DATA lt_domains TYPE string_table.
     LOOP AT gt_services INTO DATA(lo_service).
@@ -106,6 +123,7 @@ CLASS zcl_vsp_apc_handler IMPLEMENTATION.
       ( zcl_vsp_utils=>json_str( iv_key = 'version' iv_value = '2.4.0' ) )
       ( |"domains":{ zcl_vsp_utils=>json_arr( zcl_vsp_utils=>json_join( lt_domains ) ) }| )
       ( zcl_vsp_utils=>json_bool( iv_key = 'push' iv_value = lv_push ) )
+      ( zcl_vsp_utils=>json_bool( iv_key = 'git_push' iv_value = lv_git_push ) )
     ) ) ).
 
     send_response( VALUE #(

@@ -579,6 +579,10 @@ var readOnlyClasses = map[string]surfaceClass{
 	"SAP system FEATURES":                     clsRead,
 	"SAP system type=git_types":               clsRead,
 	"SAP system type=git_export":              clsRead,
+	"SAP system type=git_import_zip":          clsMutate, // abapGit deserialize into a package, as a background job
+	"SAP system type=git_import_zip base64":   clsMutate,
+	"SAP system type=git_import_status":       clsRead,   // TBTCO, the job log and the stored result; changes nothing
+	"SAP system type=git_delete_objects":      clsMutate, // deletes TADIR items, the repository row, an empty package
 	"SAP system type=install_zadt_vsp":        clsMutate,
 	"SAP system type=install_abapgit":         clsMutate,
 	"SAP system type=install_dummy_test":      clsMutate,
@@ -1089,6 +1093,12 @@ func actionCases() []actionCase {
 		{Name: "SAP system CONNECTION", Action: "system", Target: "CONNECTION", Exact: true},
 		{Name: "SAP system FEATURES", Action: "system", Target: "FEATURES", Exact: true},
 		sys("git_types", "GitTypes"), sys("git_export", "GitExport"),
+		{Name: "SAP system type=git_import_zip", Action: "system", Exact: true, Params: kv("type", "git_import_zip", "file_path", "demo.zip", "package", "$TMP")},
+		{Name: "SAP system type=git_import_zip base64", Action: "system", Exact: true, Params: kv("type", "git_import_zip",
+			"zip_base64", "UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==", "package", "$TMP", "overwrite", true)},
+		{Name: "SAP system type=git_import_status", Action: "system", Exact: true, Params: kv("type", "git_import_status", "job", "12345678")},
+		{Name: "SAP system type=git_delete_objects", Action: "system", Exact: true, Params: kv("type", "git_delete_objects", "package", "$TMP",
+			"objects", []any{"PROG ZDEMO_REPORT"})},
 		sys("install_zadt_vsp", "InstallZADTVSP"), sys("install_abapgit", "InstallAbapGit"),
 		sys("install_dummy_test", "InstallDummyTest"), sys("list_dependencies", "ListDependencies"),
 		sys("deploy_zip", "DeployZip"),

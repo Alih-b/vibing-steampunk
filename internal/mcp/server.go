@@ -42,7 +42,9 @@ type Server struct {
 	amdpWSClient  *adt.AMDPWebSocketClient  // WebSocket-based AMDP client (ZADT_VSP)
 	debugWSClient *adt.DebugWebSocketClient // WebSocket-based debug client (ZADT_VSP)
 	// transportWS, when set, replaces ZADT_VSP's transport domain (tests).
-	transportWS   func(ctx context.Context) (adt.TransportService, error)
+	transportWS func(ctx context.Context) (adt.TransportService, error)
+	// gitWS, when set, replaces ZADT_VSP's git domain (tests).
+	gitWS         func(ctx context.Context) (adt.GitService, error)
 	config        *Config            // Server configuration for session manager creation
 	featureProber *adt.FeatureProber // Feature detection system (safety network)
 	featureConfig adt.FeatureConfig  // Feature configuration

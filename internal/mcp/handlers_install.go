@@ -365,7 +365,7 @@ func (s *Server) handleInstallZADTVSP(ctx context.Context, request mcp.CallToolR
 		sb.WriteString("Check complete (--check_only mode, no changes made).\n\n")
 		sb.WriteString("Objects to deploy:\n")
 		for i, obj := range objects {
-			if obj.Optional && skipGitService && obj.Name == "ZCL_VSP_GIT_SERVICE" {
+			if obj.RequiresAbapGit && skipGitService {
 				fmt.Fprintf(&sb, "  [%d/%d] %s - SKIP (no abapGit)\n", i+1, len(objects), obj.Name)
 			} else {
 				fmt.Fprintf(&sb, "  [%d/%d] %s - %s\n", i+1, len(objects), obj.Name, obj.Description)
@@ -398,8 +398,8 @@ func (s *Server) handleInstallZADTVSP(ctx context.Context, request mcp.CallToolR
 	failed := []string{}
 
 	for i, obj := range objects {
-		// Skip Git service if no abapGit
-		if obj.Name == "ZCL_VSP_GIT_SERVICE" && skipGitService {
+		// Skip the git service and its job program if no abapGit
+		if obj.RequiresAbapGit && skipGitService {
 			fmt.Fprintf(&sb, "  [%d/%d] %s ⊘ Skipped (no abapGit)\n", i+1, len(objects), obj.Name)
 			skipped = append(skipped, obj.Name)
 			continue
@@ -432,6 +432,16 @@ func (s *Server) handleInstallZADTVSP(ctx context.Context, request mcp.CallToolR
 	} else {
 		sb.WriteString("✓ Deployed\n")
 	}
+	// The git import's push channel, only with the git service it names.
+	if !skipGitService {
+		fmt.Fprintf(&sb, "  AMC %s (git import push) ", embedded.AMCGitApplicationName)
+		if err := s.adtClient.UpsertAMCApplication(ctx, embedded.AMCGitApplicationName, embedded.AMCGitApplicationDescription,
+			packageName, embedded.AMCGitApplicationDefinition); err != nil {
+			fmt.Fprintf(&sb, "– not set up (%v); import outcomes are read with git_import_status\n", err)
+		} else {
+			sb.WriteString("✓ Deployed\n")
+		}
+	}
 
 	sb.WriteString("\n")
 
@@ -463,9 +473,9 @@ func (s *Server) handleInstallZADTVSP(ctx context.Context, request mcp.CallToolR
 	sb.WriteString("  ✓ RFC/BAPI execution\n")
 	sb.WriteString("  ✓ AMDP debugging (experimental)\n")
 	if hasAbapGit && !skipGitService {
-		sb.WriteString("  ✓ abapGit export (158 object types)\n")
+		sb.WriteString("  ✓ abapGit export and zip import (git_import_zip)\n")
 	} else {
-		sb.WriteString("  ✗ abapGit export (install abapGit first)\n")
+		sb.WriteString("  ✗ abapGit export and import (install abapGit first)\n")
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil

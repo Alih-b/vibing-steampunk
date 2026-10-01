@@ -41,8 +41,14 @@ func TestExtractDependencies_APCHandler(t *testing.T) {
 		"ZCL_VSP_RFC_SERVICE":          KindClass,
 		"ZCL_VSP_DEBUG_SERVICE":        KindClass,
 		"ZCL_VSP_AMDP_SERVICE":         KindClass,
-		"ZCL_VSP_GIT_SERVICE":          KindClass,
 		"ZCL_VSP_REPORT_SERVICE":       KindClass,
+	}
+	// The git and transport services are created by name at runtime (they
+	// are optional), so the source names neither as a type.
+	for _, name := range []string{"ZCL_VSP_GIT_SERVICE", "ZCL_VSP_TRANSPORT_SERVICE"} {
+		if _, ok := found[name]; ok {
+			t.Errorf("%s is a static dependency of the APC handler; it must stay optional", name)
+		}
 	}
 
 	for name, kind := range expect {

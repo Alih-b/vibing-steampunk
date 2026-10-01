@@ -11,7 +11,7 @@ import (
 // were; with a program among them it was wrong.
 func TestObjectKindSummaryMatchesTheObjects(t *testing.T) {
 	got := objectKindSummary(embedded.GetObjects())
-	if got != "1 interface, 9 classes, 1 program" {
+	if got != "1 interface, 9 classes, 2 programs" {
 		t.Errorf("got %q", got)
 	}
 }

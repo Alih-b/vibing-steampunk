@@ -529,6 +529,71 @@ under `--read-only`. If the buffer add fails while the request is certainly not 
 buffer, the two files this upload wrote are deleted again. Taking a request
 out of the queue again is done in STMS.
 
+**Import an abapGit zip** into a package in one call, with the abapGit
+installed on the system: an offline repository for the package, abapGit's
+deserialize checks, deserialize, activation -- and back come the outcome,
+abapGit's errors and warnings, the TADIR rows created or changed and the
+repository key. `git delete-objects` undoes it item by item.
+
+```bash
+vsp -s devsys git import-zip ./demo.zip --package '$ZDEMO'               # waits up to --wait (5m) for the job
+vsp -s devsys git import-zip ./demo.zip --package '$ZDEMO' --overwrite   # into its existing offline repository, overwriting
+vsp -s devsys git import-status 12345678                                 # a job still running, read-only
+vsp -s devsys git delete-objects --package '$ZDEMO' "PROG ZDEMO_REPORT" "CLAS ZCL_DEMO"
+vsp -s devsys git delete-objects --package '$ZDEMO' --delete-repo "PROG ZDEMO_REPORT"   # and unregister its offline repository
+```
+
+MCP: `system` with `git_import_zip` (`file_path` or `zip_base64`, `package`,
+`repo_name`, `overwrite`, `transport`, `wait_seconds`), the read-only
+`git_import_status` (`job`), and `git_delete_objects` (`package`, `objects`,
+`delete_repo`).
+
+Nothing that exists is overwritten without `overwrite`, and a package that
+already has a repository is refused without it. A package that exists
+without a repository is imported into without `overwrite`; its own package
+entry is left as it is. `overwrite` also needs deletes allowed
+(`--disallowed-ops` without `D`), since abapGit deletes and recreates an
+object whose type changed. Unmet requirements or APACK
+dependencies, an object of another package, a package move, potential data
+loss, an unsupported object type and table content refuse the import; a
+local object the zip does not have is never deleted. Before a byte is sent,
+vsp reads the zip's `.abapgit.xml` and folders and checks the target package
+and every package the zip maps to against `--allowed-packages`; ZADT_VSP
+checks again that every file maps to one of those packages. A transportable
+package needs `--allow-transportable-edits` and a transport (named, or chosen
+as for any write); a local one takes none, and only a local one is created by
+the import. Refused under `--read-only`.
+
+`git_delete_objects` deletes exactly the listed TADIR items -- each only when
+the package's TADIR has it, each through the same gated delete as any other
+-- then the package itself if nothing and no subpackage is left and no
+abapGit repository is registered for it. Nothing outside the package is
+deleted, a package is never an item, and when an object cannot be deleted
+the repository and the package stay. The repository registered for the
+package (its row: URL, branch, settings) is kept unless `delete_repo: true`
+(`--delete-repo`) is given, and then it is unregistered only if it is offline
+and the package is empty after the deletes; ZADT_VSP checks both again. An
+online repository is never unregistered: `delete_repo` with one is refused
+before anything is deleted. A repository abapGit cannot open counts as
+online, and the package is never deleted while any repository is registered
+for it. Objects are deleted at their own ADT address (an include, a
+structure), looked up by name.
+
+A zip is refused above 20 MB, 50,000 entries or 200 MB unpacked (its
+declared sizes, checked by vsp and again by ZADT_VSP before abapGit unpacks
+it), and with more than one `.abapgit.xml` at its root. If the import's
+commit gets no answer, the job may be running: vsp says so, and
+`git_import_status` or SM37 (job `ZVSP_GIT_IMPORT`) tells.
+
+abapGit's deserialize commits with `WAIT`, which a ZADT_VSP (APC) session may
+not do (it dumps `APC_ILLEGAL_STATEMENT`), so the import runs as background
+job `ZVSP_GIT_IMPORT` under the caller's user; its outcome is pushed to the
+WebSocket that started it (AMC application `ZVSP_GIT`, channel `/import`) and
+kept a week for `git_import_status`. Needs ZADT_VSP with the git service,
+which `vsp install zadt-vsp` deploys where abapGit is installed (with the job
+program and the AMC application); without abapGit the rest of ZADT_VSP still
+runs.
+
 `vsp update` fetches the latest release for this platform, compares it with
 the running version, verifies the download against the release's
 `checksums.txt`, and puts it in place of the running binary — the old one is

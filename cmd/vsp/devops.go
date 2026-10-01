@@ -475,7 +475,7 @@ var installCmd = &cobra.Command{
 	Long: `Install software components to a SAP system.
 
 Subcommands:
-  zadt-vsp    Install ZADT_VSP WebSocket handler (11 ABAP objects)
+  zadt-vsp    Install ZADT_VSP WebSocket handler (12 ABAP objects)
   abapgit     Install abapGit standalone or full edition
   list        List available installable components
 
@@ -492,17 +492,20 @@ var installZadtVspCmd = &cobra.Command{
 	Short: "Install ZADT_VSP WebSocket handler",
 	Long: `Install the ZADT_VSP WebSocket handler to enable advanced features.
 
-Deploys 11 ABAP objects (1 interface, 9 classes, 1 program) in dependency order:
+Deploys 12 ABAP objects (1 interface, 9 classes, 2 programs) in dependency order:
   ZIF_VSP_SERVICE, ZCL_VSP_UTILS, ZCL_VSP_TADIR_MOVE, ZCL_VSP_RFC_SERVICE,
   ZCL_VSP_DEBUG_SERVICE, ZCL_VSP_AMDP_SERVICE, ZCL_VSP_GIT_SERVICE,
   ZCL_VSP_REPORT_SERVICE, ZCL_VSP_TRANSPORT_SERVICE, ZVSP_TRANSPORT_BUFFER,
-  ZCL_VSP_APC_HANDLER
+  ZVSP_GIT_IMPORT, ZCL_VSP_APC_HANDLER
+
+ZCL_VSP_GIT_SERVICE and ZVSP_GIT_IMPORT (and AMC application ZVSP_GIT) need
+abapGit on the system and are skipped without it.
 
 Features unlocked after install:
   - WebSocket debugging (TPDAPI)
   - RFC/BAPI execution
   - AMDP debugging (experimental)
-  - abapGit export (158 object types, requires abapGit)
+  - abapGit export and zip import (requires abapGit)
 
 Examples:
   vsp -s a4h install zadt-vsp
@@ -3539,7 +3542,7 @@ func runInstallZadtVsp(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stderr, "Deployment Plan (%d objects):\n", len(objects))
 	fmt.Fprintf(os.Stderr, "%s\n", strings.Repeat("-", 60))
 	for i, obj := range objects {
-		if obj.Name == "ZCL_VSP_GIT_SERVICE" && skipGitService {
+		if obj.RequiresAbapGit && skipGitService {
 			fmt.Fprintf(os.Stderr, "  [%d/%d] %-30s SKIP (no abapGit)\n", i+1, len(objects), obj.Name)
 		} else {
 			action := "CREATE"
@@ -3578,8 +3581,8 @@ func runInstallZadtVsp(cmd *cobra.Command, args []string) error {
 	failed := 0
 
 	for i, obj := range objects {
-		// Skip Git service if no abapGit
-		if obj.Name == "ZCL_VSP_GIT_SERVICE" && skipGitService {
+		// Skip the git service and its job program if no abapGit
+		if obj.RequiresAbapGit && skipGitService {
 			fmt.Fprintf(os.Stderr, "  [%d/%d] %s ... SKIPPED (no abapGit)\n", i+1, len(objects), obj.Name)
 			skipped++
 			continue
@@ -3611,6 +3614,16 @@ func runInstallZadtVsp(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Fprintf(os.Stderr, "OK\n")
 	}
+	// The git import's push channel, only with the git service it names.
+	if !skipGitService {
+		fmt.Fprintf(os.Stderr, "  AMC %s (git import push) ... ", embedded.AMCGitApplicationName)
+		if err := client.UpsertAMCApplication(ctx, embedded.AMCGitApplicationName, embedded.AMCGitApplicationDescription,
+			packageName, embedded.AMCGitApplicationDefinition); err != nil {
+			fmt.Fprintf(os.Stderr, "not set up (%v); import outcomes are read with vsp git import-status\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "OK\n")
+		}
+	}
 
 	fmt.Fprintf(os.Stderr, "\n")
 
@@ -3633,9 +3646,9 @@ func runInstallZadtVsp(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stderr, "  RFC/BAPI execution\n")
 	fmt.Fprintf(os.Stderr, "  AMDP debugging (experimental)\n")
 	if hasAbapGit && !skipGitService {
-		fmt.Fprintf(os.Stderr, "  abapGit export (158 object types)\n")
+		fmt.Fprintf(os.Stderr, "  abapGit export and zip import (vsp git import-zip)\n")
 	} else {
-		fmt.Fprintf(os.Stderr, "  abapGit export NOT available (install abapGit first)\n")
+		fmt.Fprintf(os.Stderr, "  abapGit export and import NOT available (install abapGit first)\n")
 	}
 
 	return nil

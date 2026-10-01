@@ -593,6 +593,20 @@ Transports:
 Git/abapGit:
   SAP(action="system", params={"type": "git_types"})
   SAP(action="system", params={"type": "git_export", "packages": "$TMP"})
+  SAP(action="system", params={"type": "git_import_zip", "file_path": "/in/demo.zip", "package": "$ZDEMO", "repo_name": "demo", "overwrite": false})
+    - an abapGit offline zip into a package (or "zip_base64"), by the abapGit on the system, as background job ZVSP_GIT_IMPORT;
+      waits wait_seconds (300; 0 = answer with the job) and answers status (imported / imported_with_errors / refused / failed),
+      the E/W/A log, the TADIR rows created or changed, repoKey. Nothing existing is overwritten without overwrite: true;
+      conflicts, unmet requirements and objects of other packages refuse. Every package the zip maps to must pass
+      --allowed-packages; a transportable package needs --allow-transportable-edits and a transport.
+      overwrite also needs deletes allowed. An existing package without a repository needs no overwrite
+      for its own package entry (left as it is)
+  SAP(action="system", params={"type": "git_import_status", "job": "12345678"})  - the import job's state and result, read-only
+  SAP(action="system", params={"type": "git_delete_objects", "package": "$ZDEMO", "objects": ["PROG ZDEMO_REPORT"], "delete_repo": false})
+    - deletes exactly those TADIR items of the package (each through DeleteObject's gate), then the package if
+      nothing is left in it and no abapGit repository is registered for it; nothing outside the package.
+      The repository row is kept unless delete_repo: true, and then dropped only for an offline repository of
+      a package left empty; an online repository is never unregistered (delete_repo with one is refused)
 
 Install tools:
   SAP(action="system", params={"type": "install_zadt_vsp"})

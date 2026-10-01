@@ -49,6 +49,9 @@ var ZclVspTransportService string
 //go:embed zvsp_transport_buffer.prog.abap
 var ZvspTransportBuffer string
 
+//go:embed zvsp_git_import.prog.abap
+var ZvspGitImport string
+
 //go:embed zcl_vsp_apc_handler.clas.abap
 var ZclVspApcHandler string
 
@@ -59,6 +62,9 @@ type ObjectInfo struct {
 	Source      string // Source code
 	Description string // Human-readable description
 	Optional    bool   // If true, can be skipped (e.g., Git service without abapGit)
+	// RequiresAbapGit: the object names abapGit's classes (or one that does),
+	// so it is deployed only where abapGit is installed.
+	RequiresAbapGit bool
 }
 
 // FileName is the abapGit file name of an object, the same in src/ and here.
@@ -122,8 +128,10 @@ func GetObjects() []ObjectInfo {
 			Type:        "CLAS",
 			Name:        "ZCL_VSP_GIT_SERVICE",
 			Source:      ZclVspGitService,
-			Description: "Git domain - abapGit export (requires abapGit)",
+			Description: "Git domain - abapGit export and zip import (requires abapGit)",
 			Optional:    true, // Requires abapGit on SAP system
+			// The APC handler creates it dynamically, so ZADT_VSP runs without it.
+			RequiresAbapGit: true,
 		},
 		{
 			Type:        "CLAS",
@@ -145,6 +153,14 @@ func GetObjects() []ObjectInfo {
 			Source:      ZvspTransportBuffer,
 			Description: "VSP transport buffer step (background)",
 			Optional:    false,
+		},
+		{
+			Type:            "PROG",
+			Name:            "ZVSP_GIT_IMPORT",
+			Source:          ZvspGitImport,
+			Description:     "VSP abapGit zip import (background)",
+			Optional:        true,
+			RequiresAbapGit: true,
 		},
 		{
 			Type:        "CLAS",

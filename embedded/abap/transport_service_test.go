@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // ZCL_VSP_TRANSPORT_SERVICE adds a request to an import buffer and must never
@@ -60,7 +61,10 @@ var tpCommands = []string{
 }
 
 // abapStatements splits ABAP source into statements: comments removed,
-// periods inside literals and templates ignored.
+// periods inside literals and templates ignored. A period outside them ends
+// a statement even when code follows at once ("x = 1.DELETE ..."), unless
+// it sits between two digits; inside a string template, \| and the other
+// backslash escapes do not end it.
 func abapStatements(src string) []string {
 	var out []string
 	var cur strings.Builder
@@ -68,10 +72,17 @@ func abapStatements(src string) []string {
 		if strings.HasPrefix(line, "*") {
 			continue
 		}
+		rs := []rune(line)
 		var quote rune
-		for i, r := range line {
+		for i := 0; i < len(rs); i++ {
+			r := rs[i]
 			if quote != 0 {
 				cur.WriteRune(r)
+				if quote == '|' && r == '\\' && i+1 < len(rs) {
+					i++
+					cur.WriteRune(rs[i])
+					continue
+				}
 				if r == quote {
 					quote = 0
 				}
@@ -83,22 +94,18 @@ func abapStatements(src string) []string {
 				cur.WriteRune(r)
 			case '"':
 				// Rest of the line is a comment.
-				goto next
+				i = len(rs)
 			case '.':
-				// A period ends a statement unless it is part of a word
-				// (cl_abap_char_utilities=>cr_lf(1), 2.4.0 never occurs
-				// outside literals in this class).
-				if i+1 >= len(line) || line[i+1] == ' ' || line[i+1] == '\t' {
-					out = append(out, strings.Join(strings.Fields(cur.String()), " "))
-					cur.Reset()
+				if i > 0 && i+1 < len(rs) && unicode.IsDigit(rs[i-1]) && unicode.IsDigit(rs[i+1]) {
+					cur.WriteRune(r)
 					continue
 				}
-				cur.WriteRune(r)
+				out = append(out, strings.Join(strings.Fields(cur.String()), " "))
+				cur.Reset()
 			default:
 				cur.WriteRune(r)
 			}
 		}
-	next:
 		cur.WriteRune(' ')
 	}
 	if s := strings.TrimSpace(cur.String()); s != "" {

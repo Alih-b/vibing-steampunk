@@ -27,6 +27,12 @@ func (s *Server) routeGitAction(ctx context.Context, action, objectType, objectN
 		return s.callHandler(ctx, s.handleGitTypes, params)
 	case "git_export":
 		return s.callHandler(ctx, s.handleGitExport, params)
+	case "git_import_zip":
+		return s.callHandler(ctx, s.handleGitImportZip, params)
+	case "git_import_status":
+		return s.callHandler(ctx, s.handleGitImportStatus, params)
+	case "git_delete_objects":
+		return s.callHandler(ctx, s.handleGitDeleteObjects, params)
 	}
 	return nil, false, nil
 }
