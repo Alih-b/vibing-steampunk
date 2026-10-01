@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -333,24 +335,91 @@ func (c *Config) NewHTTPClient() *http.Client {
 	//     goes missing across a redirect, the second hop hits SAP with a
 	//     fresh (stateless) session-type or a missing CSRF token, and the
 	//     lock handle / mutation is rejected.
+	// Only for hops that stay on the SAP host. Re-attaching unconditionally
+	// sent Basic credentials and the session CSRF token to whatever host the
+	// chain led to — and an expired session on an SSO system leads to the
+	// identity provider, which is why redirectedAwayFromSAP exists.
+	//
+	// Off-host the headers are DELETED, not merely left unset. Go's own
+	// makeHeadersCopier runs before CheckRedirect and copies every header that
+	// is not on its sensitive list — Authorization, Www-Authenticate, Cookie
+	// and Cookie2 are stripped cross-origin, X-CSRF-Token and
+	// X-sap-adt-sessiontype are not. So declining to *set* them here left the
+	// session's CSRF token going to the identity provider exactly as before;
+	// only an explicit Del actually stops it.
+	//
+	// The other half of that ordering is why the same-host branch is nearly a
+	// no-op: Go already preserves Authorization for a same-host or subdomain
+	// hop, so the re-attach only ever added anything cross-origin — which is
+	// now refused. A BTP SAML flow that genuinely needs Authorization on a
+	// foreign host (issue #90's abap → abap-web hop) therefore no longer gets
+	// it, and would need an explicit, named allowance for that one host rather
+	// than a blanket "any host in the chain".
+	//
+	// The comparison is on the *hostname*, case-folded — not on host:port.
+	// Two reasons, and they pull the same way:
+	//   - `==` on the raw host made an ICM redirect that merely changed the
+	//     case of the FQDN, or spelled out :443, look foreign, and the headers
+	//     this handler exists to preserve were dropped on an intra-SAP hop.
+	//   - the Del below must not be stricter than Go's own rule, which ignores
+	//     the port entirely (shouldCopyHeaderOnRedirect compares hostnames).
+	//     A box that answers on 44300 and redirects to 8443 is one machine;
+	//     deleting Basic credentials there would break a hop that worked
+	//     before this handler existed.
+	//
+	// The hostname alone is not enough, though: a hop from https to http on the
+	// same host would send Basic credentials and the CSRF token in clear text.
+	// So the scheme may never fall back — see keepsSAPCredentials. A port change
+	// that stays on https, or climbs from http to https (the ICM's own HTTP
+	// redirect), is still one machine and keeps its headers.
+	//
+	// redirectedAwayFromSAP (http.go) compares host:port with EqualFold, so it
+	// is stricter on the port and identical on case; the difference only shows
+	// on a port-changing hop, where this predicate is deliberately the looser
+	// of the two.
+	sapURL, _ := url.Parse(c.BaseURL)
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
 			return fmt.Errorf("too many redirects")
 		}
-		if len(via) > 0 {
-			first := via[0]
-			if auth := first.Header.Get("Authorization"); auth != "" {
-				req.Header.Set("Authorization", auth)
-			}
-			if csrf := first.Header.Get("X-CSRF-Token"); csrf != "" {
-				req.Header.Set("X-CSRF-Token", csrf)
-			}
-			if st := first.Header.Get("X-sap-adt-sessiontype"); st != "" {
-				req.Header.Set("X-sap-adt-sessiontype", st)
-			}
+		if len(via) == 0 {
+			return nil
+		}
+		if !keepsSAPCredentials(sapURL, req.URL) {
+			req.Header.Del("Authorization")
+			req.Header.Del("X-CSRF-Token")
+			req.Header.Del("X-sap-adt-sessiontype")
+			return nil
+		}
+		first := via[0]
+		if auth := first.Header.Get("Authorization"); auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		if csrf := first.Header.Get("X-CSRF-Token"); csrf != "" {
+			req.Header.Set("X-CSRF-Token", csrf)
+		}
+		if st := first.Header.Get("X-sap-adt-sessiontype"); st != "" {
+			req.Header.Set("X-sap-adt-sessiontype", st)
 		}
 		return nil
 	}
 
 	return client
+}
+
+// keepsSAPCredentials reports whether a redirect target may still receive the
+// Basic credentials, the CSRF token and the session type of the request that
+// was sent to the SAP system at base: the same hostname (case-folded, port
+// ignored) and no downgrade from https to http. An unparseable or
+// scheme-less BaseURL has no hostname and keeps nothing — that holds the
+// credentials-off-host rule; the alternative is to silently disable the whole
+// handler.
+func keepsSAPCredentials(base, target *url.URL) bool {
+	if base == nil || target == nil || base.Hostname() == "" {
+		return false
+	}
+	if !strings.EqualFold(base.Hostname(), target.Hostname()) {
+		return false
+	}
+	return !strings.EqualFold(base.Scheme, "https") || strings.EqualFold(target.Scheme, "https")
 }
