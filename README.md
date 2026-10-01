@@ -950,7 +950,70 @@ Earlier: **[Still Only 5%](articles/2026-08-25-still-five-percent.md)** · **[VS
 
 ## What's New
 
-The headline changes are in the **"New in the last three releases"** callout at the top of this README; the full version history is in [CHANGELOG.md](CHANGELOG.md). Latest release: **[v2.57.0 — the dump's own why](https://github.com/oisee/vibing-steampunk/releases/tag/v2.57.0)**.
+The headline changes are in the **"New in the last three releases"** callout at the top of this README; the full version history is in [CHANGELOG.md](CHANGELOG.md). Latest release: **[v2.58.0 — where the file actually ends](https://github.com/oisee/vibing-steampunk/releases/tag/v2.58.0)**.
+
+### Unreleased — new since v2.58.0
+
+**Transports and change control**
+
+- **Upload a released transport and add it to the import queue — never import.**
+  `vsp transport upload` / `system` `upload_transport` writes the cofile and
+  data file into DIR_TRANS and adds the request to the buffer; the import
+  itself stays a human step in STMS (#296). Also: `transport status`,
+  `transport buffer` and `transport download`.
+- **A transport of copies** of a request, as SE01 builds one (#247); entries
+  added to a request and taken out, as SE09 does (#262); requests filed under
+  a CTS project (#246); a refused release is reported, not swallowed (#248).
+
+**abapGit offline zip import** (#301). `vsp git import-zip` / `system`
+`git_import_zip` imports an abapGit zip with the abapGit already on the
+system, as a background job; `git import-status` reports on it and
+`git delete-objects` removes exactly what it brought. Needs ZADT_VSP and
+abapGit. Every package the zip maps to must pass `--allowed-packages`.
+
+**Code, run and checked**
+
+- **[ExecuteABAP](#executeabap) answers JSON**: `result_text` is the value in
+  full, `RETURN_VALUE( x )` hands back any number of values (structures and
+  tables as JSON), and a run that did not finish says where in your code (#298).
+- **[ABAP Unit results](#abap-unit-results) as JSON** with counts; a class
+  ABAP Unit refused to run is not a pass; `only_failures` for a short answer (#298).
+- **Check a snippet without running it**: `vsp check-abap` / `analyze`
+  `check_abap`, SAP's own syntax check, findings in the snippet's lines (#300).
+- **Long calls take a `timeout`** (seconds), and `--call-timeout` /
+  `SAP_CALL_TIMEOUT` sets the server's default (#299).
+- **Run a report as a background job** from the SAP tool (#261).
+
+**Read and find**
+
+- **Exact-name search**: `params.exact` / `vsp search --exact` (#299).
+- **A package's inventory in one call**: `read` `DEVC $PKG` with
+  `params.inventory` — objects with author and date, subpackages, and its
+  abapGit repository (#299).
+- **An IDoc as WE02 shows it** (#268).
+- **`vsp query`** accepts the common ANSI spellings and explains what SAP
+  refuses (#267).
+
+**Create**
+
+- Domains and data elements (#273), structures and append structures from
+  DDL (#272), message classes with messages in the language asked (#270),
+  and enhancement implementations — source plug-ins and BAdI
+  implementations (#263).
+
+**Fixed**, among others: concurrent callers of one client no longer break
+each other's locks (#251); a cookie-jar race (#229); credentials and the CSRF
+token stay on the SAP host across redirects (#257); namespaced objects and
+function groups (#233, #274, #282); activation of a group with its inactive
+parts (#271); a failed transport download is an error (#302).
+
+**Behaviour changes you may notice:**
+
+- `execute_abap` (MCP) answers JSON instead of text.
+- `vsp execute` exits non-zero when the code did not finish, never ran, or
+  left its temporary program behind; `vsp test` exits non-zero when a test
+  class was not run.
+- `vsp update` follows the repository the binary was released from (#259).
 
 ### Unreleased — behaviour changes since v2.58.0
 
