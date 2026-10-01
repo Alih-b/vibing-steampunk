@@ -541,9 +541,12 @@ SAP(action="rfc", target="Z_DOUBLE", params={"op":"call","args":{"N":21}})
 SAP(action="rfc", target="T000", params={"op":"read_table","fields":["MANDT"],"top":5})
 ```
 
-Ops: `info`, `ping`, `describe`, `call`, `search`, `read_table`. Destination overrides
-in `params`: `host`, `sysnr`, `port`, `user` — otherwise the host and system number
-come from the configured ADT URL and the gateway is `3300 + sysnr`.
+Ops: `info`, `ping`, `describe`, `call`, `search`, `read_table`. The gateway is the
+server's own: the host and system number come from the system's `.vsp.json` entry
+(`rfc_host`, `rfc_sysnr`, `rfc_port`) or from the configured ADT URL, with the port
+`3300 + sysnr`. A per-call `host`, `sysnr` or `port` that points anywhere else is
+refused, because the configured credentials would go with it; `user` picks the logon.
+Under `--read-only`, `call` is refused.
 
 ### IDocs (`read IDOC`)
 
