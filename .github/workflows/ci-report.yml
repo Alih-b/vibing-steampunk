@@ -1,7 +1,7 @@
 name: CI report
 
 # Writes one comment per pull request with a row per CI job, rewritten on every
-# run rather than repeated.
+# run rather than repeated, then asks Copilot for a review once the tests pass.
 #
 # This runs from the default branch, never from the pull request's branch, and
 # that is what makes a write token safe here: almost every pull request to this
@@ -9,9 +9,9 @@ name: CI report
 # read-only token. So CI stays read-only and this reads its results afterwards.
 # It must never check out, build or execute anything from the pull request.
 #
-# What it does read from the run — job names, the test job's annotation — comes
-# from a workflow file the pull request can edit, so it is escaped before it
-# goes into the comment.
+# What it does read from the run — job names, the test job's annotation, the
+# per-package test summary — comes from a workflow file the pull request can
+# edit, so it is parsed defensively and escaped before it goes into the comment.
 on:
   workflow_run:
     workflows: [CI]
@@ -26,19 +26,20 @@ jobs:
   comment:
     if: github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - uses: actions/github-script@v7
+      # Same-repo pull requests arrive in run.pull_requests; fork ones do not,
+      # so look them up by head branch. Either way, only report when the pull
+      # request still points at the commit this run tested — a late run for an
+      # old commit must not overwrite a newer report. The base is the last
+      # green push run on the pull request's base branch.
+      - name: Find the pull request and the base run
+        id: find
+        uses: actions/github-script@v7
         with:
           script: |
-            const marker = '<!-- vsp-ci-report -->';
             const { owner, repo } = context.repo;
             const run = context.payload.workflow_run;
-
-            // Same-repo pull requests arrive in run.pull_requests; fork ones do
-            // not, so look them up by head branch. Either way, only write when
-            // the pull request still points at the commit this run tested — a
-            // late run for an old commit must not overwrite a newer report.
             let pr = run.pull_requests?.[0];
             if (pr) {
               pr = (await github.rest.pulls.get({ owner, repo, pull_number: pr.number })).data;
@@ -51,9 +52,51 @@ jobs:
               core.info(`no open pull request at ${run.head_sha}; nothing to report`);
               return;
             }
+            core.setOutput('pr', String(pr.number));
+            const base = await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: 'ci.yml', branch: pr.base.ref, event: 'push', status: 'success', per_page: 1,
+            }).then((r) => r.data.workflow_runs[0]).catch(() => undefined);
+            if (base) {
+              core.setOutput('base_run', String(base.id));
+              core.setOutput('base_sha', base.head_sha);
+            }
+
+      - name: Download this run's test summary
+        if: steps.find.outputs.pr != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: test-summary
+          path: head
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download the base's test summary
+        if: steps.find.outputs.base_run != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: test-summary
+          path: base
+          run-id: ${{ steps.find.outputs.base_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write the report, then ask Copilot to review
+        if: steps.find.outputs.pr != ''
+        uses: actions/github-script@v7
+        env:
+          PR: ${{ steps.find.outputs.pr }}
+          BASE_SHA: ${{ steps.find.outputs.base_sha }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- vsp-ci-report -->';
+            const { owner, repo } = context.repo;
+            const run = context.payload.workflow_run;
+            const prNumber = Number(process.env.PR);
 
             const clean = (s, max = 120) => String(s ?? '')
-              .replace(/[\r\n]+/g, ' ').replace(/[|<>`[\]]/g, (c) => '\\' + c).slice(0, max);
+              .replace(/[\r\n]+/g, ' ').replace(/[|<>`[\]*_]/g, (c) => '\\' + c).slice(0, max);
             const icon = (v) => ({
               success: '🟢 pass', failure: '🔴 fail', cancelled: '⚫ cancelled',
               skipped: '⚪ skipped', timed_out: '🔴 timed out',
@@ -61,9 +104,9 @@ jobs:
             const took = (j) => (j.started_at && j.completed_at)
               ? `${Math.round((new Date(j.completed_at) - new Date(j.started_at)) / 1000)} s` : '';
 
+            // --- one row per job --------------------------------------------
             const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt,
               { owner, repo, run_id: run.id, attempt_number: run.run_attempt });
-
             const rows = [];
             for (const j of jobs) {
               // Advisory jobs never gate; do not paint them red.
@@ -81,6 +124,59 @@ jobs:
               rows.push(`| ${clean(j.name, 60)} | ${result} | ${clean(detail)} | ${took(j)} |`);
             }
 
+            // --- tests per package, before → after --------------------------
+            // The head summary was written by the pull request's own workflow:
+            // keep only well-formed numbers and short package names.
+            const load = (dir) => {
+              try {
+                const raw = JSON.parse(fs.readFileSync(`${dir}/test-summary.json`, 'utf8'));
+                const out = new Map();
+                for (const p of (raw.packages || []).slice(0, 500)) {
+                  if (typeof p?.pkg !== 'string' || p.pkg.length > 200) continue;
+                  const num = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0) ? v : null;
+                  out.set(p.pkg, { pass: num(p.pass) ?? 0, fail: num(p.fail) ?? 0, skip: num(p.skip) ?? 0,
+                    seconds: num(p.seconds), cover: num(p.cover) });
+                }
+                return out;
+              } catch { return null; }
+            };
+            const head = load('head');
+            const base = load('base');
+            const short = (pkg) => pkg.replace(/^github\.com\/oisee\/vibing-steampunk\//, '');
+            const secs = (v) => v == null ? '—' : `${v.toFixed(1)} s`;
+            const total = (v) => v < 100 ? v.toFixed(1) : v.toFixed(0);
+            const sum = (m, k) => [...m.values()].reduce((a, p) => a + (p[k] || 0), 0);
+            const delta = (b, a, unit = '') => {
+              if (b == null || a == null) return '';
+              const d = a - b;
+              if (Math.abs(d) < (unit === ' s' ? 0.5 : 0.05)) return '';
+              return ` (${d > 0 ? '+' : ''}${unit === ' s' ? d.toFixed(1) : d.toFixed(1)}${unit})`;
+            };
+            const testLines = [];
+            if (head) {
+              const hp = sum(head, 'pass'), hf = sum(head, 'fail'), hs = sum(head, 'skip'), ht = sum(head, 'seconds');
+              const bp = base ? sum(base, 'pass') : null, bt = base ? sum(base, 'seconds') : null;
+              const baseRef = process.env.BASE_SHA ? `\`${process.env.BASE_SHA.slice(0, 8)}\`` : 'base';
+              testLines.push(base
+                ? `**Tests:** ${bp} → **${hp}** passed${hp - bp ? ` (${hp - bp > 0 ? '+' : ''}${hp - bp})` : ''}, ${hf} failed, ${hs} skipped · package time ${total(bt)} s → ${total(ht)} s, compared with ${baseRef} on main`
+                : `**Tests:** ${hp} passed, ${hf} failed, ${hs} skipped · package time ${total(ht)} s (no base run to compare with yet)`);
+              const names = [...new Set([...head.keys(), ...(base ? base.keys() : [])])];
+              const table = names.map((n) => {
+                const h = head.get(n), b = base?.get(n);
+                const tests = (p) => p ? p.pass + p.fail : null;
+                const status = !h ? '➖ removed' : h.fail ? '🔴' : (!b ? '🆕' : '🟢');
+                const changed = !b || !h || tests(b) !== tests(h) || (h && h.fail)
+                  || Math.abs((h?.seconds ?? 0) - (b?.seconds ?? 0)) >= 0.5
+                  || Math.abs((h?.cover ?? 0) - (b?.cover ?? 0)) >= 0.05;
+                return { n, h, b, status, changed,
+                  row: `| ${clean(short(n), 60)} | ${status} | ${b ? tests(b) : '—'} → ${h ? tests(h) : '—'} | ${secs(b?.seconds)} → ${secs(h?.seconds)}${delta(b?.seconds, h?.seconds, ' s')} | ${b?.cover != null ? b.cover.toFixed(1) + '%' : '—'} → ${h?.cover != null ? h.cover.toFixed(1) + '%' : '—'}${delta(b?.cover, h?.cover, ' pp')} |` };
+              }).filter((r) => (r.h && (r.h.pass + r.h.fail + r.h.skip)) || (r.b && (r.b.pass + r.b.fail + r.b.skip)));
+              const head5 = ['| Package | | Tests | Time | Coverage |', '| --- | --- | --- | --- | --- |'];
+              const moved = table.filter((r) => r.changed);
+              testLines.push('', `<details><summary>Per package: ${moved.length} changed, ${table.length} with tests</summary>`, '',
+                ...head5, ...(moved.length ? moved : table).map((r) => r.row), '', '</details>');
+            }
+
             const lines = [
               marker,
               `### CI: ${icon(run.conclusion)}`,
@@ -90,13 +186,36 @@ jobs:
             if (run.conclusion === 'action_required' || rows.length === 0) {
               lines.push('CI has not run on this commit yet: workflows from a first-time contributor wait for a maintainer to approve them.');
             } else {
-              lines.push('| Check | Result | Detail | Time |', '| --- | --- | --- | --- |', ...rows);
+              lines.push('| Check | Result | Detail | Time |', '| --- | --- | --- | --- |', ...rows, '', ...testLines);
+            }
+
+            // --- Copilot review, once per commit, only on a green run ----------
+            if (run.conclusion === 'success') {
+              const reviews = await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: prNumber });
+              const pending = await github.rest.pulls.listRequestedReviewers({ owner, repo, pull_number: prNumber })
+                .then((r) => r.data.users || []).catch(() => []);
+              const isCopilot = (login) => /copilot/i.test(login || '');
+              const done = reviews.some((r) => isCopilot(r.user?.login) && r.commit_id === run.head_sha)
+                || pending.some((u) => isCopilot(u.login));
+              if (done) {
+                lines.push('', '_Copilot review: already requested for this commit._');
+              } else {
+                let ok = false;
+                for (const reviewer of ['copilot-pull-request-reviewer[bot]', 'Copilot']) {
+                  try {
+                    await github.rest.pulls.requestReviewers({ owner, repo, pull_number: prNumber, reviewers: [reviewer] });
+                    ok = true; break;
+                  } catch (e) { core.info(`requesting ${reviewer}: ${e.message}`); }
+                }
+                lines.push('', ok ? '_Tests passed: Copilot review requested._'
+                  : '_Tests passed, but the Copilot review could not be requested automatically._');
+              }
             }
             const body = lines.join('\n');
 
             const comments = await github.paginate(github.rest.issues.listComments,
-              { owner, repo, issue_number: pr.number });
+              { owner, repo, issue_number: prNumber });
             const existing = comments.find((c) => c.user?.login === 'github-actions[bot]' && c.body?.includes(marker));
             if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            else await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
-            core.info(`${existing ? 'updated' : 'created'} report on #${pr.number}`);
+            else await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
+            core.info(`${existing ? 'updated' : 'created'} report on #${prNumber}`);

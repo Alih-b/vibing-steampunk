@@ -73,13 +73,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # -json for the counts. -json implies -v, so the log is printed back the
-      # way plain `go test` would: package lines, plus the output of the tests
-      # that failed.
+      # -race costs about 40 s here and has already caught one real race (the
+      # cookie jar swap fixed in #229). -json for the counts; it implies -v, so
+      # the log is printed back the way plain `go test` would: package lines,
+      # plus the output of the tests that failed.
       - name: Test
         run: |
           status=0
-          go test -json -coverprofile=cover.out ./... > test.json || status=$?
+          go test -race -json -coverprofile=cover.out ./... > test.json || status=$?
           jq -rsj '(map(select(.Action == "fail" and .Test != null) | .Package + " " + .Test)) as $failed
             | .[] | select(.Action == "output")
             | select(.Test == null or ((.Package + " " + .Test) as $k | $failed | index($k)))
@@ -100,6 +101,31 @@ jobs:
             cov=$(go tool cover -func=cover-pkg.out | awk '/^total:/ {print $3}')
           fi
           echo "::notice title=ci-report::${counts}${cov:+, pkg coverage $cov}"
+
+      # Per-package numbers for ci-report.yml, which compares them with the
+      # last green run on main: tests, seconds and coverage, before and after.
+      - name: Per-package summary
+        if: always() && hashFiles('test.json') != ''
+        run: |
+          jq -s '
+            group_by(.Package)[] | select(.[0].Package != null) | {
+              pkg:     .[0].Package,
+              pass:    (map(select(.Test != null and .Action == "pass")) | length),
+              fail:    (map(select(.Test != null and .Action == "fail")) | length),
+              skip:    (map(select(.Test != null and .Action == "skip")) | length),
+              seconds: ((map(select(.Test == null and (.Action == "pass" or .Action == "fail")))[0].Elapsed) // null),
+              cover:   ([.[] | select(.Test == null and .Action == "output") | .Output
+                          | (capture("coverage: (?<c>[0-9.]+)% of statements") // empty) | .c | tonumber] | first)
+            }' test.json | jq -s '{packages: .}' > test-summary.json
+          jq -r '.packages | length' test-summary.json
+
+      - name: Upload the summary
+        if: always() && hashFiles('test-summary.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-summary
+          path: test-summary.json
+          retention-days: 30
 
   lint:
     name: lint (advisory)
