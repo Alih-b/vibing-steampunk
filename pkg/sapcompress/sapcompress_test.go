@@ -17,7 +17,7 @@ import (
 // width up to its limit.
 var fixtures = []string{"text", "utf16", "random", "short", "zeros", "big"}
 
-func load(t *testing.T, name string) []byte {
+func load(t testing.TB, name string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {

@@ -136,6 +136,54 @@ jobs:
           path: test-summary.json
           retention-days: 30
 
+  # A malformed SAP answer (an HTML error page where XML was due, a truncated
+  # exception body, a corrupt cluster) must be an error, never a panic: a panic
+  # mid-edit can leave the object's lock held. Thirty seconds each on the three
+  # decoders that matter most; the seed corpus already runs in the test job,
+  # and anything the fuzzer finds is uploaded for `go test -run` to replay.
+  fuzz:
+    name: fuzz (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Advisory: what a fuzzer finds in thirty seconds is often older than the
+    # pull request it ran on, and must not block that PR. The crashers are
+    # uploaded either way, and the seed corpus still gates in the test job.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Go takes one -fuzz pattern per package run, so one invocation each.
+      # All three run even when one fails, so a run reports every crasher.
+      # -fuzzminimizetime keeps a minimisation from outliving -fuzztime.
+      - name: Fuzz
+        run: |
+          status=0
+          for spec in ./pkg/adt:FuzzADTException ./pkg/abaplint:FuzzStatementParser ./pkg/datacluster:FuzzParse; do
+            echo "::group::${spec##*:}"
+            go test -run='^$' -fuzz="^${spec##*:}\$" -fuzztime=30s -fuzzminimizetime=10s "${spec%%:*}" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+      # A crasher is a new file under some testdata/fuzz directory.
+      - name: Summarise
+        if: always()
+        run: |
+          n=$(git status --porcelain --untracked-files=all -- '*testdata/fuzz/*' | wc -l)
+          echo "::notice title=ci-report::fuzz 3×30s: ${n} crashers"
+
+      - name: Upload crashers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashers
+          path: pkg/**/testdata/fuzz/
+          if-no-files-found: ignore
+
   lint:
     name: lint (advisory)
     # Pull requests only. On main the gate is build/vet/test; lint is here to

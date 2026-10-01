@@ -99,7 +99,7 @@ func lzcDecode(body []byte, h Header) ([]byte, error) {
 		return r.readBits(width), true
 	}
 
-	out := make([]byte, 0, h.Length)
+	out := make([]byte, 0, preallocSize(h.Length))
 	scratch := make([]byte, 0, 1<<limit)
 	expand := func(code int) []byte {
 		scratch = scratch[:table[code].length]

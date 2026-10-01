@@ -19,7 +19,7 @@ import (
 // message tables the BAL layer stores, three of them empty, one holding three
 // messages.
 
-func loadHex(t *testing.T, name string) []byte {
+func loadHex(t testing.TB, name string) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {

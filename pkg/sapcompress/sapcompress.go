@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 )
 
 // Algorithm identifies the compression scheme named in a SAP header.
@@ -63,6 +64,15 @@ type Header struct {
 
 var magic = []byte{0x1f, 0x9d}
 
+// maxPrealloc bounds how much output buffer the header's length may reserve
+// up front. The length is four bytes of input anyone can write: trusted for
+// allocation, a nine-byte stream claiming 4 GiB reserved 4 GiB, and on a
+// 32-bit build it made makeslice panic. Past this the buffer grows with the
+// data actually decoded.
+const maxPrealloc = 1 << 20
+
+func preallocSize(length int) int { return min(length, maxPrealloc) }
+
 // ErrNotCompressed is returned when the 1F 9D signature is missing, which is
 // what an uncompressed cluster body looks like.
 var ErrNotCompressed = errors.New("sapcompress: no SAP compression signature")
@@ -75,8 +85,13 @@ func ParseHeader(data []byte) (Header, error) {
 	if !bytes.Equal(data[5:7], magic) {
 		return Header{}, ErrNotCompressed
 	}
+	length := binary.LittleEndian.Uint32(data[:4])
+	if uint64(length) > math.MaxInt {
+		// Only on a 32-bit build, where int(length) would turn negative.
+		return Header{}, fmt.Errorf("sapcompress: header length %d does not fit this platform's int", length)
+	}
 	return Header{
-		Length:    int(binary.LittleEndian.Uint32(data[:4])),
+		Length:    int(length),
 		Algorithm: Algorithm(data[4] & 0x0f),
 		Version:   data[4] >> 4,
 		Extra:     data[7],
@@ -129,8 +144,7 @@ func inflate(body []byte, length int) ([]byte, error) {
 	}
 	r := flate.NewReader(bytes.NewReader(shifted))
 	defer r.Close()
-	out := make([]byte, 0, length)
-	buf := bytes.NewBuffer(out)
+	buf := bytes.NewBuffer(make([]byte, 0, preallocSize(length)))
 	// One byte more than promised, so an overlong stream is detected rather
 	// than silently truncated to the header's figure.
 	if _, err := io.CopyN(buf, r, int64(length)+1); err != nil && !errors.Is(err, io.EOF) {
