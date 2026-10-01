@@ -242,49 +242,19 @@ func (s *Server) handleExecuteABAP(ctx context.Context, request mcp.CallToolRequ
 		return newToolResultError(fmt.Sprintf("ExecuteABAP failed: %v", err)), nil
 	}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Program: %s\n", result.ProgramName)
-	fmt.Fprintf(&sb, "Success: %t\n", result.Success)
-	fmt.Fprintf(&sb, "Execution Time: %.3f s\n", result.ExecutionTime)
-	fmt.Fprintf(&sb, "Cleaned Up: %t\n", result.CleanedUp)
-	fmt.Fprintf(&sb, "Message: %s\n", result.Message)
+	return mcp.NewToolResultText(executeABAPJSON(result)), nil
+}
 
-	// The one-line message names the failure; this is where it is spelled out.
-	// A model reading "Success: false" and nothing else has to guess whether the
-	// code was wrong or the system was, and it will guess.
-	if result.Failure != nil {
-		fmt.Fprintf(&sb, "\nFailure (%s): %s\n", result.Failure.Kind, result.Failure.Title)
-		if result.Failure.Line > 0 {
-			fmt.Fprintf(&sb, "  at line %d of the code you sent\n", result.Failure.Line)
-		}
-		for _, detail := range result.Failure.Details {
-			fmt.Fprintf(&sb, "  %s\n", detail)
-		}
+// executeABAPJSON is the execute_abap answer: the run's own fields under the
+// names adt.ExecuteABAPResult gives them (success, programName, output,
+// executionTime, message, cleanedUp, failure), plus result_text, the returned
+// value in full and unwrapped. `vsp execute --json` prints the same.
+func executeABAPJSON(result *adt.ExecuteABAPResult) string {
+	out, err := adt.IndentJSON(result.Lean())
+	if err != nil {
+		return fmt.Sprintf(`{"success": false, "message": %q}`, "could not encode the result: "+err.Error())
 	}
-
-	if len(result.Output) > 0 {
-		sb.WriteString("\nOutput:\n")
-		for i, output := range result.Output {
-			fmt.Fprintf(&sb, "  [%d] %s\n", i+1, output)
-		}
-	}
-
-	// Include raw alerts for debugging if no clean output was captured
-	if len(result.Output) == 0 && len(result.RawAlerts) > 0 {
-		sb.WriteString("\nRaw Alerts (for debugging):\n")
-		for _, alert := range result.RawAlerts {
-			fmt.Fprintf(&sb, "  Kind: %s, Severity: %s\n", alert.Kind, alert.Severity)
-			fmt.Fprintf(&sb, "  Title: %s\n", alert.Title)
-			if len(alert.Details) > 0 {
-				sb.WriteString("  Details:\n")
-				for _, d := range alert.Details {
-					fmt.Fprintf(&sb, "    - %s\n", d)
-				}
-			}
-		}
-	}
-
-	return mcp.NewToolResultText(sb.String()), nil
+	return string(out)
 }
 
 func (s *Server) handleListTransports(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

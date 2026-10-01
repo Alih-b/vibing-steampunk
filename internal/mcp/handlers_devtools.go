@@ -28,6 +28,9 @@ func (s *Server) routeDevToolsAction(ctx context.Context, action, objectType, ob
 			if v, ok := getBoolParam(params, "include_long"); ok {
 				args["include_long"] = v
 			}
+			if v, ok := getBoolParam(params, "only_failures"); ok {
+				args["only_failures"] = v
+			}
 			return s.callHandler(ctx, s.handleRunUnitTests, args)
 		}
 	}
@@ -187,11 +190,15 @@ func (s *Server) handleRunUnitTests(ctx context.Context, request mcp.CallToolReq
 		flags.Long = true
 	}
 
+	onlyFailures, _ := request.GetArguments()["only_failures"].(bool)
+
 	result, err := s.adtClient.RunUnitTests(ctx, objectURL, &flags)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("Unit test run failed: %v", err)), nil
 	}
 
-	output, _ := json.MarshalIndent(result, "", "  ")
+	// ok and counts on top of the classes this tool always answered; with
+	// only_failures, the failed methods alone, in the lean shape.
+	output, _ := adt.IndentJSON(adt.NewUnitTestReport(result, onlyFailures))
 	return mcp.NewToolResultText(string(output)), nil
 }

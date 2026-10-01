@@ -346,6 +346,7 @@ func init() {
 	// Execute flags
 	executeCmd.Flags().String("file", "", "Read ABAP code from file")
 	executeCmd.Flags().Bool("stdin", false, "Read ABAP code from stdin")
+	executeCmd.Flags().Bool("json", false, "Print the result as JSON, the same object the execute_abap MCP tool answers (result_text, output, failure, ...)")
 	executeCmd.Flags().Bool("no-dump-check", false, "Do not look in ST22 for a runtime error this run may have caused")
 	executeCmd.Flags().Duration("dump-wait", 2*time.Second, "How long to keep looking for that runtime error after the code returns")
 
@@ -672,7 +673,17 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("execute failed: %w\n\nNote: ExecuteABAP wraps code in a unit test class.\nFor advanced execution, use ZADT_VSP WebSocket (vsp install zadt-vsp)", err)
 	}
 
-	if len(result.Output) > 0 {
+	// Every value, whole and in order, one per line: a value is never cut, and
+	// a script reading stdout gets exactly what the code returned. --json gives
+	// the MCP tool's object instead, for a caller that needs to tell one value
+	// with a line break in it from two.
+	if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+		out, jerr := adt.IndentJSON(result.Lean())
+		if jerr != nil {
+			return fmt.Errorf("could not encode the result: %w", jerr)
+		}
+		fmt.Println(string(out))
+	} else {
 		for _, line := range result.Output {
 			fmt.Println(line)
 		}

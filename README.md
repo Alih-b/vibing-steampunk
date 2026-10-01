@@ -1912,9 +1912,64 @@ ExecuteABAP:
     lv_result = lv_msg.
 ```
 
+Several values: call `RETURN_VALUE( x )` once per value (in addition to, or
+instead of, `lv_result`). Each value is handed back the moment it is returned,
+so a later `RETURN`, `CHECK` or exception does not lose it. `x` can be any data
+object: an elementary value comes back as text, a structure or table as JSON,
+a data reference as what it points to, and an object reference as
+`<object CLASS_NAME>`.
+
+The MCP tool (`execute_abap`) answers JSON. `result_text` is the returned value
+in full, unwrapped from SAP's `Critical Assertion Error: '…'`: a string for one
+value, an array for several. The other fields are `success`, `programName`,
+`output` (every value, in order), `executionTime`, `message`, `cleanedUp`,
+`failure` (when the code did not finish) and `rawAlerts` (only when no value
+came back). SAP turns a line break inside a value into `#`.
+
+```json
+{ "success": true, "programName": "ZTEMP_EXEC_12345678",
+  "output": ["20261001", "TESTUSER"], "result_text": ["20261001", "TESTUSER"],
+  "executionTime": 0.41,
+  "message": "Executed successfully, 2 output(s) returned", "cleanedUp": true }
+```
+
+`vsp execute` prints every value whole, one per line; `vsp execute --json`
+prints the same object as the MCP tool.
+
 **Risk levels:** `harmless` (read-only), `dangerous` (write), `critical` (full access)
 
 See [ExecuteABAP Report](reports/2025-12-05-004-execute-abap-implementation.md) for details.
+
+## ABAP Unit results
+
+`RunUnitTests` / `SAP(action="test")` answers JSON:
+
+```json
+{
+  "ok": false,
+  "counts": { "classes": 2, "methods": 3, "passed": 2, "failed": 1, "classFailures": 1, "warnings": 1, "notRun": 0 },
+  "classes": [ { "name": "LTC_CALC", "parentName": "ZCL_DEMO_CALC", "testMethods": [ ... ], ... } ]
+}
+```
+
+- `ok` is true when at least one test method ran, nothing failed and every test
+  class ran; a run in which no test method ran is not ok, and `note` says why.
+- A method fails on a failed assertion or an exception (or any critical/fatal
+  alert). Warnings are counted but do not fail it.
+- A test class with no test method and no failure of its own was not run (most
+  often ABAP Unit refused it for its risk level or duration). It is counted in
+  `notRun`, named in `notRunClasses`, and makes the run not ok, even when
+  another class passed. `vsp test` exits non-zero whenever `ok` is false.
+- `classes` keeps the fields it always had (name, parentName, testMethods with
+  name and alerts: kind, severity, title, details, stack; alerts filed on the
+  class itself, as CLASS_SETUP/CLASS_TEARDOWN failures are).
+- `"only_failures": true` lists only failed methods and classes with alerts of
+  their own, without URIs or stacks (`at` is where the alert was raised); the
+  counts still cover the whole run, so a green run is just `ok` + `counts`.
+- `include_dangerous` runs RISK LEVEL DANGEROUS/CRITICAL tests and is refused
+  under `--read-only`.
+
+CLI: `vsp test CLAS ZCL_X --only-failures`, `vsp test CLAS ZCL_X --json`.
 
 ## AI-Powered Root Cause Analysis
 

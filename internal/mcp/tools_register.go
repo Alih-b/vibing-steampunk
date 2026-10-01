@@ -855,7 +855,7 @@ func (s *Server) registerDevTools(shouldRegister func(string) bool) {
 
 	if shouldRegister("RunUnitTests") {
 		s.mcpServer.AddTool(mcp.NewTool("RunUnitTests",
-			mcp.WithDescription("Run ABAP Unit tests for an object"),
+			mcp.WithDescription("Run ABAP Unit tests for an object. Answers JSON: ok (a test method ran, nothing failed and every test class ran), counts {classes, methods, passed, failed, classFailures, warnings, notRun}, notRunClasses (test classes ABAP Unit listed but did not run, e.g. for their risk level), and classes (each with name, parentName, alerts filed on the class, and testMethods with name and alerts: kind, severity, title, details). only_failures lists just the failed methods and classes with alerts, without URIs or stacks."),
 			mcp.WithString("object_url",
 				mcp.Required(),
 				mcp.Description("ADT URL of the object (e.g., /sap/bc/adt/oo/classes/ZCL_TEST)"),
@@ -865,6 +865,9 @@ func (s *Server) registerDevTools(shouldRegister func(string) bool) {
 			),
 			mcp.WithBoolean("include_long",
 				mcp.Description("Include long duration tests (default: false)"),
+			),
+			mcp.WithBoolean("only_failures",
+				mcp.Description("List only failed test methods (and classes with alerts of their own), plus the counts for the whole run (default: false)"),
 			),
 		), s.handleRunUnitTests)
 	}
@@ -930,10 +933,10 @@ func (s *Server) registerDevTools(shouldRegister func(string) bool) {
 	// ExecuteABAP - execute arbitrary ABAP code via unit test wrapper (Expert mode only)
 	if shouldRegister("ExecuteABAP") {
 		s.mcpServer.AddTool(mcp.NewTool("ExecuteABAP",
-			mcp.WithDescription("Execute arbitrary ABAP code via unit test wrapper. Creates temp program, injects code into test method, runs via RunUnitTests, extracts results from assertion messages, cleans up. Use lv_result variable to return output. WARNING: Powerful tool - use responsibly."),
+			mcp.WithDescription("Execute arbitrary ABAP code via unit test wrapper. Creates temp program, injects code into test method, runs via RunUnitTests, extracts results from assertion messages, cleans up. Use lv_result variable to return output, or call RETURN_VALUE( x ) once per value to return several (handed back at once, so a later RETURN or CHECK keeps it; structures and tables come back as JSON). Answers JSON; result_text holds the full value (an array for several). WARNING: Powerful tool - use responsibly."),
 			mcp.WithString("code",
 				mcp.Required(),
-				mcp.Description("ABAP code to execute. Set lv_result variable to return output via assertion message."),
+				mcp.Description("ABAP code to execute. Set lv_result, or call RETURN_VALUE( x ) for each value to return."),
 			),
 			mcp.WithString("risk_level",
 				mcp.Description("Risk level: harmless (default, no DB writes), dangerous (can write to DB), critical (full access)"),
