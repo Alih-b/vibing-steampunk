@@ -12,7 +12,10 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/semaphore"
 )
 
 // httpTraceEnabled reports whether the VSP_HTTP_TRACE env var requests raw
@@ -136,6 +139,17 @@ type Transport struct {
 	reauthMu   sync.Mutex
 	lastReauth time.Time
 
+	// locks is the owning client's lock window. While it holds a handle,
+	// stateless requests are kept out of the stateful context (see do).
+	locks *lockWindow
+
+	// contextGate admits one request at a time into the stateful context, and
+	// keeps a stateless request that is allowed to end the context from
+	// racing one that is using it. contextInFlight counts the stateful
+	// requests under way or waiting (see do). Set by NewTransportWithClient.
+	contextGate     contextGate
+	contextInFlight atomic.Int32
+
 	// lockOutstanding, when set by the owning Client, reports whether that
 	// client holds a lock handle. Cookie-file recovery is refused while it
 	// does: reloading would replace the session the lock belongs to.
@@ -152,8 +166,9 @@ func NewTransport(cfg *Config) *Transport {
 func NewTransportWithClient(cfg *Config, client HTTPDoer) *Transport {
 	applyProxyContextIDGuardEnv(cfg)
 	t := &Transport{
-		config:     cfg,
-		httpClient: client,
+		config:      cfg,
+		httpClient:  client,
+		contextGate: newContextGate(),
 	}
 	if cfg.Cache {
 		t.cache = newResponseCache(cfg.CacheStore, cfg.CacheTTL)
@@ -301,7 +316,7 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 
 	// Execute request
 	traceHTTPRequest(req, opts.Body)
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
@@ -442,7 +457,7 @@ func (t *Transport) retryRequest(ctx context.Context, path string, opts *Request
 	t.applyProxyContextIDGuard(req, opts)
 
 	traceHTTPRequest(req, opts.Body)
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("executing retry request: %w", err)
 	}
@@ -616,7 +631,7 @@ func (t *Transport) probeCSRFToken(ctx context.Context, method string, stateful 
 	}
 
 	traceHTTPRequest(req, nil)
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.do(req)
 	if err != nil {
 		return "", 0, false, fmt.Errorf("executing request: %w", err)
 	}
@@ -850,7 +865,10 @@ func (t *Transport) ReleaseProxyContext(ctx context.Context) {
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("X-sap-adt-sessiontype", "stateless")
 	traceHTTPRequest(req, nil)
-	resp, err := t.httpClient.Do(req)
+	// Through do, like every other request: while another chain holds a lock
+	// or a stateful request is under way, the release goes without the
+	// context id and leaves that chain's context alone.
+	resp, err := t.do(req)
 	if err != nil {
 		return
 	}
@@ -1172,3 +1190,139 @@ func (t *Transport) addCookies(req *http.Request) {
 		req.AddCookie(&http.Cookie{Name: name, Value: value})
 	}
 }
+
+// stripContextID removes a non-empty sap-contextid cookie from req.
+func stripContextID(req *http.Request) {
+	cookies := req.Cookies()
+	kept := cookies[:0]
+	stripped := false
+	for _, c := range cookies {
+		if c.Name == "sap-contextid" && c.Value != "" {
+			stripped = true
+			continue
+		}
+		kept = append(kept, c)
+	}
+	if !stripped {
+		return
+	}
+	req.Header.Del("Cookie")
+	for _, c := range kept {
+		req.AddCookie(c)
+	}
+}
+
+// do sends a request, keeping concurrent callers of one client from breaking
+// each other's lock chains. Two things end or break the stateful ADT context a
+// lock handle is bound to, and both are the ordinary work of another caller --
+// a second agent sharing this client:
+//
+//   - A stateless request ends the context it arrives in, and the jar puts
+//     the context's sap-contextid on every request. One sent between LOCK and
+//     the write turns the write into 423 ExceptionResourceInvalidLockHandle.
+//     So while a lock is outstanding, or a stateful request is under way, a
+//     stateless request goes without the jar: it carries the session's other
+//     cookies but not sap-contextid, and the cookies its response sets are
+//     not learned. The stateful context is neither ended nor replaced.
+//   - The ICM serves a stateful context one request at a time and answers a
+//     second concurrent one with 400. The session recovery that follows drops
+//     the cookies and orphans the context together with the enqueue it holds,
+//     which then refuses every later LOCK on the object ("already editing")
+//     until the session times out. So requests into the context -- stateful
+//     ones, and unmarked ones such as the CSRF probe -- go one at a time.
+//     Chains still interleave: one context holds several locks.
+//
+// A stateless request outside any lock window still goes into the context and
+// ends it, as before -- that is how a finished chain's context is retired. It
+// holds the gate shared while it does, so a LOCK cannot open a window in the
+// context it is about to end; stateless requests still run side by side. A
+// stateless request never waits for the gate: when a request into the context
+// holds it or waits for it, the stateless one goes isolated at once. Requests
+// into the context wait their turn only as long as their own context lasts.
+func (t *Transport) do(req *http.Request) (*http.Response, error) {
+	if req.Header.Get("X-sap-adt-sessiontype") == "stateless" {
+		if t.contextGate.tryShared() {
+			if t.contextInFlight.Load() == 0 && (t.locks == nil || !t.locks.present()) {
+				defer t.contextGate.releaseShared()
+				return t.httpClient.Do(req)
+			}
+			t.contextGate.releaseShared()
+		}
+		// Cookies supplied with the configuration (browser or SAML logon)
+		// were put on the request already, sap-contextid among them; it
+		// would end the context just the same. The empty one the proxy guard
+		// sends to switch the context off stays.
+		stripContextID(req)
+		client, ok := t.httpClient.(*http.Client)
+		if !ok || client.Jar == nil {
+			return t.httpClient.Do(req)
+		}
+		for _, c := range client.Jar.Cookies(req.URL) {
+			if c.Name != "sap-contextid" {
+				req.AddCookie(c)
+			}
+		}
+		isolated := *client
+		isolated.Jar = nil
+		return isolated.Do(req)
+	}
+
+	stateful := req.Header.Get("X-sap-adt-sessiontype") == "stateful"
+	if stateful {
+		t.contextInFlight.Add(1)
+		defer t.contextInFlight.Add(-1)
+	}
+	if err := t.contextGate.lock(req.Context()); err != nil {
+		return nil, &url.Error{Op: urlErrorOp(req.Method), URL: req.URL.String(), Err: err}
+	}
+	defer t.contextGate.unlock()
+	return t.httpClient.Do(req)
+}
+
+// urlErrorOp names the method the way net/http does in its *url.Error.
+func urlErrorOp(method string) string {
+	if method == "" {
+		return "Get"
+	}
+	return method[:1] + strings.ToLower(method[1:])
+}
+
+// contextGateSlots is the gate's weight: one slot per stateless request that
+// holds it shared, all of them for a request into the context. A million
+// concurrent stateless requests on one client is out of reach.
+const contextGateSlots = 1 << 20
+
+// contextGate is a readers-writer gate over a weighted semaphore. Readers
+// never wait: tryShared takes one slot with TryAcquire, which fails while a
+// writer holds the gate or is queued for it, so readers cannot starve a
+// writer. Writers take every slot with Acquire, which queues them in arrival
+// order and gives up with their context; a writer that gives up passes the
+// turn on to the next in the queue. The zero value is not usable; see
+// newContextGate.
+type contextGate struct {
+	sem *semaphore.Weighted
+}
+
+func newContextGate() contextGate {
+	return contextGate{sem: semaphore.NewWeighted(contextGateSlots)}
+}
+
+// tryShared takes the gate shared if no writer holds it or waits for it.
+func (g contextGate) tryShared() bool { return g.sem.TryAcquire(1) }
+
+func (g contextGate) releaseShared() { g.sem.Release(1) }
+
+// lock takes the gate exclusively, or gives up with ctx's error. A gate
+// handed over just as ctx ended is given back: the caller is not to go on.
+func (g contextGate) lock(ctx context.Context) error {
+	if err := g.sem.Acquire(ctx, contextGateSlots); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		g.sem.Release(contextGateSlots)
+		return err
+	}
+	return nil
+}
+
+func (g contextGate) unlock() { g.sem.Release(contextGateSlots) }

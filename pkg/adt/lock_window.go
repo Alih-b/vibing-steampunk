@@ -61,14 +61,40 @@ func (c *Client) noteLockClosed(handle string) {
 // lockOutstanding reports whether this client is inside a lock window, pruning
 // entries old enough that the lock they name cannot still be alive.
 func (c *Client) lockOutstanding() bool {
-	c.locks.mu.Lock()
-	defer c.locks.mu.Unlock()
+	return c.locks.outstanding()
+}
 
+// outstanding reports a lock opened within lockWindowMaxAge -- the keep-alive
+// policy, which may err toward pinging after a while.
+func (w *lockWindow) outstanding() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	cutoff := time.Now().Add(-lockWindowMaxAge)
-	for handle, opened := range c.locks.open {
-		if opened.Before(cutoff) {
-			delete(c.locks.open, handle)
+	for _, opened := range w.open {
+		if !opened.Before(cutoff) {
+			return true
 		}
 	}
-	return len(c.locks.open) > 0
+	return false
+}
+
+// lockRecordMaxAge is how long an entry nobody closed is kept for present.
+// Stateful traffic keeps an SAP context alive past its idle timeout, so the
+// transport cannot use the keep-alive's thirty minutes; a working day can.
+const lockRecordMaxAge = 12 * time.Hour
+
+// present reports any lock this client has not seen released, whatever its
+// age short of lockRecordMaxAge. The transport's isolation uses it: a
+// stateless request that carried the context id would end a context whose
+// handle may still be valid, and that costs a write, not a ping.
+func (w *lockWindow) present() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	cutoff := time.Now().Add(-lockRecordMaxAge)
+	for handle, opened := range w.open {
+		if opened.Before(cutoff) {
+			delete(w.open, handle)
+		}
+	}
+	return len(w.open) > 0
 }

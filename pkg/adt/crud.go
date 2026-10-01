@@ -43,6 +43,14 @@ func (c *Client) LockObject(ctx context.Context, objectURL string, accessMode st
 	params.Set("_action", "LOCK")
 	params.Set("accessMode", accessMode)
 
+	// The window opens when the handle is recorded, after the response is in.
+	// Until then, count the LOCK as a stateful request under way, so no
+	// stateless request ends the context between the two (see Transport.do).
+	if c.transport != nil {
+		c.transport.contextInFlight.Add(1)
+		defer c.transport.contextInFlight.Add(-1)
+	}
+
 	resp, err := c.transport.Request(ctx, objectURL, &RequestOptions{
 		Method:   http.MethodPost,
 		Query:    params,

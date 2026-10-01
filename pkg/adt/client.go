@@ -44,7 +44,8 @@ func NewClient(baseURL, username, password string, opts ...Option) *Client {
 }
 
 // newClient wires a client to its transport, including the lock window the
-// transport consults before reloading a cookie file.
+// transport consults before reloading a cookie file and while routing
+// stateless requests.
 func newClient(cfg *Config, transport *Transport) *Client {
 	c := &Client{
 		transport: transport,
@@ -52,6 +53,9 @@ func newClient(cfg *Config, transport *Transport) *Client {
 	}
 	if transport != nil {
 		transport.lockOutstanding = c.lockOutstanding
+		// The transport keeps stateless requests out of the context a lock
+		// handle is bound to while one is outstanding (see Transport.do).
+		transport.locks = &c.locks
 	}
 	return c
 }

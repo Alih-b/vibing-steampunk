@@ -16,6 +16,7 @@ require (
 	github.com/tetratelabs/wazero v1.12.0
 	github.com/yuin/gopher-lua v1.1.2
 	golang.org/x/net v0.59.0
+	golang.org/x/sync v0.23.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.59.0
 )
