@@ -349,12 +349,16 @@ func (s *Server) handleCreateTransport(ctx context.Context, request mcp.CallTool
 
 	transportLayer, _ := request.GetArguments()["transport_layer"].(string)
 	transportType, _ := request.GetArguments()["type"].(string)
+	ctsProject, _ := request.GetArguments()["cts_project"].(string)
+	target, _ := request.GetArguments()["target"].(string)
 
 	opts := adt.CreateTransportOptions{
 		Description:    description,
 		Package:        pkg,
 		TransportLayer: transportLayer,
 		Type:           transportType,
+		CTSProject:     ctsProject,
+		Target:         target,
 	}
 
 	transportNumber, err := s.adtClient.CreateTransportV2(ctx, opts)

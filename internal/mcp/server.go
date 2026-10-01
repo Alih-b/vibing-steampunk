@@ -100,6 +100,8 @@ type Config struct {
 	AllowedTransports       []string // Whitelist specific transports (supports wildcards like "A4HK*")
 	AllowTransportableEdits bool     // Allow editing objects that require transport requests
 	TransportChoice         string   // auto (default): pick a request for a write that names none; off: leave it to SAP
+	CTSProject              string   // CTS project a request vsp creates is filed under
+	TransportTarget         string   // transport target of a request vsp creates
 
 	// Feature configuration (safety network)
 	// Values: "auto" (default, probe system), "on" (force enabled), "off" (force disabled)
@@ -210,6 +212,12 @@ func NewServer(cfg *Config) *Server {
 		safety.TransportChoice = cfg.TransportChoice
 	}
 	opts = append(opts, adt.WithSafety(safety))
+	if cfg.CTSProject != "" {
+		opts = append(opts, adt.WithCTSProject(cfg.CTSProject))
+	}
+	if cfg.TransportTarget != "" {
+		opts = append(opts, adt.WithTransportTarget(cfg.TransportTarget))
+	}
 
 	// VSP_CACHE=true keeps GET answers for VSP_CACHE_TTL (10m by default),
 	// in memory for the life of the server; VSP_CACHE_PATH puts them on

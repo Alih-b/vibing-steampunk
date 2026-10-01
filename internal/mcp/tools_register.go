@@ -1919,6 +1919,12 @@ func (s *Server) registerTransportTools(shouldRegister func(string) bool) {
 			mcp.WithString("type",
 				mcp.Description("Type: 'workbench' (default) or 'customizing'"),
 			),
+			mcp.WithString("cts_project",
+				mcp.Description("CTS project to file the request under (optional; defaults to --cts-project)"),
+			),
+			mcp.WithString("target",
+				mcp.Description("Transport target, e.g. a target group like /GROUP/ (optional; defaults to --transport-target)"),
+			),
 		), s.handleCreateTransport)
 	}
 

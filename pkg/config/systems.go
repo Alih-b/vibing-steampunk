@@ -64,6 +64,11 @@ type SystemConfig struct {
 	AllowTransportableEdits bool     `json:"allow_transportable_edits,omitempty"`
 	TransportChoice         string   `json:"transport_choice,omitempty"` // auto (default) or off
 	BlockFreeSQL            bool     `json:"block_free_sql,omitempty"`
+
+	// The CTS project and transport target a request vsp creates is filed
+	// under, for systems that organise their requests in projects.
+	CTSProject      string `json:"cts_project,omitempty"`
+	TransportTarget string `json:"transport_target,omitempty"`
 }
 
 // SSOSettings configures browser single sign-on for one system.

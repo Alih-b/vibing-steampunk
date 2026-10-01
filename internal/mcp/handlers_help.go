@@ -491,6 +491,7 @@ Transports:
   SAP(action="system", params={"type": "list_transports", "request_status": "R", "released_from": "20260101", "released_to": "20261231"})
   SAP(action="system", params={"type": "get_transport", "transport": "A4HK900001"})
   SAP(action="system", params={"type": "create_transport", "description": "...", "package": "$TMP"})
+  SAP(action="system", params={"type": "create_transport", "description": "...", "package": "ZDEMO", "cts_project": "PRJ_DEMO", "target": "/GROUP/"})  - filed under a CTS project (default: --cts-project)
   SAP(action="system", params={"type": "release_transport", "transport": "A4HK900001"})
   SAP(action="system", params={"type": "delete_transport", "transport": "A4HK900001"})
   SAP(action="system", params={"type": "merge_transports", "source": ["A4HK900001", "A4HK900003"], "target": "A4HK900005"})

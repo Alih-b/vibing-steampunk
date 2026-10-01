@@ -248,14 +248,7 @@ func (c *Client) CreateTransport(ctx context.Context, objectURL string, descript
 		return "", err
 	}
 
-	owner := strings.ToUpper(c.config.Username)
-
-	body := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm" tm:useraction="newrequest">
-  <tm:request tm:type="K" tm:desc="%s" tm:target="" tm:cts_project="">
-    <tm:task tm:owner="%s"/>
-  </tm:request>
-</tm:root>`, escapeXMLAttr(description), owner)
+	body := c.newRequestBody("K", description, "", "")
 
 	resp, err := c.transport.Request(ctx, "/sap/bc/adt/cts/transportrequests", &RequestOptions{
 		Method:      http.MethodPost,
@@ -403,6 +396,8 @@ type CreateTransportOptions struct {
 	Package        string
 	TransportLayer string
 	Type           string // "workbench" or "customizing"
+	CTSProject     string // CTS project; empty uses the configured one (WithCTSProject)
+	Target         string // transport target; empty uses the configured one (WithTransportTarget)
 }
 
 // ReleaseTransportOptions for releasing transports
@@ -779,17 +774,7 @@ func (c *Client) CreateTransportV2(ctx context.Context, opts CreateTransportOpti
 		reqType = "W"
 	}
 
-	owner := strings.ToUpper(c.config.Username)
-
-	body := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm" tm:useraction="newrequest">
-  <tm:request tm:type="%s" tm:desc="%s" tm:target="" tm:cts_project="">
-    <tm:task tm:owner="%s"/>
-  </tm:request>
-</tm:root>`,
-		reqType,
-		escapeXMLAttr(opts.Description),
-		owner)
+	body := c.newRequestBody(reqType, opts.Description, opts.Target, opts.CTSProject)
 
 	query := make(map[string][]string)
 	if opts.TransportLayer != "" {
@@ -808,6 +793,32 @@ func (c *Client) CreateTransportV2(ctx context.Context, opts CreateTransportOpti
 	}
 
 	return parseCreateTransportResponse(resp.Body)
+}
+
+// newRequestBody is the body ADT's transportrequests endpoint takes to create a
+// request with one task for the logged-on user. An empty target or project
+// falls back to the configured one, and to SAP's own default after that.
+//
+// ADT's answer names the project by its external ID, not by the name it stored
+// in E070A (SAP_CTS_PROJECT), which is the record.
+func (c *Client) newRequestBody(reqType, description, target, project string) string {
+	if target == "" {
+		target = c.config.TransportTarget
+	}
+	if project == "" {
+		project = c.config.CTSProject
+	}
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm" tm:useraction="newrequest">
+  <tm:request tm:type="%s" tm:desc="%s" tm:target="%s" tm:cts_project="%s">
+    <tm:task tm:owner="%s"/>
+  </tm:request>
+</tm:root>`,
+		reqType,
+		escapeXMLAttr(description),
+		escapeXMLAttr(target),
+		escapeXMLAttr(project),
+		escapeXMLAttr(strings.ToUpper(c.config.Username)))
 }
 
 // parseCreateTransportResponse extracts the transport number from the XML response.

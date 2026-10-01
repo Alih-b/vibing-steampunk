@@ -52,6 +52,12 @@ type Config struct {
 	// TerminalID for debugger session (shared with SAP GUI for cross-tool debugging)
 	TerminalID string
 
+	// CTSProject and TransportTarget are what a request vsp creates is filed
+	// under when the caller names neither: the CTS project (E070A
+	// SAP_CTS_PROJECT) and the transport target. Empty leaves both to SAP.
+	CTSProject      string
+	TransportTarget string
+
 	// Cache keeps successful GET responses for CacheTTL and hands them back
 	// until a modifying request empties it. CacheStore is where they live;
 	// nil means in memory, for the life of the process.
@@ -230,6 +236,22 @@ func WithAllowedTransports(transports ...string) Option {
 func WithTransportChoice(mode string) Option {
 	return func(c *Config) {
 		c.Safety.TransportChoice = mode
+	}
+}
+
+// WithCTSProject files every request vsp creates under this CTS project,
+// unless the caller names another.
+func WithCTSProject(project string) Option {
+	return func(c *Config) {
+		c.CTSProject = project
+	}
+}
+
+// WithTransportTarget sets the target of every request vsp creates, unless the
+// caller names another.
+func WithTransportTarget(target string) Option {
+	return func(c *Config) {
+		c.TransportTarget = target
 	}
 }
 

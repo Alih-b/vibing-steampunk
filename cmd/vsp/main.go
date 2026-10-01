@@ -153,6 +153,8 @@ func init() {
 	// Keep it separate from the other root-only safety flags: moving all of
 	// them would broaden this command-line surface without solving #117.
 	rootCmd.PersistentFlags().BoolVar(&cfg.AllowTransportableEdits, "allow-transportable-edits", false, "Allow editing objects in transportable packages (requires transport parameter)")
+	rootCmd.Flags().StringVar(&cfg.CTSProject, "cts-project", "", "CTS project every request vsp creates is filed under, unless the call names one (for systems that require a project)")
+	rootCmd.Flags().StringVar(&cfg.TransportTarget, "transport-target", "", "Transport target of every request vsp creates, unless the call names one")
 	rootCmd.Flags().StringVar(&cfg.TransportChoice, "transport-choice", "auto", "A write with no transport named: auto picks the object's own or an open request of yours that fits (and creates one with --enable-transports); off leaves it to SAP, which generates a request per write")
 
 	// Mode options
@@ -326,12 +328,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Load transport_attribute from default system if not already set via env
-		if cfg.TransportAttribute == "" && systemsCfg.Default != "" {
-			if sys, err := systemsCfg.GetSystem(systemsCfg.Default); err == nil && sys.TransportAttribute != "" {
-				cfg.TransportAttribute = sys.TransportAttribute
-			}
-		}
+		applyDefaultSystemSettings(cfg, systemsCfg)
 	}
 
 	// The binary's own identity, so SAP() can say which build answered. An
@@ -351,6 +348,29 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return srv.ServeHTTP(addr)
 	default:
 		return srv.ServeStdio()
+	}
+}
+
+// applyDefaultSystemSettings fills what the flags and the environment left
+// empty from the default system in .vsp.json: transport_attribute, and where a
+// request vsp creates is filed, cts_project and transport_target. The CLI takes
+// the same keys from the system it runs against (resolveSystemParams).
+func applyDefaultSystemSettings(c *mcp.Config, systemsCfg *config.SystemsConfig) {
+	if systemsCfg == nil || systemsCfg.Default == "" {
+		return
+	}
+	sys, err := systemsCfg.GetSystem(systemsCfg.Default)
+	if err != nil {
+		return
+	}
+	if c.TransportAttribute == "" && sys.TransportAttribute != "" {
+		c.TransportAttribute = sys.TransportAttribute
+	}
+	if c.CTSProject == "" && sys.CTSProject != "" {
+		c.CTSProject = sys.CTSProject
+	}
+	if c.TransportTarget == "" && sys.TransportTarget != "" {
+		c.TransportTarget = sys.TransportTarget
 	}
 }
 
@@ -471,6 +491,12 @@ func resolveConfig(cmd *cobra.Command) {
 		if v := viper.GetString("TRANSPORT_CHOICE"); v != "" {
 			cfg.TransportChoice = v
 		}
+	}
+	if !cmd.Flags().Changed("cts-project") {
+		cfg.CTSProject = viper.GetString("CTS_PROJECT")
+	}
+	if !cmd.Flags().Changed("transport-target") {
+		cfg.TransportTarget = viper.GetString("TRANSPORT_TARGET")
 	}
 
 	// Feature configuration: flag > SAP_FEATURE_* env
