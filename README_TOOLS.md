@@ -194,15 +194,17 @@ Solves token limit problem for large files:
 | `SaveToFile` | Legacy name for ExportToFile | Expert |
 | `RenameObject` | Rename object by creating copy | Expert |
 
-**Supported Extensions:**
-- `.clas.abap` - Classes
+**Supported Extensions** (matched without regard to case):
+- `.clas.abap` - Classes (plus `.clas.testclasses.abap`, `.clas.locals_def.abap`, `.clas.locals_imp.abap`, `.clas.macros.abap`)
 - `.prog.abap` - Programs
+- `.incl.abap` - Includes (ExportToFile writes includes with this suffix)
 - `.intf.abap` - Interfaces
 - `.fugr.abap` - Function Groups
-- `.func.abap` - Function Modules
+- `{group}.fugr.{module}.abap` - Function Modules, abapGit's name (ExportToFile writes this when the group is known). `{group}.fugr.{module}.func.abap` and `{module}.func.abap` are still read; without the group in the name, a module cannot be deployed.
 - `.ddls.asddls` - CDS DDL Sources (ABAPGit format)
 - `.bdef.asbdef` - Behavior Definitions (ABAPGit format)
 - `.srvd.srvdsrv` - Service Definitions (ABAPGit format)
+- Plain `{name}.abap` - typed from its first statement, only when that statement names `{name}` itself (`REPORT zfoo.` in `zfoo.abap`). A class or interface must be declared `PUBLIC`. A file with no such statement is read as include `{name}`, which is how older exports wrote includes. Anything else, such as a TOP include that opens with its main program's `PROGRAM` statement, is refused with a message saying how to rename it.
 
 ---
 

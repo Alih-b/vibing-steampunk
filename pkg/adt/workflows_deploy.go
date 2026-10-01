@@ -573,7 +573,7 @@ func (c *Client) DeployFromFileWithOptions(ctx context.Context, filePath, packag
 	objectURL, err := c.buildObjectURLWithParent(info.ObjectType, info.ObjectName, info.ParentName)
 	if err != nil {
 		if isFunctionModule && info.ParentName == "" {
-			return nil, fmt.Errorf("function module file must follow pattern: {fugr_name}.fugr.{func_name}.func.abap")
+			return nil, fmt.Errorf("function module file must name its group: {fugr_name}.fugr.{func_name}.abap or {fugr_name}.fugr.{func_name}.func.abap")
 		}
 		return nil, err
 	}

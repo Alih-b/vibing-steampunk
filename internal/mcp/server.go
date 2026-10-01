@@ -167,6 +167,20 @@ type Config struct {
 }
 
 // NewServer creates a new MCP server for ABAP ADT tools.
+// mcpServerOptions are the options every vsp MCP server is built with.
+//
+// WithRecovery is there because one tool handler panicking used to take the
+// whole server with it: the client lost every tool at once, mid-session, for
+// what was a bug in a single call (issue #237 was a parser recursion that did
+// exactly that). Recovered, the panic becomes an error on that one call.
+func mcpServerOptions() []server.ServerOption {
+	return []server.ServerOption{
+		server.WithResourceCapabilities(true, true),
+		server.WithLogging(),
+		server.WithRecovery(),
+	}
+}
+
 func NewServer(cfg *Config) *Server {
 	// Create ADT client
 	opts := []adt.Option{
@@ -286,12 +300,7 @@ func NewServerWithClient(cfg *Config, adtClient *adt.Client) *Server {
 	featureProber := adt.NewFeatureProber(adtClient, featureConfig, cfg.Verbose)
 
 	// Create MCP server
-	mcpServer := server.NewMCPServer(
-		"mcp-abap-adt-go",
-		"1.0.0",
-		server.WithResourceCapabilities(true, true),
-		server.WithLogging(),
-	)
+	mcpServer := server.NewMCPServer("mcp-abap-adt-go", "1.0.0", mcpServerOptions()...)
 
 	s := &Server{
 		mcpServer:     mcpServer,
