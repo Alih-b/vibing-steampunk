@@ -1194,6 +1194,8 @@ func (c *Client) GetStructure(ctx context.Context, structName string) (string, e
 type TableContentsResult struct {
 	Columns []TableColumn
 	Rows    []map[string]interface{}
+	// Notes says what RunQuery rewrote before sending the statement.
+	Notes []string `json:",omitempty"`
 }
 
 // TableColumn represents a column in table contents.
@@ -1240,12 +1242,30 @@ func (c *Client) GetTableContents(ctx context.Context, tableName string, maxRows
 
 // RunQuery executes a freestyle SQL query against the SAP database.
 // Example: "SELECT * FROM T000 WHERE MANDT = '001'"
+//
+// ANSI spellings the data preview rejects (t.col, DESC, a closing period)
+// are rewritten first, and the result says so in Notes. A query SAP refuses
+// comes back as a *QueryError: SAP's message without the XML around it, and
+// hints such as the columns the table does have.
 func (c *Client) RunQuery(ctx context.Context, sqlQuery string, maxRows int) (*TableContentsResult, error) {
 	// Safety check - free SQL can be dangerous
 	if err := c.checkSafety(OpFreeSQL, "RunQuery"); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(sqlQuery) == "" {
+		return nil, fmt.Errorf("SQL query is required")
+	}
+	sent, notes := normalizeOpenSQL(sqlQuery)
+	res, err := c.runQueryRaw(ctx, sent, maxRows)
+	if err != nil {
+		return nil, c.explainQueryError(ctx, sent, notes, err)
+	}
+	res.Notes = notes
+	return res, nil
+}
 
+// runQueryRaw sends a statement to the data preview as it is.
+func (c *Client) runQueryRaw(ctx context.Context, sqlQuery string, maxRows int) (*TableContentsResult, error) {
 	if sqlQuery == "" {
 		return nil, fmt.Errorf("SQL query is required")
 	}
@@ -1281,9 +1301,20 @@ func wrapSQL(query string) string {
 	lineLen := 0
 	inQuote := false
 	start := 0
-	emit := func(word string) {
+	var emit func(word string)
+	emit = func(word string) {
 		if word == "" {
 			return
+		}
+		// A word longer than a line -- an IN list written without blanks --
+		// is broken after its commas, which ABAP SQL reads the same way.
+		if len(word) > limit {
+			if parts := splitAtCommas(word); len(parts) > 1 {
+				for _, p := range parts {
+					emit(p)
+				}
+				return
+			}
 		}
 		if lineLen > 0 && lineLen+1+len(word) > limit {
 			out.WriteByte('\n')
@@ -1313,6 +1344,28 @@ func wrapSQL(query string) string {
 	}
 	emit(query[start:])
 	return out.String()
+}
+
+// splitAtCommas cuts a word after each comma outside quotes.
+func splitAtCommas(word string) []string {
+	var parts []string
+	in := false
+	start := 0
+	for i := 0; i < len(word); i++ {
+		switch word[i] {
+		case '\'':
+			in = !in
+		case ',':
+			if !in {
+				parts = append(parts, word[start:i+1])
+				start = i + 1
+			}
+		}
+	}
+	if start < len(word) {
+		parts = append(parts, word[start:])
+	}
+	return parts
 }
 
 // parseTableContents parses the XML response for table contents.
