@@ -336,15 +336,7 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 		return t.retryRequest(ctx, path, opts)
 	}
 
-	// Store CSRF token from response
-	if token := resp.Header.Get("X-CSRF-Token"); token != "" && token != "Required" {
-		t.setCSRFToken(token)
-	}
-
-	// Store session ID
-	if sessionID := t.extractSessionID(resp); sessionID != "" {
-		t.setSessionID(sessionID)
-	}
+	t.rememberSession(resp)
 
 	// Check for error status codes
 	if resp.StatusCode >= 400 {
@@ -447,6 +439,13 @@ func (t *Transport) retryRequest(ctx context.Context, path string, opts *Request
 		return nil, fmt.Errorf("reading response body: %w", err)
 	}
 	traceHTTPResponse(resp, body)
+	// A retry runs exactly when SAP has just issued a new session — after a
+	// CSRF refresh, a session expiry or an SSO re-auth — so it reads back what
+	// Request reads back. Without this the cookies still name the dead session
+	// while the jar holds the new one, and the next write is answered with a
+	// CSRF failure for a token that belongs to the other session.
+	t.adoptServerCookies(resp)
+	t.rememberSession(resp)
 
 	if resp.StatusCode >= 400 {
 		return nil, &APIError{
@@ -461,6 +460,18 @@ func (t *Transport) retryRequest(ctx context.Context, path string, opts *Request
 		Headers:    resp.Header,
 		Body:       body,
 	}, nil
+}
+
+// rememberSession keeps the CSRF token and the session id a response carries.
+// Request and retryRequest both call it, so the two paths cannot drift apart
+// again.
+func (t *Transport) rememberSession(resp *http.Response) {
+	if token := resp.Header.Get("X-CSRF-Token"); token != "" && token != "Required" {
+		t.setCSRFToken(token)
+	}
+	if sessionID := t.extractSessionID(resp); sessionID != "" {
+		t.setSessionID(sessionID)
+	}
 }
 
 // fetchCSRFToken retrieves a CSRF token from the server.
