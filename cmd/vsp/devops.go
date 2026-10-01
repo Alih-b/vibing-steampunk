@@ -463,7 +463,7 @@ var installCmd = &cobra.Command{
 	Long: `Install software components to a SAP system.
 
 Subcommands:
-  zadt-vsp    Install ZADT_VSP WebSocket handler (9 ABAP objects)
+  zadt-vsp    Install ZADT_VSP WebSocket handler (11 ABAP objects)
   abapgit     Install abapGit standalone or full edition
   list        List available installable components
 
@@ -480,10 +480,11 @@ var installZadtVspCmd = &cobra.Command{
 	Short: "Install ZADT_VSP WebSocket handler",
 	Long: `Install the ZADT_VSP WebSocket handler to enable advanced features.
 
-Deploys 9 ABAP objects (1 interface, 8 classes) in dependency order:
+Deploys 11 ABAP objects (1 interface, 9 classes, 1 program) in dependency order:
   ZIF_VSP_SERVICE, ZCL_VSP_UTILS, ZCL_VSP_TADIR_MOVE, ZCL_VSP_RFC_SERVICE,
   ZCL_VSP_DEBUG_SERVICE, ZCL_VSP_AMDP_SERVICE, ZCL_VSP_GIT_SERVICE,
-  ZCL_VSP_REPORT_SERVICE, ZCL_VSP_APC_HANDLER
+  ZCL_VSP_REPORT_SERVICE, ZCL_VSP_TRANSPORT_SERVICE, ZVSP_TRANSPORT_BUFFER,
+  ZCL_VSP_APC_HANDLER
 
 Features unlocked after install:
   - WebSocket debugging (TPDAPI)
@@ -3540,6 +3541,16 @@ func runInstallZadtVsp(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// The transport service's push channel. Without it uploads still work;
+	// their outcome is read with vsp transport status.
+	fmt.Fprintf(os.Stderr, "  AMC %s (transport push) ... ", embedded.AMCApplicationName)
+	if err := client.UpsertAMCApplication(ctx, embedded.AMCApplicationName, embedded.AMCApplicationDescription,
+		packageName, embedded.AMCApplicationDefinition); err != nil {
+		fmt.Fprintf(os.Stderr, "not set up (%v); upload outcomes are read with vsp transport status\n", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "OK\n")
+	}
+
 	fmt.Fprintf(os.Stderr, "\n")
 
 	// Summary
@@ -3722,6 +3733,30 @@ func runInstallAbapGit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// objectKindSummary counts the objects by kind, as "1 interface, 9 classes,
+// 1 program", so that the count cannot drift from the list.
+func objectKindSummary(objects []embedded.ObjectInfo) string {
+	names := []struct{ typ, one, many string }{
+		{"INTF", "interface", "interfaces"}, {"CLAS", "class", "classes"}, {"PROG", "program", "programs"},
+	}
+	var parts []string
+	for _, n := range names {
+		c := 0
+		for _, o := range objects {
+			if o.Type == n.typ {
+				c++
+			}
+		}
+		switch {
+		case c == 1:
+			parts = append(parts, "1 "+n.one)
+		case c > 1:
+			parts = append(parts, fmt.Sprintf("%d %s", c, n.many))
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
 func runInstallList(_ *cobra.Command, _ []string) error {
 	fmt.Println("Available Installable Components")
 	fmt.Println("================================")
@@ -3732,7 +3767,7 @@ func runInstallList(_ *cobra.Command, _ []string) error {
 	fmt.Printf("1. zadt-vsp\n")
 	fmt.Printf("   Description: ZADT_VSP WebSocket handler for advanced features\n")
 	fmt.Printf("   Default package: $ZADT_VSP\n")
-	fmt.Printf("   Objects: %d (1 interface, %d classes)\n", len(objects), len(objects)-1)
+	fmt.Printf("   Objects: %d (%s)\n", len(objects), objectKindSummary(objects))
 	fmt.Printf("   Status: Embedded (always available)\n")
 	fmt.Printf("   Install: vsp install zadt-vsp\n")
 	fmt.Println()

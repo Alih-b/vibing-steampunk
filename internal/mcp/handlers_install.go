@@ -423,6 +423,16 @@ func (s *Server) handleInstallZADTVSP(ctx context.Context, request mcp.CallToolR
 		}
 	}
 
+	// The transport service's push channel. Without it uploads still work;
+	// their outcome is read with transport_status.
+	fmt.Fprintf(&sb, "  AMC %s (transport push) ", embedded.AMCApplicationName)
+	if err := s.adtClient.UpsertAMCApplication(ctx, embedded.AMCApplicationName, embedded.AMCApplicationDescription,
+		packageName, embedded.AMCApplicationDefinition); err != nil {
+		fmt.Fprintf(&sb, "– not set up (%v); upload outcomes are read with transport_status\n", err)
+	} else {
+		sb.WriteString("✓ Deployed\n")
+	}
+
 	sb.WriteString("\n")
 
 	// Summary

@@ -111,7 +111,14 @@ CLASS zcl_vsp_utils IMPLEMENTATION.
     DATA(lv_pattern) = |"{ iv_name }"\\s*:\\s*(\\d+)|.
     FIND PCRE lv_pattern IN iv_params SUBMATCHES lv_str.
     IF sy-subrc = 0.
-      rv_value = lv_str.
+      " More than nine digits would overflow TYPE i (a short dump); no such
+      " value is valid anywhere this is used, and -1 makes every caller
+      " refuse it.
+      IF strlen( lv_str ) > 9.
+        rv_value = -1.
+      ELSE.
+        rv_value = lv_str.
+      ENDIF.
     ENDIF.
   ENDMETHOD.
 

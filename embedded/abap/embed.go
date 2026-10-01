@@ -43,12 +43,18 @@ var ZclVspGitService string
 //go:embed zcl_vsp_report_service.clas.abap
 var ZclVspReportService string
 
+//go:embed zcl_vsp_transport_service.clas.abap
+var ZclVspTransportService string
+
+//go:embed zvsp_transport_buffer.prog.abap
+var ZvspTransportBuffer string
+
 //go:embed zcl_vsp_apc_handler.clas.abap
 var ZclVspApcHandler string
 
 // ObjectInfo describes an embedded ABAP object.
 type ObjectInfo struct {
-	Type        string // INTF or CLAS
+	Type        string // INTF, CLAS or PROG
 	Name        string // Object name (e.g., ZIF_VSP_SERVICE)
 	Source      string // Source code
 	Description string // Human-readable description
@@ -58,8 +64,11 @@ type ObjectInfo struct {
 // FileName is the abapGit file name of an object, the same in src/ and here.
 func FileName(o ObjectInfo) string {
 	ext := ".clas.abap"
-	if o.Type == "INTF" {
+	switch o.Type {
+	case "INTF":
 		ext = ".intf.abap"
+	case "PROG":
+		ext = ".prog.abap"
 	}
 	return strings.ToLower(o.Name) + ext
 }
@@ -121,6 +130,20 @@ func GetObjects() []ObjectInfo {
 			Name:        "ZCL_VSP_REPORT_SERVICE",
 			Source:      ZclVspReportService,
 			Description: "Report domain - background job execution with spool output",
+			Optional:    false,
+		},
+		{
+			Type:        "CLAS",
+			Name:        "ZCL_VSP_TRANSPORT_SERVICE",
+			Source:      ZclVspTransportService,
+			Description: "Transport domain - upload K/R files, add to import buffer",
+			Optional:    false,
+		},
+		{
+			Type:        "PROG",
+			Name:        "ZVSP_TRANSPORT_BUFFER",
+			Source:      ZvspTransportBuffer,
+			Description: "VSP transport buffer step (background)",
 			Optional:    false,
 		},
 		{

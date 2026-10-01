@@ -532,6 +532,10 @@ Transports:
   SAP(action="system", params={"type": "merge_transports", "source": ["A4HK900001", "A4HK900003"], "target": "A4HK900005"})
   SAP(action="system", params={"type": "move_transport_object", "object": "PROG ZDEMO", "from": "A4HK900001", "to": "A4HK900005"})
   SAP(action="system", params={"type": "copy_to_toc", "transport": "A4HK900001", "target": "QAS"})  - transport of copies, as SE01 (ZADT_VSP); "release": true releases it
+  SAP(action="system", params={"type": "upload_transport", "cofile_path": "/in/K900001.DEV", "datafile_path": "/in/R900001.DEV"})
+    - expert mode; writes both files into this system's DIR_TRANS, releases the job that adds the request to its import queue, answers "pending" with the job; never imports (STMS does)
+  SAP(action="system", params={"type": "transport_status", "transport": "TR-EXAMPLE", "job": "12345678"})  - the upload's outcome: queued / pending / job_failed / unknown, read-only
+  SAP(action="system", params={"type": "transport_buffer", "transport": "TR-EXAMPLE"})  - this system's import queue, read-only
   SAP(action="system", params={"type": "add_transport_object", "transport": "A4HK900001", "objects": ["LIMU REPT ZDEMO", "R3TR PROG ZDEMO2"]})
   SAP(action="system", params={"type": "add_transport_object", "transport": "A4HK900001", "object": "R3TR TABU ZDEMO_CONF", "keys": ["100KEY1", "100KEY2*"]})
   SAP(action="system", params={"type": "remove_transport_object", "transport": "A4HK900001", "object": "PROG ZDEMO"})

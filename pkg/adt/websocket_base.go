@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -45,6 +46,97 @@ type BaseWebSocketClient struct {
 
 	// Optional callback when connection is lost
 	onDisconnect func()
+
+	// Pushes: messages ZADT_VSP sends unasked, with an id "push:...", kept
+	// until taken. push says the welcome announced them.
+	pushMu   sync.Mutex
+	pushes   map[string]*WSResponse
+	pushWait map[string][]chan *WSResponse
+	push     bool
+	// closed is closed when the connection ends.
+	closed    chan struct{}
+	closeOnce sync.Once
+}
+
+// ErrWebSocketClosed is returned to a waiter whose connection ended.
+var ErrWebSocketClosed = errors.New("the ZADT_VSP WebSocket connection was closed")
+
+// PushEnabled says ZADT_VSP announced pushes in its welcome (its AMC
+// binding for this connection worked).
+func (c *BaseWebSocketClient) PushEnabled() bool {
+	c.pushMu.Lock()
+	defer c.pushMu.Unlock()
+	return c.push
+}
+
+// TakePush returns, and forgets, a push already received.
+func (c *BaseWebSocketClient) TakePush(id string) (*WSResponse, bool) {
+	c.pushMu.Lock()
+	defer c.pushMu.Unlock()
+	r, ok := c.pushes[id]
+	if ok {
+		delete(c.pushes, id)
+	}
+	return r, ok
+}
+
+// AwaitPush waits for the push with id, until ctx ends or the connection
+// does (ErrWebSocketClosed).
+func (c *BaseWebSocketClient) AwaitPush(ctx context.Context, id string) (*WSResponse, error) {
+	c.pushMu.Lock()
+	if r, ok := c.pushes[id]; ok {
+		delete(c.pushes, id)
+		c.pushMu.Unlock()
+		return r, nil
+	}
+	ch := make(chan *WSResponse, 1)
+	c.pushWait[id] = append(c.pushWait[id], ch)
+	closed := c.closed
+	c.pushMu.Unlock()
+	if closed == nil {
+		return nil, ErrWebSocketClosed
+	}
+	select {
+	case r := <-ch:
+		return r, nil
+	case <-closed:
+		// A push may have come in just before the end.
+		if r, ok := c.TakePush(id); ok {
+			return r, nil
+		}
+		return nil, ErrWebSocketClosed
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// deliverPush hands a push to its waiters, or keeps it.
+func (c *BaseWebSocketClient) deliverPush(r *WSResponse) {
+	c.pushMu.Lock()
+	defer c.pushMu.Unlock()
+	if waiters := c.pushWait[r.ID]; len(waiters) > 0 {
+		delete(c.pushWait, r.ID)
+		for _, ch := range waiters {
+			ch <- r
+		}
+		return
+	}
+	if len(c.pushes) >= 64 { // nobody is waiting for these
+		for k := range c.pushes {
+			delete(c.pushes, k)
+			break
+		}
+	}
+	c.pushes[r.ID] = r
+}
+
+func (c *BaseWebSocketClient) markClosed() {
+	c.pushMu.Lock()
+	closed := c.closed
+	c.pushMu.Unlock()
+	if closed != nil {
+		c.closeOnce.Do(func() { close(closed) })
+	}
 }
 
 // SetCookies makes the client authenticate with a browser session rather than a
@@ -96,6 +188,8 @@ func NewBaseWebSocketClient(baseURL, client, user, password string, insecure boo
 		insecure:  insecure,
 		pending:   make(map[string]chan *WSResponse),
 		welcomeCh: make(chan struct{}, 1),
+		pushes:    map[string]*WSResponse{},
+		pushWait:  map[string][]chan *WSResponse{},
 	}
 }
 
@@ -177,6 +271,12 @@ func (c *BaseWebSocketClient) Connect(ctx context.Context) error {
 	c.conn = conn
 	c.connected = true
 	c.mu.Unlock()
+	c.pushMu.Lock()
+	if c.pushes == nil {
+		c.pushes, c.pushWait = map[string]*WSResponse{}, map[string][]chan *WSResponse{}
+	}
+	c.closed, c.closeOnce = make(chan struct{}), sync.Once{}
+	c.pushMu.Unlock()
 
 	// Start message reader goroutine
 	go c.readMessages()
@@ -196,6 +296,7 @@ func (c *BaseWebSocketClient) Connect(ctx context.Context) error {
 
 // Close closes the WebSocket connection.
 func (c *BaseWebSocketClient) Close() error {
+	defer c.markClosed()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -228,6 +329,7 @@ func (c *BaseWebSocketClient) readMessages() {
 		c.mu.RUnlock()
 
 		if conn == nil {
+			c.markClosed()
 			return
 		}
 
@@ -239,6 +341,7 @@ func (c *BaseWebSocketClient) readMessages() {
 			onDisconnect := c.onDisconnect
 			c.mu.Unlock()
 
+			c.markClosed()
 			// Call disconnect callback if set
 			if onDisconnect != nil {
 				onDisconnect()
@@ -261,17 +364,27 @@ func (c *BaseWebSocketClient) readMessages() {
 		}
 		c.pendingMu.Unlock()
 
+		if strings.HasPrefix(resp.ID, "push:") {
+			r := resp
+			c.deliverPush(&r)
+			continue
+		}
+
 		// Handle welcome message
 		if resp.ID == "welcome" {
 			var welcomeData struct {
 				Session string   `json:"session"`
 				Version string   `json:"version"`
 				Domains []string `json:"domains"`
+				Push    bool     `json:"push"`
 			}
 			if err := json.Unmarshal(resp.Data, &welcomeData); err == nil {
 				c.mu.Lock()
 				c.sessionID = welcomeData.Session
 				c.mu.Unlock()
+				c.pushMu.Lock()
+				c.push = welcomeData.Push
+				c.pushMu.Unlock()
 			}
 			select {
 			case c.welcomeCh <- struct{}{}:

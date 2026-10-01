@@ -37,9 +37,11 @@ type Server struct {
 	adtClient     *adt.Client
 	amdpWSClient  *adt.AMDPWebSocketClient  // WebSocket-based AMDP client (ZADT_VSP)
 	debugWSClient *adt.DebugWebSocketClient // WebSocket-based debug client (ZADT_VSP)
-	config        *Config                   // Server configuration for session manager creation
-	featureProber *adt.FeatureProber        // Feature detection system (safety network)
-	featureConfig adt.FeatureConfig         // Feature configuration
+	// transportWS, when set, replaces ZADT_VSP's transport domain (tests).
+	transportWS   func(ctx context.Context) (adt.TransportService, error)
+	config        *Config            // Server configuration for session manager creation
+	featureProber *adt.FeatureProber // Feature detection system (safety network)
+	featureConfig adt.FeatureConfig  // Feature configuration
 
 	// Shared classic-RFC client (lazily dialled, reused across tool calls, and
 	// pinged while idle so a gateway timeout does not kill it)
