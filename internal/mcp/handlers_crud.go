@@ -44,6 +44,10 @@ func (s *Server) routeCRUDAction(ctx context.Context, action, objectType, object
 			return s.callHandler(ctx, s.handleCreateTable, params)
 		case "CLONE":
 			return s.callHandler(ctx, s.handleCloneObject, params)
+		case "DOMA":
+			return s.callHandler(ctx, s.handleCreateDomain, withName(params, objectName))
+		case "DTEL":
+			return s.callHandler(ctx, s.handleCreateDataElement, withName(params, objectName))
 		case "STRUCT", "APPEND":
 			return s.callHandler(ctx, s.handleCreateStructure, withName(params, objectName))
 		}

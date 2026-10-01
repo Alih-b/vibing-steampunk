@@ -103,6 +103,10 @@ define structure zdemo {
   zzflag : abap_boolean;
 }"})
       (name and base come from the DDL; activation is checked against the inactive list)
+  SAP(action="create", target="DOMA ZDEMO", params={"description": "Demo", "package": "$TMP", "data_type": "CHAR", "length": 2,
+      "fixed_values": [{"low": "A", "text": "Alpha"}]})   ("decimals", "output_length", "lowercase", "signed", "conversion_exit", "value_table")
+  SAP(action="create", target="DTEL ZDEMO", params={"description": "Demo", "package": "$TMP", "domain": "ZDEMO",
+      "short_label": "Demo", "medium_label": "Demo field", "long_label": "Demo field", "heading": "Demo"})   (or "data_type" + "length"; "search_help", "parameter_id")
 
 Class test include:
   SAP(action="create", target="CLAS_TEST_INCLUDE", params={"class_name": "ZCL_TEST", "lock_handle": "..."})
