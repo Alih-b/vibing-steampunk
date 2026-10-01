@@ -66,7 +66,7 @@ func (s *Server) handleCreateTestInclude(ctx context.Context, request mcp.CallTo
 	}
 
 	classURL := adt.GetObjectURL(adt.ObjectTypeClass, className, "")
-	err := s.withObjectLock(ctx, classURL, lockHandle, func(handle string) error {
+	err := s.withObjectLock(ctx, classURL, lockHandle, transport, func(handle string) error {
 		return s.adtClient.CreateTestInclude(ctx, className, handle, transport)
 	})
 	if err != nil {
@@ -104,7 +104,7 @@ func (s *Server) handleUpdateClassInclude(ctx context.Context, request mcp.CallT
 	}
 
 	classURL := adt.GetObjectURL(adt.ObjectTypeClass, className, "")
-	err := s.withObjectLock(ctx, classURL, lockHandle, func(handle string) error {
+	err := s.withObjectLock(ctx, classURL, lockHandle, transport, func(handle string) error {
 		return s.adtClient.UpdateClassInclude(ctx, className, adt.ClassIncludeType(includeType), source, handle, transport)
 	})
 	if err != nil {

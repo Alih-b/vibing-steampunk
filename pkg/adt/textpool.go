@@ -385,7 +385,7 @@ func (c *Client) WriteTextPool(ctx context.Context, target TextPoolTarget, lang 
 	}
 
 	trPlan := c.planTransport(ctx, transport, t.objectURL(), "")
-	lock, err := c.LockObject(ctx, t.resource(), "MODIFY")
+	lock, err := c.LockObject(ctx, t.resource(), "MODIFY", trPlan.lockCorrNr(transport))
 	if err != nil {
 		return plan, fmt.Errorf("locking the text pool of %s: %w", t, err)
 	}

@@ -136,7 +136,7 @@ func (c *Client) writeFunctionModule(ctx context.Context, group, name, processin
 		return err
 	}
 
-	lock, err := c.LockObject(ctx, objectURL, "MODIFY")
+	lock, err := c.LockObject(ctx, objectURL, "MODIFY", transport)
 	if err != nil {
 		return fmt.Errorf("locking function module %s: %w", strings.ToUpper(name), err)
 	}

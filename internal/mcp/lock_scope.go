@@ -21,12 +21,14 @@ import (
 // which is the shape every high-level workflow in pkg/adt already uses. A
 // caller that still passes a handle keeps the old behaviour, because breaking
 // them buys nothing.
-func (s *Server) withObjectLock(ctx context.Context, objectURL, supplied string, fn func(lockHandle string) error) error {
+//
+// transport goes on the LOCK as corrNr when this call takes the lock itself.
+func (s *Server) withObjectLock(ctx context.Context, objectURL, supplied, transport string, fn func(lockHandle string) error) error {
 	if supplied != "" {
 		return fn(supplied)
 	}
 
-	lock, err := s.adtClient.LockObject(ctx, objectURL, "MODIFY")
+	lock, err := s.adtClient.LockObject(ctx, objectURL, "MODIFY", transport)
 	if err != nil {
 		return fmt.Errorf("locking %s: %w", objectURL, err)
 	}
@@ -56,12 +58,12 @@ func (s *Server) withObjectLock(ctx context.Context, objectURL, supplied string,
 // nothing to release on success, and an UNLOCK sent anyway would fail against
 // an object that no longer exists. On failure the lock is still ours, so it is
 // released.
-func (s *Server) withObjectLockConsumed(ctx context.Context, objectURL, supplied string, fn func(lockHandle string) error) error {
+func (s *Server) withObjectLockConsumed(ctx context.Context, objectURL, supplied, transport string, fn func(lockHandle string) error) error {
 	if supplied != "" {
 		return fn(supplied)
 	}
 
-	lock, err := s.adtClient.LockObject(ctx, objectURL, "MODIFY")
+	lock, err := s.adtClient.LockObject(ctx, objectURL, "MODIFY", transport)
 	if err != nil {
 		return fmt.Errorf("locking %s: %w", objectURL, err)
 	}

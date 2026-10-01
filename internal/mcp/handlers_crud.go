@@ -76,7 +76,9 @@ func (s *Server) handleLockObject(ctx context.Context, request mcp.CallToolReque
 		accessMode = am
 	}
 
-	result, err := s.adtClient.LockObject(ctx, objectURL, accessMode)
+	transport, _ := request.GetArguments()["transport"].(string)
+
+	result, err := s.adtClient.LockObject(ctx, objectURL, accessMode, transport)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("Failed to lock object: %v", err)), nil
 	}
@@ -146,7 +148,7 @@ func (s *Server) handleUpdateSource(ctx context.Context, request mcp.CallToolReq
 		}
 	}
 
-	err := s.withObjectLock(updateCtx, objectURL, lockHandle, func(handle string) error {
+	err := s.withObjectLock(updateCtx, objectURL, lockHandle, transport, func(handle string) error {
 		return s.adtClient.UpdateSource(updateCtx, sourceURL, source, handle, transport)
 	})
 	if err != nil {
@@ -589,7 +591,7 @@ func (s *Server) handleDeleteObject(ctx context.Context, request mcp.CallToolReq
 		}
 	}
 
-	err := s.withObjectLockConsumed(objCtx, objectURL, lockHandle, func(handle string) error {
+	err := s.withObjectLockConsumed(objCtx, objectURL, lockHandle, transport, func(handle string) error {
 		return s.adtClient.DeleteObject(objCtx, objectURL, handle, transport)
 	})
 	if err != nil {

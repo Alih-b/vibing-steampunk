@@ -296,3 +296,15 @@ func (c *Client) resolveWriteTransportFor(plan *TransportChoice, supplied, lockC
 	}
 	return plan.Transport, plan.Reason, nil
 }
+
+// lockCorrNr is the request that goes on the LOCK: the one the caller named,
+// else the one the plan chose or created. The write that follows takes the
+// plan's request through resolveWriteTransportFor, so a LOCK sent without it
+// would bind the lock to one request and the PUT to another. nil-safe: no
+// plan, or a plan whose creation failed, leaves the LOCK without a corrNr.
+func (p *TransportChoice) lockCorrNr(supplied string) string {
+	if supplied != "" || p == nil || p.Err != nil {
+		return supplied
+	}
+	return p.Transport
+}

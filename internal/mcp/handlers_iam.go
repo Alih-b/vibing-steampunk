@@ -190,7 +190,7 @@ func (s *Server) handleCreateBusinessCatalog(ctx context.Context, request mcp.Ca
 	// resource is read-only. Skipping it keeps the run going to activation
 	// instead of aborting on a 405 and leaving an inactive catalog behind.
 	if attemptAssignment && len(apps) > 0 {
-		lock, err := s.adtClient.LockObject(ctx, catalogURL, "MODIFY")
+		lock, err := s.adtClient.LockObject(ctx, catalogURL, "MODIFY", transport)
 		if err != nil {
 			return newToolResultError(fmt.Sprintf(
 				"Catalog %s exists but could not be locked: %v", name, err)), nil

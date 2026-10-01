@@ -68,7 +68,7 @@ func (c *Client) WriteProgram(ctx context.Context, programName string, source st
 
 	// Step 2: Lock the object
 	trPlan := c.planTransport(ctx, transport, objectURL, "")
-	lock, err := c.LockObject(ctx, objectURL, "MODIFY")
+	lock, err := c.LockObject(ctx, objectURL, "MODIFY", trPlan.lockCorrNr(transport))
 	if err != nil {
 		result.Message = fmt.Sprintf("Failed to lock object: %v", err)
 		return result, nil
@@ -169,7 +169,7 @@ func (c *Client) WriteInclude(ctx context.Context, includeName string, source st
 	}
 	result.SyntaxErrors = syntaxErrors
 
-	lock, err := c.LockObject(ctx, objectURL, "MODIFY")
+	lock, err := c.LockObject(ctx, objectURL, "MODIFY", transport)
 	if err != nil {
 		result.Message = fmt.Sprintf("Failed to lock object: %v", err)
 		return result, nil
@@ -264,7 +264,7 @@ func (c *Client) WriteClass(ctx context.Context, className string, source string
 
 	// Step 2: Lock
 	trPlan := c.planTransport(ctx, transport, objectURL, "")
-	lock, err := c.LockObject(ctx, objectURL, "MODIFY")
+	lock, err := c.LockObject(ctx, objectURL, "MODIFY", trPlan.lockCorrNr(transport))
 	if err != nil {
 		result.Message = fmt.Sprintf("Failed to lock object: %v", err)
 		return result, nil
@@ -384,7 +384,7 @@ func (c *Client) CreateAndActivateProgram(ctx context.Context, programName strin
 	ctx = withMutationPackageChecked(ctx, objectURL)
 
 	// Step 2: Lock
-	lock, err := c.LockObject(ctx, objectURL, "MODIFY")
+	lock, err := c.LockObject(ctx, objectURL, "MODIFY", transport)
 	if err != nil {
 		result.Message = fmt.Sprintf("Failed to lock object: %v", err)
 		return result, nil
@@ -484,7 +484,7 @@ func (c *Client) CreateClassWithTests(ctx context.Context, className string, des
 	ctx = withMutationPackageChecked(ctx, objectURL)
 
 	// Step 2: Lock
-	lock, err := c.LockObject(ctx, objectURL, "MODIFY")
+	lock, err := c.LockObject(ctx, objectURL, "MODIFY", transport)
 	if err != nil {
 		result.Message = fmt.Sprintf("Failed to lock object: %v", err)
 		return result, nil

@@ -122,7 +122,7 @@ func (c *Client) CreateFromFile(ctx context.Context, filePath, packageName, tran
 	}
 
 	// 6. Lock object
-	lockResult, err := c.LockObject(ctx, objectURL, "MODIFY")
+	lockResult, err := c.LockObject(ctx, objectURL, "MODIFY", transport)
 	if err != nil {
 		return &DeployResult{
 			FilePath:   filePath,
@@ -336,7 +336,7 @@ func (c *Client) UpdateFromFileWithOptions(ctx context.Context, filePath, transp
 
 	// 5. Lock object
 	trPlan := c.planTransport(ctx, transport, objectURL, "")
-	lockResult, err := c.LockObject(ctx, objectURL, "MODIFY")
+	lockResult, err := c.LockObject(ctx, objectURL, "MODIFY", trPlan.lockCorrNr(transport))
 	if err != nil {
 		return &DeployResult{
 			FilePath:   filePath,

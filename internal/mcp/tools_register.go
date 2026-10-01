@@ -963,6 +963,10 @@ func (s *Server) registerCRUDTools(shouldRegister func(string) bool) {
 			mcp.WithString("access_mode",
 				mcp.Description("Access mode: MODIFY (default) or READ"),
 			),
+			mcp.WithString("transport",
+				mcp.Description("Transport request (corrNr) for an object in a transportable "+
+					"package. SAP wants it on the LOCK, not only on the write that follows."),
+			),
 		), s.handleLockObject)
 	}
 

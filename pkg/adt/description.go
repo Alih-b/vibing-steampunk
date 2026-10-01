@@ -109,7 +109,7 @@ func (c *Client) SetDescription(ctx context.Context, objectType, name, parent, d
 	}
 
 	trPlan := c.planTransport(ctx, transport, objectURL, "")
-	lock, err := c.LockObject(ctx, objectURL, "MODIFY")
+	lock, err := c.LockObject(ctx, objectURL, "MODIFY", trPlan.lockCorrNr(transport))
 	if err != nil {
 		return res, fmt.Errorf("locking %s: %w", objectURL, err)
 	}

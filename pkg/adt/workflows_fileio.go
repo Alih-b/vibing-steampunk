@@ -122,7 +122,7 @@ func (c *Client) RenameObject(ctx context.Context, objType CreatableObjectType, 
 		ctx = withMutationPackageChecked(ctx, newURL)
 	}
 
-	lockResult, err := c.LockObject(ctx, newURL, "MODIFY")
+	lockResult, err := c.LockObject(ctx, newURL, "MODIFY", transport)
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("Failed to lock new object: %v", err))
 		return result, nil
@@ -169,7 +169,7 @@ func (c *Client) RenameObject(ctx context.Context, objType CreatableObjectType, 
 	}
 
 	// 6. Delete old object
-	oldLockResult, err := c.LockObject(ctx, oldURL, "MODIFY")
+	oldLockResult, err := c.LockObject(ctx, oldURL, "MODIFY", transport)
 	if err != nil {
 		result.Message = fmt.Sprintf("New object %s created successfully, but failed to lock old object %s for deletion: %v. Please delete manually.", newName, oldName, err)
 		result.Success = true
