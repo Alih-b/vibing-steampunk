@@ -66,6 +66,12 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    env:
+      # -shuffle runs each package's tests in a random order, so a test that
+      # only passes after another one has set something up shows up here. The
+      # seed is the run id rather than `on`, so it is known before the run, is
+      # the same on a re-run, and goes into the log and the report row.
+      SHUFFLE_SEED: ${{ github.run_id }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -79,12 +85,15 @@ jobs:
       # plus the output of the tests that failed.
       - name: Test
         run: |
+          echo "shuffle seed $SHUFFLE_SEED"
           status=0
-          go test -race -json -coverprofile=cover.out ./... > test.json || status=$?
+          go test -race -shuffle="$SHUFFLE_SEED" -json -coverprofile=cover.out ./... > test.json || status=$?
           jq -rsj '(map(select(.Action == "fail" and .Test != null) | .Package + " " + .Test)) as $failed
             | .[] | select(.Action == "output")
             | select(.Test == null or ((.Package + " " + .Test) as $k | $failed | index($k)))
+            | select(.Output | startswith("-test.shuffle ") | not)
             | .Output' test.json
+          echo "reproduce with: go test -race -shuffle=$SHUFFLE_SEED ./..."
           exit $status
 
       # One annotation the report reads back as the row's detail. Coverage is
@@ -100,7 +109,7 @@ jobs:
             { head -1 cover.out; grep '/pkg/' cover.out; } > cover-pkg.out
             cov=$(go tool cover -func=cover-pkg.out | awk '/^total:/ {print $3}')
           fi
-          echo "::notice title=ci-report::${counts}${cov:+, pkg coverage $cov}"
+          echo "::notice title=ci-report::${counts}${cov:+, pkg coverage $cov} · seed $SHUFFLE_SEED"
 
       # Per-package numbers for ci-report.yml, which compares them with the
       # last green run on main: tests, seconds and coverage, before and after.
@@ -160,3 +169,30 @@ jobs:
           # introduced, which is the only part its author can act on.
           only-new-issues: true
           args: --timeout=5m
+
+  fix-proven:
+    name: fix proven (advisory)
+    # Does a test the pull request adds fail without the pull request's code?
+    # The PR's own tests are run against the base's non-test Go files; a test
+    # that fails or does not compile there is one that proves the change. The
+    # logic is in the script so it can be run locally:
+    #   ./.github/ci/fix-proven.sh origin/main
+    # Advisory: a refactor or a docs change proves nothing and is still fine.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge base with the PR's base branch, and the base's files.
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run the new tests against the base's code
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: ./.github/ci/fix-proven.sh "$BASE_REF" || true
