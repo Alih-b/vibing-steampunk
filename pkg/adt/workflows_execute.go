@@ -311,6 +311,31 @@ func (c *Client) ExecuteABAP(ctx context.Context, code string, opts *ExecuteABAP
 		}
 	}
 
+	// A test class above the system's risk level is "not executed": ABAP Unit
+	// lists the class with no test method and says why only in a warning, with
+	// severity "tolerable". That warning was the only report of a run that
+	// never happened, and because only failures were checked, the run used to
+	// be reported as a success. A listed method did run, even when it left
+	// before the closing assertion (an early CHECK, RETURN or EXIT), so only a
+	// result with no test method at all is a run that did not happen.
+	if result.Failure == nil && len(testResult.Classes) > 0 && !anyTestMethod(testResult.Classes) && !anyExecResult(result.RawAlerts) && PayloadFailure(result.RawAlerts) == nil {
+		result.Failure = &ExecuteFailure{
+			Kind:  ExecuteFailureNotRun,
+			Title: "ABAP Unit did not run the code to its end",
+			Details: []string{
+				fmt.Sprintf("%s activated, but the closing assertion that every completed run ends in never came back.", programName),
+			},
+		}
+		for _, alert := range result.RawAlerts {
+			result.Failure.Details = append(result.Failure.Details, alert.Title)
+			result.Failure.Details = append(result.Failure.Details, alert.Details...)
+			if result.Failure.Severity == "" {
+				result.Failure.Title = alert.Title
+				result.Failure.Severity = alert.Severity
+			}
+		}
+	}
+
 	if alert := PayloadFailure(result.RawAlerts); alert != nil {
 		result.Failure = &ExecuteFailure{
 			Kind:     alert.Kind,
@@ -400,6 +425,28 @@ func PayloadFailure(alerts []UnitTestAlert) *UnitTestAlert {
 		}
 	}
 	return fallback
+}
+
+// anyTestMethod reports whether ABAP Unit executed at least one test method.
+// A class refused for its risk level comes back with none.
+func anyTestMethod(classes []UnitTestClass) bool {
+	for _, class := range classes {
+		if len(class.TestMethods) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// anyExecResult reports whether any alert is the closing assertion, that is
+// whether the payload ran to its end.
+func anyExecResult(alerts []UnitTestAlert) bool {
+	for _, a := range alerts {
+		if carriesExecResult(a) {
+			return true
+		}
+	}
+	return false
 }
 
 // carriesExecResult reports whether an alert is the closing assertion that

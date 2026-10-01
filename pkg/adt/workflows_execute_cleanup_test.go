@@ -9,12 +9,14 @@ import (
 	"testing"
 )
 
+// A run that reached its end: the wrapper closes every completed run with the
+// assertion that carries the result marker, so a success has that alert.
 const successfulExecuteRunResult = `<?xml version="1.0" encoding="utf-8"?>
 <aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit">
   <program name="ZTEMP_EXEC_TEST">
     <testClasses>
       <testClass name="LTC_EXECUTOR">
-        <testMethods><testMethod name="EXECUTE_PAYLOAD" executionTime="0.01"><alerts/></testMethod></testMethods>
+        <testMethods><testMethod name="EXECUTE_PAYLOAD" executionTime="0.01"><alerts><alert kind="failedAssertion" severity="critical"><title>Critical Assertion Error: 'EXEC_RESULT:'</title><details><detail text="EXEC_RESULT:"/></details></alert></alerts></testMethod></testMethods>
       </testClass>
     </testClasses>
   </program>
