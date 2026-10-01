@@ -1,6 +1,7 @@
 package adt
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
 	"fmt"
@@ -301,33 +302,45 @@ func (c *Client) ReleaseTransport(ctx context.Context, transportNumber string, i
 	return parseReleaseResult(resp.Body)
 }
 
-func parseReleaseResult(data []byte) ([]string, error) {
-	// Extract messages from release result
+// releaseReport is one chkrun:checkReport of a release answer.
+type releaseReport struct {
+	Reporter   string `xml:"reporter,attr"`
+	Status     string `xml:"status,attr"`
+	StatusText string `xml:"statusText,attr"`
+	Messages   []struct {
+		Type string `xml:"type,attr"`
+		Text string `xml:"shortText,attr"`
+	} `xml:"checkMessageList>checkMessage"`
+}
+
+// parseReleaseReports reads the check reports of a release answer. An empty
+// answer has none; one that is there but cannot be read is an error, not
+// "no reports" -- that would read as a release that went through.
+func parseReleaseReports(data []byte) ([]releaseReport, error) {
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, nil
+	}
 	xmlStr := string(data)
 	xmlStr = strings.ReplaceAll(xmlStr, "tm:", "")
 	xmlStr = strings.ReplaceAll(xmlStr, "chkrun:", "")
 
-	type message struct {
-		Type string `xml:"type,attr"`
-		Text string `xml:"shortText,attr"`
-	}
-	type report struct {
-		Reporter string    `xml:"reporter,attr"`
-		Status   string    `xml:"status,attr"`
-		Messages []message `xml:"checkMessageList>checkMessage"`
-	}
 	type root struct {
-		Reports []report `xml:"releasereports>checkReport"`
+		Reports []releaseReport `xml:"releasereports>checkReport"`
 	}
-
 	var resp root
 	if err := xml.Unmarshal([]byte(xmlStr), &resp); err != nil {
-		// If parsing fails, return empty
-		return []string{}, nil
+		return nil, fmt.Errorf("the release answer cannot be read (%v), so whether the request was released is unknown; check it in the transport organizer", err)
 	}
+	return resp.Reports, nil
+}
 
+func parseReleaseResult(data []byte) ([]string, error) {
+	reports, err := parseReleaseReports(data)
+	if err != nil {
+		return nil, err
+	}
 	var messages []string
-	for _, r := range resp.Reports {
+	for _, r := range reports {
 		messages = append(messages, fmt.Sprintf("[%s] Status: %s", r.Reporter, r.Status))
 		for _, m := range r.Messages {
 			messages = append(messages, fmt.Sprintf("  [%s] %s", m.Type, m.Text))
@@ -858,17 +871,63 @@ func (c *Client) ReleaseTransportV2(ctx context.Context, number string, opts Rel
 		action = "relObjigchkatc"
 	}
 
-	path := fmt.Sprintf("/sap/bc/adt/cts/transportrequests/%s/%s", strings.ToUpper(number), action)
+	number = strings.ToUpper(number)
+	path := fmt.Sprintf("/sap/bc/adt/cts/transportrequests/%s/%s", number, action)
 
-	_, err := c.transport.Request(ctx, path, &RequestOptions{
+	// The answer to a plain release that could not lock everything is a
+	// question ("release anyway?"); relwithignlock is the answer, and ADT
+	// refuses it without the tm:root document its own client sends back.
+	opts2 := &RequestOptions{
 		Method: http.MethodPost,
 		Accept: acceptTransportOrganizerV1,
-	})
+	}
+	if action != "newreleasejobs" {
+		opts2.ContentType = acceptTransportOrganizerV1
+		opts2.Body = []byte(fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>`+
+			`<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm" tm:useraction="%s" tm:number="%s"/>`,
+			action, escapeXMLAttr(number)))
+	}
+	resp, err := c.transport.Request(ctx, path, opts2)
 	if err != nil {
 		return fmt.Errorf("releasing transport %s: %w", number, err)
 	}
 
-	return nil
+	reports, err := parseReleaseReports(resp.Body)
+	if err != nil {
+		return fmt.Errorf("releasing transport %s: %w", number, err)
+	}
+	return releaseOutcome(number, reports)
+}
+
+// releaseOutcome turns a release answer into an error unless it says the
+// request was released. ADT answers HTTP 200 either way: a request whose
+// objects are locked elsewhere comes back with status relwithignlock and the
+// locks listed, and nothing is released. An answer with no report at all
+// keeps the old reading, success on the HTTP status alone.
+func releaseOutcome(number string, reports []releaseReport) error {
+	if len(reports) == 0 {
+		return nil
+	}
+	var details []string
+	for _, r := range reports {
+		if r.Status == "released" {
+			return nil
+		}
+		if t := strings.TrimSpace(strings.Join(strings.Fields(r.StatusText), " ")); t != "" {
+			details = append(details, t)
+		}
+		for _, m := range r.Messages {
+			details = append(details, fmt.Sprintf("[%s] %s", m.Type, m.Text))
+		}
+	}
+	msg := fmt.Sprintf("transport %s was not released (status %s)", number, reports[0].Status)
+	if len(details) > 0 {
+		msg += ": " + strings.Join(details, "; ")
+	}
+	if reports[0].Status == "relwithignlock" {
+		msg += " -- to release it anyway, repeat with ignore_locks"
+	}
+	return fmt.Errorf("%s", msg)
 }
 
 // DeleteTransport deletes a transport request
