@@ -93,6 +93,16 @@ Create object:
   SAP(action="create", target="OBJECT", params={"object_type": "MSAG/N", "name": "ZDEMO", "description": "Demo messages", "package_name": "$TMP", "language": "DE", "messages": {"001": "Auftrag & nicht gefunden"}})
   SAP(action="create", target="TABL", params={"name": "ZTABLE", "description": "New table", "fields": "[...]", "package": "$TMP"})
   SAP(action="create", target="CLONE", params={"object_type": "CLAS", "source_name": "ZCL_OLD", "target_name": "ZCL_NEW", "package": "$TMP"})
+  SAP(action="create", target="STRUCT", params={"description": "Demo", "package": "$TMP",
+      "source": "@AbapCatalog.enhancement.category : #EXTENSIBLE_ANY
+define structure zdemo {
+  matnr : matnr;
+}"})
+  SAP(action="create", target="APPEND", params={"description": "Demo append", "package": "ZPKG", "transport": "A4HK900001",
+      "source": "extend type shp_vl10_item with zappend_demo {
+  zzflag : abap_boolean;
+}"})
+      (name and base come from the DDL; activation is checked against the inactive list)
 
 Class test include:
   SAP(action="create", target="CLAS_TEST_INCLUDE", params={"class_name": "ZCL_TEST", "lock_handle": "..."})
