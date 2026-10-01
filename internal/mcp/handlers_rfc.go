@@ -15,6 +15,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	openrfc "github.com/oisee/open-rfc-go/rfc"
+	"github.com/oisee/vibing-steampunk/pkg/adt"
 	"github.com/oisee/vibing-steampunk/pkg/config"
 	"github.com/oisee/vibing-steampunk/pkg/saprfc"
 )
@@ -49,6 +50,18 @@ func (s *Server) routeRFCAction(ctx context.Context, action, objectType, objectN
 			op = "call"
 		default:
 			op = "describe"
+		}
+	}
+
+	// Executing a function module does whatever the module does — post a
+	// document, change a user, start a job — so "call" is gated like
+	// ExecuteABAP, as a workflow operation, which --read-only refuses. It is
+	// checked before logon, so a refused call sends nothing to the gateway.
+	// The other ops only read: system info, ping, the interface metadata,
+	// TFDIR/TADIR/CVERS and RFC_READ_TABLE rows, and RFC_SIMULATE_AUTH_CHECK.
+	if op == "call" {
+		if err := s.adtClient.Safety().CheckOperation(adt.OpWorkflow, "RFCCall"); err != nil {
+			return nil, true, err
 		}
 	}
 

@@ -1,6 +1,7 @@
 package adt
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -408,5 +409,25 @@ func TestSafetyConfig_CheckTransportableEdit_ErrorMessage(t *testing.T) {
 	}
 	if !contains(errMsg, "SAP_ALLOW_TRANSPORTABLE_EDITS") {
 		t.Error("Error message should mention environment variable")
+	}
+}
+
+func TestSafetyConfig_CheckTransport_ReadOnly(t *testing.T) {
+	s := SafetyConfig{ReadOnly: true, EnableTransports: true}
+	for _, op := range []string{"CreateTransport", "ReleaseTransport", "DeleteTransport", "MergeTransports", "MoveTransportObject", "AddTransportObjects", "RemoveTransportObject"} {
+		err := s.CheckTransport("A4HK900001", op, true)
+		if err == nil || !strings.Contains(err.Error(), "read-only") {
+			t.Errorf("%s under --read-only: want refusal, got %v", op, err)
+		}
+	}
+	for _, op := range []string{"ListTransports", "GetTransport"} {
+		if err := s.CheckTransport("A4HK900001", op, false); err != nil {
+			t.Errorf("%s under --read-only: want allowed, got %v", op, err)
+		}
+	}
+	// Without --read-only, --enable-transports still permits writes.
+	s.ReadOnly = false
+	if err := s.CheckTransport("A4HK900001", "ReleaseTransport", true); err != nil {
+		t.Errorf("ReleaseTransport without --read-only: %v", err)
 	}
 }

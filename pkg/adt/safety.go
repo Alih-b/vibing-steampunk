@@ -278,7 +278,12 @@ func (s *SafetyConfig) CheckTransport(transport, opName string, isWrite bool) er
 		return fmt.Errorf("transport operation '%s' is blocked: transports not enabled (use --enable-transports or SAP_ENABLE_TRANSPORTS=true)", opName)
 	}
 
-	// Check write permissions
+	// Check write permissions. --read-only covers transports too: creating,
+	// releasing, deleting, merging or moving a request changes the system as
+	// surely as an edit does.
+	if isWrite && s.ReadOnly {
+		return fmt.Errorf("transport write operation '%s' is blocked: read-only mode enabled", opName)
+	}
 	if isWrite && s.TransportReadOnly {
 		return fmt.Errorf("transport write operation '%s' is blocked: transport read-only mode enabled", opName)
 	}
