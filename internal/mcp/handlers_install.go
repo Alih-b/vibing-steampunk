@@ -560,6 +560,15 @@ func (s *Server) handleInstallAbapGit(ctx context.Context, request mcp.CallToolR
 		return mcp.NewToolResultText(sb.String()), nil
 	}
 
+	// An install writes objects into the system. The deployment below is not
+	// implemented yet, so this sends nothing today; the check is here so that
+	// the day it is, a read-only server refuses before the first request.
+	if !checkOnly {
+		if err := s.adtClient.Safety().CheckOperation(adt.OpCreate, "InstallAbapGit"); err != nil {
+			return newToolResultError(err.Error() + " (check_only=true reports without installing)"), nil
+		}
+	}
+
 	// Temporarily allow the install target package to bypass SAP_ALLOWED_PACKAGES restrictions.
 	cleanupPkg := s.adtClient.AllowPackageTemporarily(packageName)
 	defer cleanupPkg()

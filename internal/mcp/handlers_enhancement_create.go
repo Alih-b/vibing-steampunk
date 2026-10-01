@@ -90,6 +90,12 @@ func (s *Server) handleEnhancementOptions(ctx context.Context, request mcp.CallT
 //
 //	"package": "ZPKG", "function_module": "BAPI_X", "option": "\\FU:BAPI_X\\SE:BEGIN\\EI"}).
 func (s *Server) handleCreateSourceCodePlugin(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Refused before the enhanced object is resolved and its options read:
+	// on a read-only server those reads lead to nothing but the refusal the
+	// client gives later, and a "no such option" answer would hide it.
+	if err := s.adtClient.Safety().CheckOperation(adt.OpCreate, "CreateSourceCodePlugin"); err != nil {
+		return newToolResultError(err.Error()), nil
+	}
 	args := request.GetArguments()
 	objectURL, err := s.enhancedObjectURL(ctx, args)
 	if err != nil {

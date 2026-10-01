@@ -443,6 +443,9 @@ func (s *Server) handleMergeTransports(ctx context.Context, request mcp.CallTool
 	if target == "" || len(sources) == 0 {
 		return newToolResultError("source (one request or a list) and target are required"), nil
 	}
+	if err := s.checkTransportWrite("MergeTransports", append(sources, target)...); err != nil {
+		return newToolResultError(err.Error()), nil
+	}
 	if err := s.ensureDebugWSClient(ctx); err != nil {
 		return newToolResultError(fmt.Sprintf("merging requests needs ZADT_VSP's function bridge: %v", err)), nil
 	}
@@ -474,6 +477,9 @@ func (s *Server) handleMoveTransportObject(ctx context.Context, request mcp.Call
 	from, to := getStringParam(args, "from"), getStringParam(args, "to")
 	if from == "" || to == "" {
 		return newToolResultError("from and to (request numbers) are required"), nil
+	}
+	if err = s.checkTransportWrite("MoveTransportObject", from, to); err != nil {
+		return newToolResultError(err.Error()), nil
 	}
 	if err := s.ensureDebugWSClient(ctx); err != nil {
 		return newToolResultError(fmt.Sprintf("moving an object between requests needs ZADT_VSP's function bridge: %v", err)), nil
@@ -507,6 +513,9 @@ func (s *Server) handleAddTransportObjects(ctx context.Context, request mcp.Call
 	if err != nil {
 		return newToolResultError(err.Error()), nil
 	}
+	if err = s.checkTransportWrite("AddTransportObjects", transport); err != nil {
+		return newToolResultError(err.Error()), nil
+	}
 	if err = s.ensureDebugWSClient(ctx); err != nil {
 		return newToolResultError(fmt.Sprintf("adding entries to a request needs ZADT_VSP's function bridge: %v", err)), nil
 	}
@@ -536,6 +545,9 @@ func (s *Server) handleRemoveTransportObject(ctx context.Context, request mcp.Ca
 	if err != nil {
 		return newToolResultError(err.Error()), nil
 	}
+	if err = s.checkTransportWrite("RemoveTransportObject", transport); err != nil {
+		return newToolResultError(err.Error()), nil
+	}
 	if err = s.ensureDebugWSClient(ctx); err != nil {
 		return newToolResultError(fmt.Sprintf("removing an entry from a request needs ZADT_VSP's function bridge: %v", err)), nil
 	}
@@ -547,6 +559,19 @@ func (s *Server) handleRemoveTransportObject(ctx context.Context, request mcp.Ca
 		return newToolResultError(err.Error()), nil
 	}
 	return newToolResultJSON(res), nil
+}
+
+// checkTransportWrite runs, before the ZADT_VSP WebSocket is dialled, the
+// check the client method runs for each request it writes to. The client
+// method keeps its own check; this one makes a refused write refuse without
+// connecting anything first.
+func (s *Server) checkTransportWrite(op string, requests ...string) error {
+	for _, n := range requests {
+		if err := s.adtClient.Safety().CheckTransport(strings.ToUpper(strings.TrimSpace(n)), op, true); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func transportParam(args map[string]any) string {

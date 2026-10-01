@@ -137,6 +137,13 @@ func (s *Server) handleDeployZip(ctx context.Context, request mcp.CallToolReques
 		return mcp.NewToolResultText(sb.String()), nil
 	}
 
+	// Everything above is local: the ZIP and the plan. From here on objects are
+	// created, written and activated, so a read-only server stops here, before
+	// the first request, rather than reporting one refusal per object.
+	if gateErr := s.adtClient.Safety().CheckOperation(adt.OpCreate, "DeployZip"); gateErr != nil {
+		return newToolResultError(gateErr.Error() + " (dry_run=true shows the plan)"), nil
+	}
+
 	if len(deployable) == 0 {
 		sb.WriteString("Nothing to deploy.\n")
 		return mcp.NewToolResultText(sb.String()), nil

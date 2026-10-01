@@ -571,3 +571,53 @@ func TestParseSRVBMetadata(t *testing.T) {
 		t.Errorf("expected service def name 'Z_RAP_TRAVEL', got '%s'", result.ServiceDefName)
 	}
 }
+
+func TestClient_CheckObjectPackageByName(t *testing.T) {
+	cases := []struct {
+		name       string
+		objectType string
+		hitType    string
+		hitPackage string
+		wantErr    string
+	}{
+		{"allowed package", "PROG", "PROG/P", "ZDEMO", ""},
+		{"forbidden package", "PROG", "PROG/P", "$TMP", "operations on package '$TMP' are blocked by safety configuration"},
+		{"no hit of that type fails closed", "CLAS", "PROG/P", "ZDEMO", "package metadata not found"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			search := newSearchResponse("/sap/bc/adt/programs/programs/zdemo_report", tc.hitType, "ZDEMO_REPORT", tc.hitPackage)
+			defer search.Body.Close()
+			discovery := newTestResponse("OK")
+			defer discovery.Body.Close()
+			mock := &mockTransportClient{
+				responses: map[string]*http.Response{"search": search, "discovery": discovery},
+			}
+			cfg := NewConfig("https://sap.example.com:44300", "user", "pass", WithAllowedPackages("Z*"))
+			client := NewClientWithTransport(cfg, NewTransportWithClient(cfg, mock))
+
+			err := client.CheckObjectPackageByName(context.Background(), tc.objectType, "zdemo_report")
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected refusal: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("got %v, want an error containing %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestClient_CheckObjectPackageByName_NoWhitelistSendsNothing(t *testing.T) {
+	mock := &mockTransportClient{responses: map[string]*http.Response{}}
+	cfg := NewConfig("https://sap.example.com:44300", "user", "pass")
+	client := NewClientWithTransport(cfg, NewTransportWithClient(cfg, mock))
+	if err := client.CheckObjectPackageByName(context.Background(), "PROG", "ZDEMO_REPORT"); err != nil {
+		t.Fatalf("refused without a package whitelist: %v", err)
+	}
+	if len(mock.requests) != 0 {
+		t.Errorf("sent %d request(s) without a package whitelist", len(mock.requests))
+	}
+}

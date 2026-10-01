@@ -166,6 +166,32 @@ func (c *Client) checkObjectPackageSafety(ctx context.Context, objectURL string)
 	return c.checkPackageSafety(pkg)
 }
 
+// CheckObjectPackageByName checks the package an existing object is in
+// against the configured package whitelist, for a caller that knows the
+// object by its TADIR type and name rather than by an ADT URL (MoveObject,
+// which reassigns the package through ZADT_VSP). It resolves the package the
+// way checkObjectPackageSafety does, through the repository search, and fails
+// closed when no hit of that type and name carries a package. Without a
+// whitelist it does nothing and sends nothing.
+func (c *Client) CheckObjectPackageByName(ctx context.Context, objectType, name string) error {
+	if len(c.config.Safety.AllowedPackages) == 0 {
+		return nil
+	}
+	objectType = strings.ToUpper(strings.TrimSpace(objectType))
+	name = strings.ToUpper(strings.TrimSpace(name))
+	results, err := c.SearchObjectByType(ctx, name, objectType, 50)
+	if err != nil {
+		return fmt.Errorf("resolving package for %s %s: %w", objectType, name, err)
+	}
+	for _, r := range results {
+		kind, _, _ := strings.Cut(strings.ToUpper(r.Type), "/")
+		if strings.EqualFold(r.Name, name) && kind == objectType && r.PackageName != "" {
+			return c.checkPackageSafety(r.PackageName)
+		}
+	}
+	return fmt.Errorf("resolving package for %s %s: package metadata not found", objectType, name)
+}
+
 // checkTransportableEdit checks if editing objects that require transports is allowed.
 func (c *Client) checkTransportableEdit(transport, opName string) error {
 	return c.config.Safety.CheckTransportableEdit(transport, opName)
