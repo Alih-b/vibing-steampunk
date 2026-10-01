@@ -199,6 +199,19 @@ gateway is a different port and is often closed.
   SAP(action="rfc", params={"op": "search", "pattern": "BAPI_USER*"})
   SAP(action="rfc", params={"op": "read_table", "table": "T000"})
 
+Run a report as a background job (XBP) -- what ADT cannot do, since APC forbids
+SUBMIT. Waits up to "wait" seconds (default 60, at most 300) and returns the
+job status, its spool list and its job log:
+  SAP(action="rfc", target="ZREPORT", params={"op": "run"})
+  SAP(action="rfc", target="ZREPORT", params={"op": "run", "variant": "DEFAULT"})
+  SAP(action="rfc", target="ZREPORT", params={"op": "run", "params": {"P_WERKS": "1000", "S_MATNR": ["M1", "M2"]}})
+  SAP(action="rfc", target="ZREPORT", params={"op": "run", "params": [{"name": "S_DATUM", "option": "BT", "low": "20260101", "high": "20260131"}]})
+A job still running when the wait ends is picked up later with its name and count:
+  SAP(action="rfc", target="VSP_ZREPORT", params={"op": "job", "job_count": "12345678"})
+"spool": false and "joblog": false leave either out; "spool_max_bytes" caps the spool
+(default 256 KB, cut at a line end; "spool_truncated" says so). The job runs as the RFC
+user, with that user's authorizations, and does whatever the report does.
+
 Only remote-enabled function modules can be called. A module that is not
 marked remote is unreachable by every transport — a property of the module,
 not of the connection.

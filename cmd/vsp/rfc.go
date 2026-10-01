@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/oisee/open-rfc-go/rfc"
+	"github.com/spf13/cobra"
+
 	"github.com/oisee/vibing-steampunk/pkg/adt"
 	"github.com/oisee/vibing-steampunk/pkg/config"
 	"github.com/oisee/vibing-steampunk/pkg/saprfc"
-	"github.com/spf13/cobra"
 )
 
 var rfcCmd = &cobra.Command{
@@ -236,12 +237,13 @@ it needs no vsp helper, and no HTTP.`,
 var rfcRunCmd = &cobra.Command{
 	Use:   "run <REPORT>",
 	Short: "Run an ABAP report as a background job over RFC",
-	Long: `Schedule a report as a background job (SUBST_START_REPORT_IN_BATCH), optionally
+	Long: `Schedule a report as a background job (the XBP BAPIs), optionally
 wait for it to finish, and optionally fetch its spool. This is the thing the ADT
 WebSocket path cannot do — APC forbids SUBMIT — and it needs no helper on the system.
 
   vsp rfc run RSPARAM --wait 60
-  vsp rfc run ZMY_REPORT -p P_WERKS=1000 -p S_MATNR=M1 --wait 120 --spool`,
+  vsp rfc run ZMY_REPORT -p P_WERKS=1000 -p S_MATNR=M1 --wait 120 --spool
+  vsp rfc run ZMY_REPORT --variant DEFAULT --wait 60 --spool`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := rfcWriteGate(cmd, "RFCRunReport"); err != nil {
@@ -261,7 +263,11 @@ WebSocket path cannot do — APC forbids SUBMIT — and it needs no helper on th
 		wantSpool, _ := cmd.Flags().GetBool("spool")
 
 		return withRFC(cmd, func(ctx context.Context, c *rfc.Client) error {
-			run, err := saprfc.RunReport(ctx, c, args[0], jobName, params, time.Duration(waitSecs)*time.Second)
+			variant, _ := cmd.Flags().GetString("variant")
+			run, err := saprfc.RunReportWith(ctx, c, saprfc.ReportRequest{
+				Report: args[0], JobName: jobName, Variant: variant, Params: params,
+				Wait: time.Duration(waitSecs) * time.Second,
+			})
 			if err != nil {
 				return err
 			}
@@ -594,6 +600,7 @@ func init() {
 	rfcExportCmd.Flags().Bool("main-lang-only", false, "Serialize the main language only")
 	rfcRunCmd.Flags().StringArrayP("param", "p", nil, "Selection parameter NAME=VALUE (repeatable)")
 	rfcRunCmd.Flags().String("job-name", "", "Background job name (default: VSP_<REPORT>)")
+	rfcRunCmd.Flags().String("variant", "", "Run with this saved variant; -p values override it")
 	rfcRunCmd.Flags().Int("wait", 0, "Seconds to wait for the job to finish (0 = do not wait)")
 	rfcRunCmd.Flags().Bool("spool", false, "Fetch the spool list once the job has finished")
 	rfcSpoolCmd.Flags().Int("step", 1, "Job step number")

@@ -639,6 +639,7 @@ SAP(action="rfc", params={"op":"info"})
 SAP(action="rfc", target="Z_DOUBLE", params={"op":"call","args":{"N":21}})
 SAP(action="rfc", target="STFC_CONNECTION")      # describe (default with a target)
 SAP(action="rfc", target="T000", params={"op":"read_table","fields":["MANDT"],"top":5})
+SAP(action="rfc", target="ZREPORT", params={"op":"run","variant":"DEFAULT"})  # background job: spool + job log
 ```
 
 Types are handled end to end — scalars (incl. STRING/XSTRING, DATE/TIME, packed

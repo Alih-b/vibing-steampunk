@@ -539,14 +539,19 @@ SAP(action="rfc", target="BAPI_USER_*", params={"op":"search"})
 SAP(action="rfc", target="STFC_CONNECTION")                describe (default with a target)
 SAP(action="rfc", target="Z_DOUBLE", params={"op":"call","args":{"N":21}})
 SAP(action="rfc", target="T000", params={"op":"read_table","fields":["MANDT"],"top":5})
+SAP(action="rfc", target="ZREPORT", params={"op":"run","variant":"DEFAULT"})   background job: status, spool, job log
+SAP(action="rfc", target="VSP_ZREPORT", params={"op":"job","job_count":"12345678"})   a job still running after "wait"
 ```
 
-Ops: `info`, `ping`, `describe`, `call`, `search`, `read_table`. The gateway is the
-server's own: the host and system number come from the system's `.vsp.json` entry
-(`rfc_host`, `rfc_sysnr`, `rfc_port`) or from the configured ADT URL, with the port
-`3300 + sysnr`. A per-call `host`, `sysnr` or `port` that points anywhere else is
-refused, because the configured credentials would go with it; `user` picks the logon.
-Under `--read-only`, `call` is refused.
+Ops: `info`, `ping`, `describe`, `call`, `search`, `read_table`, `run`, `job`. `run`
+takes `variant`, `params` (`{"P_WERKS":"1000","S_MATNR":["M1","M2"]}` or RSPARAMS
+rows), `wait` (seconds, default 60, at most 300), `job_name`, and `spool`/`joblog`
+(both default true). The gateway is the server's own: the host and system number
+come from the system's `.vsp.json` entry (`rfc_host`, `rfc_sysnr`, `rfc_port`) or
+from the configured ADT URL, with the port `3300 + sysnr`. A per-call `host`,
+`sysnr` or `port` that points anywhere else is refused, because the configured
+credentials would go with it; `user` picks the logon. Under `--read-only`, `call`
+and `run` are refused.
 
 ### IDocs (`read IDOC`)
 

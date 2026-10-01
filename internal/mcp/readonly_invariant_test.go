@@ -615,7 +615,9 @@ var readOnlyClasses = map[string]surfaceClass{
 	"SAP rfc op=read_table":       clsRead,
 	"SAP rfc op=read-table":       clsRead,
 	"SAP rfc op=table":            clsRead,
-	"SAP rfc op=read_table where": clsRead, // free SQL; --block-free-sql governs it (#283)
+	"SAP rfc op=read_table where": clsRead,    // free SQL; --block-free-sql governs it (#283)
+	"SAP rfc op=run":              clsExecute, // schedules the report as an XBP background job (#261)
+	"SAP rfc op=job":              clsRead,    // TBTCO status, job log, spool list of an existing job (#261)
 
 	// --- SAP(): i18n, revisions ---
 	"SAP i18n op=texts":               clsRead,
@@ -1103,6 +1105,8 @@ func actionCases() []actionCase {
 		rfc("op=read-table", "T000", "op", "read-table", "top", 1.0),
 		rfc("op=table", "T000", "op", "table", "top", 1.0),
 		rfc("op=read_table where", "T000", "op", "read_table", "top", 1.0, "where", "MANDT = '001'"),
+		rfc("op=run", "ZDEMO_REPORT", "op", "run", "wait", 0.0),
+		rfc("op=job", "VSP_ZDEMO_REPORT", "op", "job", "job_count", "12345678"),
 
 		{Name: "SAP history", Action: "history", Target: "PROG ZDEMO_REPORT", Exact: true},
 	}

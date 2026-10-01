@@ -27,16 +27,19 @@ type JobLogEntry struct {
 
 // ReadJobLog reads a job's log.
 func ReadJobLog(ctx context.Context, c *rfc.Client, jobName, jobCount string) ([]JobLogEntry, error) {
-	if err := xmiLogon(ctx, c); err != nil {
-		return nil, err
-	}
-	defer func() { _, _ = c.Call(ctx, "BAPI_XMI_LOGOFF", rfc.Params{"INTERFACE": "XBP"}) }()
-
-	res, err := c.Call(ctx, "BAPI_XBP_JOB_JOBLOG_READ", rfc.Params{
-		"JOBNAME": jobName, "JOBCOUNT": jobCount, "EXTERNAL_USER_NAME": xbpUser, "PROT_NEW": "X",
+	var res rfc.Result
+	err := withXMI(ctx, c, func(s caller) error {
+		var err error
+		res, err = s.Call(ctx, "BAPI_XBP_JOB_JOBLOG_READ", rfc.Params{
+			"JOBNAME": jobName, "JOBCOUNT": jobCount, "EXTERNAL_USER_NAME": xbpUser, "PROT_NEW": "X",
+		})
+		if err != nil {
+			return fmt.Errorf("BAPI_XBP_JOB_JOBLOG_READ: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("BAPI_XBP_JOB_JOBLOG_READ: %w", err)
+		return nil, err
 	}
 	if err := bapiError("BAPI_XBP_JOB_JOBLOG_READ", res.Get("RETURN")); err != nil {
 		return nil, err
@@ -57,16 +60,19 @@ func ReadJobLog(ctx context.Context, c *rfc.Client, jobName, jobCount string) ([
 // ReadSpoolRequest reads a spool request by number as plain text lines,
 // wherever TemSe keeps it.
 func ReadSpoolRequest(ctx context.Context, c *rfc.Client, number int) ([]string, error) {
-	if err := xmiLogon(ctx, c); err != nil {
-		return nil, err
-	}
-	defer func() { _, _ = c.Call(ctx, "BAPI_XMI_LOGOFF", rfc.Params{"INTERFACE": "XBP"}) }()
-
-	res, err := c.Call(ctx, "BAPI_XBP_GET_SPOOL_AS_DAT", rfc.Params{
-		"SPOOL_REQUEST": number, "EXTERNAL_USER_NAME": xbpUser,
+	var res rfc.Result
+	err := withXMI(ctx, c, func(s caller) error {
+		var err error
+		res, err = s.Call(ctx, "BAPI_XBP_GET_SPOOL_AS_DAT", rfc.Params{
+			"SPOOL_REQUEST": number, "EXTERNAL_USER_NAME": xbpUser,
+		})
+		if err != nil {
+			return fmt.Errorf("BAPI_XBP_GET_SPOOL_AS_DAT: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("BAPI_XBP_GET_SPOOL_AS_DAT: %w", err)
+		return nil, err
 	}
 	if err := bapiError("BAPI_XBP_GET_SPOOL_AS_DAT", res.Get("RETURN")); err != nil {
 		return nil, err
