@@ -75,6 +75,10 @@ CLASS zcl_vsp_rfc_service DEFINITION
                 iv_name         TYPE string
       RETURNING VALUE(rv_value) TYPE string.
 
+    METHODS serialize_table
+      IMPORTING it_table       TYPE ANY TABLE
+      RETURNING VALUE(rv_json) TYPE string.
+
     METHODS escape_json
       IMPORTING iv_string         TYPE string
       RETURNING VALUE(rv_escaped) TYPE string.
@@ -345,6 +349,10 @@ CLASS ZCL_VSP_RFC_SERVICE IMPLEMENTATION.
         ENDIF.
         DATA(lv_pname) = CONV string( ls_out-name ).
         CONDENSE lv_pname.
+        " An EXPORTING parameter can be a scalar, a structure or a table
+        " type (RFC_READ_TABLE's ET_DATA). Taking everything non-elementary
+        " for a structure raised CX_SY_MOVE_CAST_ERROR here, after the
+        " function had already run (issue #151).
         DATA(lo_exp_type) = cl_abap_typedescr=>describe_by_data( <fs_out> ).
         IF lo_exp_type->kind = cl_abap_typedescr=>kind_elem.
           TRY.
@@ -354,6 +362,10 @@ CLASS ZCL_VSP_RFC_SERVICE IMPLEMENTATION.
               lv_str = ''.
           ENDTRY.
           lv_json = |{ lv_json }"{ lv_pname }":"{ lv_str }"|.
+        ELSEIF lo_exp_type->kind = cl_abap_typedescr=>kind_table.
+          lv_json = |{ lv_json }"{ lv_pname }":{ serialize_table( <fs_out> ) }|.
+        ELSEIF lo_exp_type->kind <> cl_abap_typedescr=>kind_struct.
+          lv_json = |{ lv_json }"{ lv_pname }":"[complex]"|.
         ELSE.
           lv_json = |{ lv_json }"{ lv_pname }":{ lv_o }|.
           DATA(lo_exp_struc) = CAST cl_abap_structdescr( lo_exp_type ).
@@ -397,46 +409,7 @@ CLASS ZCL_VSP_RFC_SERVICE IMPLEMENTATION.
         ENDIF.
         lv_pname = CONV string( ls_out-name ).
         CONDENSE lv_pname.
-        lv_json = |{ lv_json }"{ lv_pname }":[|.
-        DATA lv_row_first TYPE abap_bool.
-        lv_row_first = abap_true.
-        TRY.
-            LOOP AT <fs_tab> ASSIGNING FIELD-SYMBOL(<fs_row>).
-              IF lv_row_first = abap_false.
-                lv_json = |{ lv_json },|.
-              ENDIF.
-              lv_json = |{ lv_json }{ lv_o }|.
-              DATA(lo_struc) = CAST cl_abap_structdescr( cl_abap_typedescr=>describe_by_data( <fs_row> ) ).
-              DATA lv_comp_first TYPE abap_bool.
-              lv_comp_first = abap_true.
-              LOOP AT lo_struc->components INTO DATA(ls_comp).
-                IF lv_comp_first = abap_false.
-                  lv_json = |{ lv_json },|.
-                ENDIF.
-                ASSIGN COMPONENT ls_comp-name OF STRUCTURE <fs_row> TO FIELD-SYMBOL(<fs_comp>).
-                IF sy-subrc = 0.
-                  DATA(lo_type) = cl_abap_typedescr=>describe_by_data( <fs_comp> ).
-                  IF lo_type->kind = cl_abap_typedescr=>kind_elem.
-                    TRY.
-                        lv_str = <fs_comp>.
-                        lv_str = escape_json( lv_str ).
-                      CATCH cx_root.
-                        lv_str = ''.
-                    ENDTRY.
-                  ELSE.
-                    lv_str = '[complex]'.
-                  ENDIF.
-                  lv_json = |{ lv_json }"{ ls_comp-name }":"{ lv_str }"|.
-                ENDIF.
-                lv_comp_first = abap_false.
-              ENDLOOP.
-              lv_json = |{ lv_json }{ lv_c }|.
-              lv_row_first = abap_false.
-            ENDLOOP.
-          CATCH cx_root.
-            lv_json = |{ lv_json }{ lv_o }"error":"serialization failed"{ lv_c }|.
-        ENDTRY.
-        lv_json = |{ lv_json }]|.
+        lv_json = |{ lv_json }"{ lv_pname }":{ serialize_table( <fs_tab> ) }|.
         lv_first = abap_false.
       ENDIF.
     ENDLOOP.
@@ -769,6 +742,71 @@ CLASS ZCL_VSP_RFC_SERVICE IMPLEMENTATION.
       ENDIF.
       lv_i = lv_i + 1.
     ENDWHILE.
+  ENDMETHOD.
+
+
+  METHOD serialize_table.
+    " A table becomes a JSON array. A structured line becomes an object of
+    " strings, an elementary line a string. The TABLES section and table-typed
+    " EXPORTING parameters share this, so both come back in the same shape.
+    DATA(lv_o) = '{'.
+    DATA(lv_c) = '}'.
+    DATA lv_str TYPE string.
+    DATA lv_row_first TYPE abap_bool VALUE abap_true.
+    DATA lv_comp_first TYPE abap_bool.
+
+    rv_json = '['.
+    TRY.
+        LOOP AT it_table ASSIGNING FIELD-SYMBOL(<fs_row>).
+          IF lv_row_first = abap_false.
+            rv_json = |{ rv_json },|.
+          ENDIF.
+          lv_row_first = abap_false.
+
+          DATA(lo_row_type) = cl_abap_typedescr=>describe_by_data( <fs_row> ).
+          IF lo_row_type->kind = cl_abap_typedescr=>kind_elem.
+            TRY.
+                lv_str = <fs_row>.
+                lv_str = escape_json( lv_str ).
+              CATCH cx_root.
+                lv_str = ''.
+            ENDTRY.
+            rv_json = |{ rv_json }"{ lv_str }"|.
+            CONTINUE.
+          ENDIF.
+
+          rv_json = |{ rv_json }{ lv_o }|.
+          DATA(lo_struc) = CAST cl_abap_structdescr( lo_row_type ).
+          lv_comp_first = abap_true.
+          LOOP AT lo_struc->components INTO DATA(ls_comp).
+            IF lv_comp_first = abap_false.
+              rv_json = |{ rv_json },|.
+            ENDIF.
+            ASSIGN COMPONENT ls_comp-name OF STRUCTURE <fs_row> TO FIELD-SYMBOL(<fs_comp>).
+            IF sy-subrc = 0.
+              DATA(lo_type) = cl_abap_typedescr=>describe_by_data( <fs_comp> ).
+              IF lo_type->kind = cl_abap_typedescr=>kind_elem.
+                TRY.
+                    lv_str = <fs_comp>.
+                    lv_str = escape_json( lv_str ).
+                  CATCH cx_root.
+                    lv_str = ''.
+                ENDTRY.
+              ELSE.
+                lv_str = '[complex]'.
+              ENDIF.
+              rv_json = |{ rv_json }"{ ls_comp-name }":"{ lv_str }"|.
+            ENDIF.
+            lv_comp_first = abap_false.
+          ENDLOOP.
+          rv_json = |{ rv_json }{ lv_c }|.
+        ENDLOOP.
+      CATCH cx_root.
+        " A failure can come mid-row, after its '{' or a comma was written;
+        " appending to that gives invalid JSON. Start over with one element.
+        rv_json = |[{ lv_o }"error":"serialization failed"{ lv_c }|.
+    ENDTRY.
+    rv_json = |{ rv_json }]|.
   ENDMETHOD.
 
 
