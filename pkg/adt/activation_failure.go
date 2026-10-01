@@ -90,6 +90,13 @@ func (r *ActivationResult) ProblemLines() []string {
 		}
 		lines = append(lines, text)
 	}
+	if len(lines) == 0 && len(r.Inactive) > 0 {
+		var names []string
+		for _, o := range r.Inactive {
+			names = append(names, o.Name+" ("+o.URI+")")
+		}
+		lines = append(lines, "Activation was refused; still inactive: "+strings.Join(names, ", "))
+	}
 	if len(lines) == 0 {
 		lines = append(lines, "Activation was refused and SAP named no reason; the object is still inactive")
 	}

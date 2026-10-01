@@ -184,7 +184,106 @@ func (c *Client) Activate(ctx context.Context, objectURL string, objectName stri
 		return nil, fmt.Errorf("activation failed: %w", err)
 	}
 
-	return parseActivationResult(resp.Body)
+	result, err := parseActivationResult(resp.Body)
+	if err != nil || !refusedWithoutReason(result) {
+		return result, err
+	}
+	return c.activateWithInactiveParts(ctx, objectURL, objectName, result)
+}
+
+// refusedWithoutReason is a refusal with nothing in it: no message, no
+// inactive dependency named.
+func refusedWithoutReason(r *ActivationResult) bool {
+	return r != nil && !r.Success && len(r.Messages) == 0 && len(r.Inactive) == 0
+}
+
+// activateWithInactiveParts handles the refusal SAP gives when the object
+// itself has nothing to activate but a part of it does. Activating a function
+// group whose include was changed is the case that mattered: SAP refuses
+// without a word, the include stays inactive, and a request released next
+// carries the old source. SE80 activates the group together with its inactive
+// parts; so does this -- the caller's own inactive objects below the object's
+// URI, and nobody else's. When a part still does not activate, the result
+// names it.
+func (c *Client) activateWithInactiveParts(ctx context.Context, objectURL, objectName string, refused *ActivationResult) (*ActivationResult, error) {
+	records, err := c.GetInactiveObjects(ctx)
+	if err != nil {
+		return refused, nil
+	}
+	parts := inactivePartsOf(objectURL, c.config.Username, records)
+	if len(parts) == 0 {
+		// Nothing of the object is inactive: SAP refused because there was
+		// nothing to do. Calling that "still inactive" sends the caller off to
+		// repair an object that is fine.
+		if !objectInactive(objectURL, records) {
+			return &ActivationResult{Success: true, Messages: []ActivationResultMessage{{
+				Type: "I", ShortText: "Nothing to activate: the object has no inactive version",
+			}}}, nil
+		}
+		return refused, nil
+	}
+	// With a cookie or SSO logon the client does not know its user name, so
+	// it cannot tell its own inactive parts from a colleague's. It activates
+	// none of them then, and names them for the caller to activate by name.
+	if c.config.Username == "" {
+		refused.Inactive = parts
+		refused.Messages = append(refused.Messages, ActivationResultMessage{
+			Type:      "W",
+			ShortText: "Parts of the object are inactive; whose they are is unknown without a user name (cookie/SSO logon), so they were not activated with it -- activate them by name",
+		})
+		return refused, nil
+	}
+	refs := []ObjectRef{{URI: objectURL, Name: objectName}}
+	for _, p := range parts {
+		refs = append(refs, ObjectRef{URI: p.URI, Name: p.Name})
+	}
+	result, err := c.ActivateMultiple(ctx, refs)
+	if err != nil {
+		return nil, err
+	}
+	if result.Success {
+		return result, nil
+	}
+	if len(result.Messages) == 0 && len(result.Inactive) == 0 {
+		// Refused again without a word: name what is still inactive now, not
+		// everything that was tried -- some parts may have gone through.
+		result.Inactive = parts
+		if after, rerr := c.GetInactiveObjects(ctx); rerr == nil {
+			result.Inactive = inactivePartsOf(objectURL, c.config.Username, after)
+		}
+	}
+	return result, nil
+}
+
+// objectInactive says whether the object itself is in the inactive list.
+func objectInactive(objectURL string, records []InactiveObjectRecord) bool {
+	base := strings.ToLower(strings.TrimSuffix(strings.TrimSuffix(objectURL, "/source/main"), "/"))
+	for _, r := range records {
+		if r.Object != nil && strings.EqualFold(strings.TrimSuffix(r.Object.URI, "/"), base) {
+			return true
+		}
+	}
+	return false
+}
+
+// inactivePartsOf picks the inactive objects that belong to the object at
+// objectURL -- its URI is a prefix of theirs -- and to user, if user is known.
+func inactivePartsOf(objectURL, user string, records []InactiveObjectRecord) []InactiveObject {
+	base := strings.ToLower(strings.TrimSuffix(strings.TrimSuffix(objectURL, "/source/main"), "/")) + "/"
+	var parts []InactiveObject
+	for _, r := range records {
+		o := r.Object
+		if o == nil || o.Deleted {
+			continue
+		}
+		if user != "" && o.User != "" && !strings.EqualFold(o.User, user) {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(o.URI), base) {
+			parts = append(parts, *o)
+		}
+	}
+	return parts
 }
 
 func parseActivationResult(data []byte) (*ActivationResult, error) {
