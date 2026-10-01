@@ -272,6 +272,7 @@ type fakeTransportWS struct {
 	addErr       *WSError
 	commitErr    *WSError
 	statusErr    *WSError
+	downloadErr  *WSError
 	buffer       []map[string]any
 	files        map[string][]byte // download source
 	got          map[string][]byte
@@ -355,6 +356,9 @@ func (f *fakeTransportWS) SendDomainRequest(_ context.Context, domain, action st
 		}
 		return ok(st)
 	case "download_files":
+		if f.downloadErr != nil {
+			return &WSResponse{Success: false, Error: f.downloadErr}, nil
+		}
 		name := p["file"].(string)
 		data := f.files[name]
 		off, n := int(p["offset"].(float64)), int(p["length"].(float64))
@@ -582,6 +586,18 @@ func TestTransportBufferAndDownload(t *testing.T) {
 	// A download is a read: it is refused only without transports.
 	if _, err := uploadClient(UnrestrictedSafetyConfig()).DownloadTransportFiles(context.Background(), ws, "XYZK900001"); err == nil {
 		t.Error("download without --enable-transports accepted")
+	}
+}
+
+// A download call that fails is an error, not an empty file: the loop used to
+// test the outer err instead of the call's own, and went on with a zero answer.
+func TestDownloadTransportFilesReturnsCallError(t *testing.T) {
+	ws := newFakeTransportWS()
+	ws.files = map[string][]byte{"cofile": []byte(sampleCofile), "data": []byte("x")}
+	ws.downloadErr = &WSError{Code: "NOT_FOUND", Message: "no such file"}
+	f, err := uploadClient(enabled()).DownloadTransportFiles(context.Background(), ws, "XYZK900001")
+	if err == nil || !strings.Contains(err.Error(), "no such file") {
+		t.Fatalf("a failed download call came back as %+v, %v", f, err)
 	}
 }
 

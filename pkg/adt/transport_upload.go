@@ -1035,7 +1035,7 @@ func (c *Client) DownloadTransportFiles(ctx context.Context, ws TransportService
 			var a transportDownloadAnswer
 			if callErr := transportCall(ctx, ws, "download_files", map[string]any{
 				"request": request, "file": kind, "offset": len(out), "length": transportDownloadChunk,
-			}, 2*time.Minute, &a); err != nil {
+			}, 2*time.Minute, &a); callErr != nil {
 				return nil, callErr
 			}
 			if a.Size > limit {
