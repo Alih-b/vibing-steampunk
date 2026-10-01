@@ -290,10 +290,13 @@ func (s *Server) registerReadTools(shouldRegister func(string) bool) {
 
 	if shouldRegister("GetPackage") {
 		s.mcpServer.AddTool(mcp.NewTool("GetPackage",
-			mcp.WithDescription("Retrieve ABAP package details"),
+			mcp.WithDescription("Retrieve ABAP package details. With inventory=true: every TADIR object (type, name, author, created on), the subpackages (TDEVC) and any abapGit repository registered for the package, in one read-only call."),
 			mcp.WithString("package_name",
 				mcp.Required(),
 				mcp.Description("Name of the ABAP package"),
+			),
+			mcp.WithBoolean("inventory",
+				mcp.Description("Return the package inventory: TADIR objects with author and created on, subpackages, abapGit repository. Reads TADIR/TDEVC/ZABAPGIT through the data preview; with --block-free-sql only the ADT package contents, and the result names what was skipped."),
 			),
 		), s.handleGetPackage)
 	}
@@ -795,6 +798,12 @@ func (s *Server) registerSearchTools(shouldRegister func(string) bool) {
 			mcp.WithNumber("maxResults",
 				mcp.Description("Maximum number of results to return (default 100)"),
 			),
+			mcp.WithString("objectType",
+				mcp.Description("Only objects of this type (CLAS, PROG, INTF, FUGR, ...)"),
+			),
+			mcp.WithBoolean("exact",
+				mcp.Description("Only objects whose name equals query, ignoring case (no wildcards). Combines with objectType and maxResults. The name is searched without a wildcard. If the search returns its full window of 1000 matches, the answer says so (inconclusive without an equal name, an incomplete note next to the results with one) — pass objectType to narrow."),
+			),
 		), s.handleSearchObject)
 	}
 }
@@ -865,6 +874,9 @@ func (s *Server) registerDevTools(shouldRegister func(string) bool) {
 			),
 			mcp.WithBoolean("include_long",
 				mcp.Description("Include long duration tests (default: false)"),
+			),
+			mcp.WithNumber("timeout",
+				mcp.Description(callTimeoutDescription),
 			),
 			mcp.WithBoolean("only_failures",
 				mcp.Description("List only failed test methods (and classes with alerts of their own), plus the counts for the whole run (default: false)"),
@@ -949,6 +961,9 @@ func (s *Server) registerDevTools(shouldRegister func(string) bool) {
 			),
 			mcp.WithString("program_prefix",
 				mcp.Description("Prefix for temp program name (default: ZTEMP_EXEC_)"),
+			),
+			mcp.WithNumber("timeout",
+				mcp.Description(callTimeoutDescription),
 			),
 		), s.handleExecuteABAP)
 	}
@@ -1440,6 +1455,9 @@ func (s *Server) registerFileTools(shouldRegister func(string) bool) {
 			),
 			mcp.WithString("expected_source_hash",
 				mcp.Description("Optional sourceHash returned by GetSource(include_hash=true). Refuse an existing-object deployment if SAP source has changed."),
+			),
+			mcp.WithNumber("timeout",
+				mcp.Description(callTimeoutDescription),
 			),
 		), s.handleDeployFromFile)
 	}
@@ -2274,6 +2292,9 @@ func (s *Server) registerInstallTools(shouldRegister func(string) bool) {
 			),
 			mcp.WithString("name_filter",
 				mcp.Description("Deploy only objects matching this name pattern (e.g., 'ZCL_ABAPGIT_*')"),
+			),
+			mcp.WithNumber("timeout",
+				mcp.Description(callTimeoutDescription),
 			),
 		), s.handleDeployZip)
 	}

@@ -34,6 +34,11 @@ func (s *Server) routeFileIOAction(ctx context.Context, action, objectType, obje
 // Note: CreateFromFile and UpdateFromFile handlers removed - use DeployFromFile instead
 
 func (s *Server) handleDeployFromFile(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return s.longCall(ctx, request, "deploy_from_file", s.deployFromFile)
+}
+
+// deployFromFile is handleDeployFromFile without the call budget (see longCall).
+func (s *Server) deployFromFile(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	filePath, ok := request.GetArguments()["file_path"].(string)
 	if !ok || filePath == "" {
 		return newToolResultError("file_path is required"), nil

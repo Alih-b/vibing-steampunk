@@ -240,6 +240,14 @@ func (c *Client) ExecuteABAP(ctx context.Context, code string, opts *ExecuteABAP
 	err = c.UnlockObject(ctx, objectURL, lock.LockHandle)
 	if err != nil {
 		result.Message = fmt.Sprintf("Failed to unlock: %v", err)
+		// The UNLOCK above fails before it is sent when ctx has expired;
+		// retry it detached, or the temp program stays locked (and, with
+		// KeepProgram, nothing else would release it).
+		if unlockErr := c.releaseLockAfterFailure(ctx, objectURL, lock.LockHandle); unlockErr != nil {
+			appendExecuteCleanupWarning(result, strandedLockAdvice(objectURL, unlockErr))
+		} else {
+			result.Message += " — the lock was released on a retry"
+		}
 		return result, nil
 	}
 

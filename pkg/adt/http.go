@@ -1244,7 +1244,7 @@ func (t *Transport) do(req *http.Request) (*http.Response, error) {
 		if t.contextGate.tryShared() {
 			if t.contextInFlight.Load() == 0 && (t.locks == nil || !t.locks.present()) {
 				defer t.contextGate.releaseShared()
-				return t.httpClient.Do(req)
+				return t.send(req)
 			}
 			t.contextGate.releaseShared()
 		}
@@ -1255,7 +1255,7 @@ func (t *Transport) do(req *http.Request) (*http.Response, error) {
 		stripContextID(req)
 		client, ok := t.httpClient.(*http.Client)
 		if !ok || client.Jar == nil {
-			return t.httpClient.Do(req)
+			return t.send(req)
 		}
 		for _, c := range client.Jar.Cookies(req.URL) {
 			if c.Name != "sap-contextid" {
@@ -1264,6 +1264,9 @@ func (t *Transport) do(req *http.Request) (*http.Response, error) {
 		}
 		isolated := *client
 		isolated.Jar = nil
+		if callDeadlineGoverns(req.Context()) {
+			isolated.Timeout = 0
+		}
 		return isolated.Do(req)
 	}
 
@@ -1276,7 +1279,7 @@ func (t *Transport) do(req *http.Request) (*http.Response, error) {
 		return nil, &url.Error{Op: urlErrorOp(req.Method), URL: req.URL.String(), Err: err}
 	}
 	defer t.contextGate.unlock()
-	return t.httpClient.Do(req)
+	return t.send(req)
 }
 
 // urlErrorOp names the method the way net/http does in its *url.Error.

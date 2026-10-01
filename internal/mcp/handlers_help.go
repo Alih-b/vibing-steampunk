@@ -42,6 +42,10 @@ Read metadata:
   SAP(action="read", target="TABL ZTABLE")          - Table definition
   SAP(action="read", target="TABL_CONTENTS ZTABLE") - Table data
   SAP(action="read", target="DEVC $TMP")             - Package info
+  SAP(action="read", target="DEVC $ZDEMO", params={"inventory": true})
+      - inventory in one call: TADIR objects (type, name, author, created_on), subpackages (TDEVC),
+        abapGit repository registered for the package (if abapGit is installed). Read-only.
+        With --block-free-sql: ADT package contents only; "skipped" says what that leaves out.
   SAP(action="read", target="MSAG ZMSG_CLASS")       - Message class
   SAP(action="read", target="TRAN SM30")              - Transaction info
   SAP(action="read", target="TYPE_INFO ZTYPE")        - Type info
@@ -134,7 +138,15 @@ High-level create (with source):
 		return mcp.NewToolResultText(`SAP(action="search") - Search for objects
 
   SAP(action="search", target="ZCL_*")
-  SAP(action="search", target="ZCL_*", params={"maxResults": 50})`)
+  SAP(action="search", target="ZCL_*", params={"maxResults": 50})
+  SAP(action="search", target="ZCL_*", params={"type": "CLAS", "max": 20})   — type filter, applied before max
+  SAP(action="search", target="ZCL_ORDER", params={"exact": true})            — only objects named exactly ZCL_ORDER (case-insensitive)
+  SAP(action="search", target="ZCL_ORDER", params={"exact": true, "type": "CLAS"})
+
+  exact sends the name without a wildcard and keeps the equal names. If the
+  search returns its full window of 1000 matches, it says so: inconclusive
+  when none was equal, "incomplete" next to the results when some were; add
+  "type" to narrow.`)
 
 	case "query":
 		return mcp.NewToolResultText(`SAP(action="query") - Database queries
@@ -174,6 +186,7 @@ Unit tests:
   own, without URIs or stacks (an alert's "at" is where it was raised). The
   counts still cover the whole run, so an all-green run is just ok + counts.
   include_dangerous runs RISK LEVEL DANGEROUS/CRITICAL tests; --read-only refuses it.
+  SAP(action="test", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "timeout": 600})  — seconds; the run may continue on SAP after it
 
 ATC check:
   SAP(action="test", params={"type": "atc", "object_url": "/sap/bc/adt/oo/classes/zcl_test"})`)
@@ -449,6 +462,10 @@ Execute ABAP:
       finish, rawAlerts only when no value came back. SAP turns a line break in a value into #.
       RETURN_VALUE( x ) hands x back at once (a later RETURN, CHECK or exception keeps it);
       x may be any data object: structures and tables come back as JSON.
+  Long calls (execute_abap, unit tests, deploy_from_file, deploy_zip) take "timeout" in seconds:
+    SAP(action="analyze", params={"type": "execute_abap", "code": "...", "timeout": 300})
+    Default: the server's --call-timeout (SAP_CALL_TIMEOUT); without one each request to SAP is limited to 60s.
+    When it runs out the call says "timed out after Ns; the operation may still be running on SAP".
 
 Runtime errors (ST22) — a listing, and a post-mortem around one dump:
   SAP(action="analyze", params={"type": "list_dumps", "since": "2026-08-01", "program": "ZDEMO_POST"})
@@ -577,6 +594,7 @@ Install tools:
   SAP(action="system", params={"type": "install_dummy_test"})
   SAP(action="system", params={"type": "list_dependencies"})
   SAP(action="system", params={"type": "deploy_zip", "source": "abapgit-standalone", "package": "$ZGIT"})
+      deploy_zip and deploy_from_file take "timeout" (seconds) for the whole call.
 
 File operations:
   SAP(action="system", params={"type": "deploy_from_file", "file_path": "/path/to/file.prog.abap", "package_name": "$TMP"})

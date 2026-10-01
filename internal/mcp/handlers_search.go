@@ -44,6 +44,9 @@ func (s *Server) routeSearchAction(ctx context.Context, action, objectType, obje
 	if v := getStringParam(params, "objectType"); v != "" {
 		args["objectType"] = v
 	}
+	if v, ok := getBoolParam(params, "exact"); ok {
+		args["exact"] = v
+	}
 	return s.callHandler(ctx, s.handleSearchObject, args)
 }
 
@@ -61,6 +64,26 @@ func (s *Server) handleSearchObject(ctx context.Context, request mcp.CallToolReq
 	}
 
 	objectType, _ := request.GetArguments()["objectType"].(string)
+
+	// Exact: only the objects whose name is the query, whatever their type.
+	// Marked incomplete when the search window came back full.
+	if exact, _ := request.GetArguments()["exact"].(bool); exact {
+		results, incomplete, err := s.adtClient.SearchObjectExact(ctx, query, objectType, maxResults)
+		if err != nil {
+			return newToolResultError(fmt.Sprintf("Failed to search: %v", err)), nil
+		}
+		if incomplete == "" {
+			output, _ := json.MarshalIndent(results, "", "  ")
+			return mcp.NewToolResultText(string(output)), nil
+		}
+		// Like the truncated pattern search: the wrapper appears only when
+		// there is something to say.
+		output, _ := json.MarshalIndent(map[string]any{
+			"results":    results,
+			"incomplete": incomplete,
+		}, "", "  ")
+		return mcp.NewToolResultText(string(output)), nil
+	}
 
 	// One more than asked for, so a full page can be told from a page that
 	// happens to be exactly the size of the limit. Without it a search that

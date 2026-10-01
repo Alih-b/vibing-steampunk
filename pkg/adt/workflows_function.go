@@ -141,6 +141,9 @@ func (c *Client) writeFunctionModule(ctx context.Context, group, name, processin
 		return fmt.Errorf("locking function module %s: %w", strings.ToUpper(name), err)
 	}
 	unlocked := false
+	// unlockRetried marks a failed final unlock: the release below is then
+	// its retry, detached from ctx.
+	unlockRetried := false
 	defer func() {
 		if !unlocked {
 			// The compensating unlock is the only place a leak can be
@@ -152,6 +155,8 @@ func (c *Client) writeFunctionModule(ctx context.Context, group, name, processin
 				} else {
 					retErr = fmt.Errorf("%s", advice)
 				}
+			} else if unlockRetried && retErr != nil {
+				retErr = fmt.Errorf("%w — the lock was released on a retry", retErr)
 			}
 		}
 	}()
@@ -180,10 +185,12 @@ func (c *Client) writeFunctionModule(ctx context.Context, group, name, processin
 		}
 	}
 
-	unlocked = true
 	if err := c.UnlockObject(ctx, objectURL, lock.LockHandle); err != nil {
+		// Left to the deferred release, which retries detached from ctx.
+		unlockRetried = true
 		return fmt.Errorf("unlocking function module %s: %w", strings.ToUpper(name), err)
 	}
+	unlocked = true
 	return nil
 }
 

@@ -407,10 +407,16 @@ func (c *Client) EditSourceWithOptions(ctx context.Context, objectURL, oldString
 	// deadline (issue #91/#166) — a failure that cancelled ctx would
 	// otherwise never send the compensating UNLOCK at all.
 	unlocked := false
+	// unlockRetried marks a failed unlock after the write: the release below
+	// is then its retry, on a context detached from ctx (an expired call
+	// deadline fails the first UNLOCK before it leaves the process).
+	unlockRetried := false
 	defer func() {
 		if !unlocked {
 			if unlockErr := c.releaseLockAfterFailure(ctx, lockURL, lockResult.LockHandle); unlockErr != nil {
 				result.Message = fmt.Sprintf("%s — %s", result.Message, strandedLockAdvice(lockURL, unlockErr))
+			} else if unlockRetried && result != nil {
+				result.Message += " — the lock was released on a retry"
 			}
 		}
 	}()
@@ -439,7 +445,12 @@ func (c *Client) EditSourceWithOptions(ctx context.Context, objectURL, oldString
 
 	// 7. Unlock
 	err = c.UnlockObject(ctx, lockURL, lockResult.LockHandle)
-	unlocked = true
+	if err == nil {
+		unlocked = true
+	} else {
+		// Left to the deferred release, which retries detached from ctx.
+		unlockRetried = true
+	}
 	if err != nil {
 		result.Message = fmt.Sprintf("Source updated but unlock failed: %v", err)
 		return result, nil

@@ -44,6 +44,14 @@ func failureCleanupContext(ctx context.Context) (context.Context, context.Cancel
 	return context.WithTimeout(context.WithoutCancel(ctx), unlockAfterFailureTimeout)
 }
 
+// CleanupContext is failureCleanupContext for callers outside this package:
+// a context for a compensating request (an UNLOCK) that still goes out when
+// ctx has been cancelled or has run out, bounded by a deadline of its own. It
+// keeps ctx's values, including mutation-policy marks.
+func CleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return failureCleanupContext(ctx)
+}
+
 // strandedLockAdvice explains an unlock that failed, in the terms a user needs
 // to act on it.
 //

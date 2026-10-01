@@ -33,6 +33,11 @@ var objectTypeMapping = map[string]struct {
 //	Phase 2: Upload source code (Lock → UpdateSource → Unlock, NO syntax check)
 //	Phase 3: Mass activate all objects
 func (s *Server) handleDeployZip(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return s.longCall(ctx, request, "deploy_zip", s.deployZip)
+}
+
+// deployZip is handleDeployZip without the call budget (see longCall).
+func (s *Server) deployZip(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// Parse parameters
 	source, _ := request.GetArguments()["source"].(string)
 	if source == "" {
@@ -259,8 +264,10 @@ func (s *Server) handleDeployZip(ctx context.Context, request mcp.CallToolReques
 		// Upload source (no syntax check!)
 		err = s.adtClient.UpdateSource(objCtx, sourceURL, obj.MainSource, lockResult.LockHandle, "")
 		if err != nil {
-			// Always try to unlock even if upload fails
-			unlockErr := s.adtClient.UnlockObject(objCtx, objectURL, lockResult.LockHandle)
+			// Always try to unlock even if upload fails — on a context of its
+			// own: the upload may have failed because objCtx ran out (a call
+			// budget), and an UNLOCK on it would fail before it was sent.
+			unlockErr := s.unlockAfterUpload(objCtx, objectURL, lockResult.LockHandle)
 			fmt.Fprintf(&sb, "UPLOAD FAIL: %v\n", err)
 			uploadFailed++
 			uploadFailures = append(uploadFailures, fmt.Sprintf("%s %s: upload failed: %v", obj.Type, obj.Name, err))
@@ -271,8 +278,8 @@ func (s *Server) handleDeployZip(ctx context.Context, request mcp.CallToolReques
 			continue
 		}
 
-		// Unlock
-		err = s.adtClient.UnlockObject(objCtx, objectURL, lockResult.LockHandle)
+		// Unlock, also when the call's budget ran out during the upload.
+		err = s.unlockAfterUpload(objCtx, objectURL, lockResult.LockHandle)
 		if err != nil {
 			// Not fatal for the source, which is written — but the object is
 			// left locked, so it is fatal for the next person to touch it and
@@ -331,4 +338,13 @@ func (s *Server) handleDeployZip(ctx context.Context, request mcp.CallToolReques
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// unlockAfterUpload releases a deploy_zip lock on a context detached from
+// ctx's cancellation, with a deadline of its own, so the UNLOCK is sent even
+// when the call's budget ran out inside the lock window.
+func (s *Server) unlockAfterUpload(ctx context.Context, objectURL, lockHandle string) error {
+	unlockCtx, cancel := adt.CleanupContext(ctx)
+	defer cancel()
+	return s.adtClient.UnlockObject(unlockCtx, objectURL, lockHandle)
 }

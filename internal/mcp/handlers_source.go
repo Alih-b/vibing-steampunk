@@ -365,6 +365,9 @@ func (s *Server) registerImportFromFile() {
 		mcp.WithString("expected_source_hash",
 			mcp.Description("Optional sourceHash returned by GetSource(include_hash=true). Refuse an existing-object import if SAP source has changed."),
 		),
+		mcp.WithNumber("timeout",
+			mcp.Description(callTimeoutDescription),
+		),
 	), s.handleDeployFromFile) // Reuse existing handler
 }
 

@@ -4,14 +4,18 @@ package mcp
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"github.com/oisee/vibing-steampunk/pkg/cache"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -138,6 +142,11 @@ type Config struct {
 	// default, which assumes the flow runs unattended; a browser sign-in that
 	// stops to ask for a second factor needs considerably longer.
 	ReauthTimeout time.Duration
+
+	// CallTimeout is the default budget of one long call (ExecuteABAP, ABAP
+	// Unit, a deploy) when the call names none in params.timeout. Zero leaves
+	// each request to SAP bounded by the client's per-request timeout only.
+	CallTimeout time.Duration
 
 	// Session keep-alive interval (0 = disabled)
 	// Sends periodic pings to prevent session timeout during idle periods.
@@ -320,7 +329,32 @@ func (s *Server) ServeStdio() error {
 	// process until its caller times out, so the session is released here as
 	// well as on an explicit detach.
 	defer s.closeDebugSession(context.Background())
-	return server.ServeStdio(s.mcpServer)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	return s.serveStdio(ctx, os.Stdin, os.Stdout)
+}
+
+// serveStdio serves MCP over in/out until in closes or ctx ends. Both are how
+// a client shuts a stdio server down -- it closes stdin, and often signals the
+// process as well -- so both are a clean exit, not an error: an error here
+// reached the CLI, which printed it and the whole usage text to stderr on
+// every shutdown.
+func (s *Server) serveStdio(ctx context.Context, in io.Reader, out io.Writer) error {
+	err := server.NewStdioServer(s.mcpServer).Listen(ctx, in, out)
+	if stdioShutdown(err) {
+		return nil
+	}
+	return err
+}
+
+// stdioShutdown reports whether err only says the stdio session ended.
+func stdioShutdown(err error) bool {
+	return err == nil ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrClosedPipe) ||
+		errors.Is(err, os.ErrClosed)
 }
 
 // ServeHTTP starts the MCP server as a Streamable HTTP endpoint.

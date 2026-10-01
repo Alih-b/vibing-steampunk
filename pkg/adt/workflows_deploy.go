@@ -137,10 +137,16 @@ func (c *Client) CreateFromFile(ctx context.Context, filePath, packageName, tran
 
 	// Ensure unlock on any error, detached from ctx's cancellation (issue #91/#166).
 	unlocked := false
+	// unlockRetried marks a failed unlock after the write: the release below
+	// is then its retry, on a context detached from ctx (an expired call
+	// deadline fails the first UNLOCK before it leaves the process).
+	unlockRetried := false
 	defer func() {
 		if !unlocked {
 			if unlockErr := c.releaseLockAfterFailure(ctx, objectURL, lockResult.LockHandle); unlockErr != nil && result != nil {
 				result.Message = fmt.Sprintf("%s — %s", result.Message, strandedLockAdvice(objectURL, unlockErr))
+			} else if unlockErr == nil && unlockRetried && result != nil {
+				result.Message += " — the lock was released on a retry"
 			}
 		}
 	}()
@@ -182,7 +188,12 @@ func (c *Client) CreateFromFile(ctx context.Context, filePath, packageName, tran
 
 	// 8. Unlock
 	err = c.UnlockObject(ctx, objectURL, lockResult.LockHandle)
-	unlocked = true
+	if err == nil {
+		unlocked = true
+	} else {
+		// Left to the deferred release, which retries detached from ctx.
+		unlockRetried = true
+	}
 	if err != nil {
 		return &DeployResult{
 			FilePath:   filePath,
@@ -351,10 +362,16 @@ func (c *Client) UpdateFromFileWithOptions(ctx context.Context, filePath, transp
 
 	// Ensure unlock on any error, detached from ctx's cancellation (issue #91/#166).
 	unlocked := false
+	// unlockRetried marks a failed unlock after the write: the release below
+	// is then its retry, on a context detached from ctx (an expired call
+	// deadline fails the first UNLOCK before it leaves the process).
+	unlockRetried := false
 	defer func() {
 		if !unlocked {
 			if unlockErr := c.releaseLockAfterFailure(ctx, objectURL, lockResult.LockHandle); unlockErr != nil && result != nil {
 				result.Message = fmt.Sprintf("%s — %s", result.Message, strandedLockAdvice(objectURL, unlockErr))
+			} else if unlockErr == nil && unlockRetried && result != nil {
+				result.Message += " — the lock was released on a retry"
 			}
 		}
 	}()
@@ -424,7 +441,12 @@ func (c *Client) UpdateFromFileWithOptions(ctx context.Context, filePath, transp
 
 	// 7. Unlock
 	err = c.UnlockObject(ctx, objectURL, lockResult.LockHandle)
-	unlocked = true
+	if err == nil {
+		unlocked = true
+	} else {
+		// Left to the deferred release, which retries detached from ctx.
+		unlockRetried = true
+	}
 	if err != nil {
 		return &DeployResult{
 			FilePath:   filePath,

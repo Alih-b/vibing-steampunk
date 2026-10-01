@@ -214,6 +214,11 @@ func (s *Server) handleGetTransportInfo(ctx context.Context, request mcp.CallToo
 
 // handleExecuteABAP executes arbitrary ABAP code via unit test wrapper.
 func (s *Server) handleExecuteABAP(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return s.longCall(ctx, request, "execute_abap", s.executeABAP)
+}
+
+// executeABAP is handleExecuteABAP without the call budget (see longCall).
+func (s *Server) executeABAP(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	code, ok := request.GetArguments()["code"].(string)
 	if !ok || code == "" {
 		return newToolResultError("code parameter is required"), nil
