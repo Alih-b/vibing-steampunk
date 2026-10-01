@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/oisee/vibing-steampunk/pkg/saprfc"
 	"github.com/spf13/cobra"
@@ -32,7 +31,7 @@ func TestTraceCall_RefusedOnAReadOnlySystem(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), "blocked by safety configuration") {
 				t.Fatalf("want a safety refusal, got %v", err)
 			}
-			if n := cliWaitDials(dials, 1, 200*time.Millisecond); n != 0 {
+			if n := dials(); n != 0 {
 				t.Errorf("a refused --call still dialled the gateway %d time(s)", n)
 			}
 		})
@@ -48,7 +47,7 @@ func TestTraceWithoutCall_ReachesTheGatewayOnAReadOnlySystem(t *testing.T) {
 	if err != nil && strings.Contains(err.Error(), "blocked") {
 		t.Fatalf("refused: %v", err)
 	}
-	if cliWaitDials(dials, 1, 2*time.Second) == 0 {
+	if dials() == 0 {
 		t.Errorf("never reached the gateway (err %v)", err)
 	}
 }
@@ -74,7 +73,7 @@ func TestDebugUIRun_RefusedOnAReadOnlySystem(t *testing.T) {
 	if n := fake.count(); n != 0 {
 		t.Errorf("a refused Run still sent %d ADT request(s)", n)
 	}
-	if n := cliWaitDials(dials, 1, 200*time.Millisecond); n != 0 {
+	if n := dials(); n != 0 {
 		t.Errorf("a refused Run still dialled the gateway %d time(s)", n)
 	}
 }

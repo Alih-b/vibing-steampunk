@@ -37,7 +37,7 @@ func TestRFCReadTable_CallerWhereRefusedUnderBlockFreeSQL(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), "blocked by safety configuration") || !strings.Contains(err.Error(), "type F") {
 				t.Fatalf("want a free-SQL refusal, got %v", err)
 			}
-			if n := waitDials(dials, 1, 200*time.Millisecond); n != 0 {
+			if n := dials(); n != 0 {
 				t.Errorf("refused read_table still dialled the gateway %d time(s)", n)
 			}
 		})
@@ -67,7 +67,7 @@ func TestRFCReadTable_OtherReadsStillReachGateway(t *testing.T) {
 			if err != nil && strings.Contains(err.Error(), "blocked") {
 				t.Fatalf("refused: %v", err)
 			}
-			if waitDials(dials, 1, 2*time.Second) == 0 {
+			if dials() == 0 {
 				t.Errorf("never reached the gateway (err %v)", err)
 			}
 		})

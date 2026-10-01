@@ -9,6 +9,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -248,10 +249,24 @@ func TestSAMLLogin_ReauthConcurrent(t *testing.T) {
 	}))
 	defer csrfServer.Close()
 
+	// The first re-auth holds until every other caller is parked on reauthMu,
+	// so the test proves they contend for it -- not merely that they started
+	// -- and only then lets it finish. A caller that merely arrived late would
+	// skip through the cooldown even with the mutex gone; here none can. With
+	// no mutex there is nothing to park on: every caller enters the re-auth,
+	// the count reaches callers, and that releases them all to fail the
+	// assertion below.
+	const callers = 5
 	var reauthCount int32
 	reauthFunc := func(ctx context.Context) (map[string]string, error) {
 		atomic.AddInt32(&reauthCount, 1)
-		time.Sleep(100 * time.Millisecond) // Simulate SAML dance latency
+		deadline := time.Now().Add(5 * time.Second)
+		for atomic.LoadInt32(&reauthCount) < callers && parkedOnReauthMu() < callers-1 {
+			if time.Now().After(deadline) {
+				return nil, fmt.Errorf("after 5s only %d of %d other callers were waiting on reauthMu", parkedOnReauthMu(), callers-1)
+			}
+			runtime.Gosched()
+		}
 		return map[string]string{"MYSAPSSO2": "fresh"}, nil
 	}
 
@@ -260,14 +275,21 @@ func TestSAMLLogin_ReauthConcurrent(t *testing.T) {
 
 	// Simulate concurrent callReauthFunc invocations.
 	var wg sync.WaitGroup
-	for i := 0; i < 5; i++ {
+	errs := make(chan error, callers)
+	for i := 0; i < callers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_ = transport.callReauthFunc(context.Background())
+			errs <- transport.callReauthFunc(context.Background())
 		}()
 	}
 	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("callReauthFunc: %v", err)
+		}
+	}
 
 	count := atomic.LoadInt32(&reauthCount)
 	if count != 1 {
@@ -577,4 +599,25 @@ func TestExtractSAPCookiesFromJar(t *testing.T) {
 	if cookies["MYSAPSSO2"] != "token" {
 		t.Errorf("expected MYSAPSSO2=token, got %q", cookies["MYSAPSSO2"])
 	}
+}
+
+// parkedOnReauthMu counts the goroutines waiting to acquire a Transport's
+// reauthMu: their stack has sync.(*Mutex).Lock called from callReauthFunc.
+func parkedOnReauthMu() int {
+	buf := make([]byte, 1<<16)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	parked := 0
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		if i := strings.Index(g, "sync.(*Mutex).Lock"); i >= 0 && strings.Contains(g[i:], ".(*Transport).callReauthFunc(") {
+			parked++
+		}
+	}
+	return parked
 }

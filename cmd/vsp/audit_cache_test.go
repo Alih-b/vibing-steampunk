@@ -7,6 +7,7 @@ import (
 	"sort"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/oisee/vibing-steampunk/pkg/adt"
@@ -109,13 +110,28 @@ func TestAuditCache_TTLExpiry(t *testing.T) {
 	if _, ok := c.getTTL("k", 0); ok {
 		t.Error("zero-TTL read should miss")
 	}
+}
 
-	// Very small TTL and a real sleep: the entry is older than the
-	// window → miss. 20ms is long enough for the clock to tick past 1ms.
-	time.Sleep(20 * time.Millisecond)
-	if _, ok := c.getTTL("k", 1*time.Millisecond); ok {
-		t.Error("entry older than TTL should miss")
-	}
+// TestAuditCache_TTLBoundary checks a small TTL from both sides on fake time.
+// On the real clock this cannot be done: created_at is stored in whole
+// seconds, so an entry read straight after it was written is already up to a
+// second old, and a 1 ms window "expires" whether or not any time passed. In
+// a synctest bubble the clock starts on a whole second and only moves when
+// the test sleeps.
+func TestAuditCache_TTLBoundary(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const ttl = time.Millisecond
+		c := newTempCache(t)
+		c.putJSON("k", "value")
+
+		if _, ok := c.getTTL("k", ttl); !ok {
+			t.Fatal("an entry younger than its TTL should hit")
+		}
+		time.Sleep(20 * time.Millisecond)
+		if _, ok := c.getTTL("k", ttl); ok {
+			t.Error("entry older than TTL should miss")
+		}
+	})
 }
 
 // TestAuditCache_NilSafe covers the "no cache" path — a nil receiver

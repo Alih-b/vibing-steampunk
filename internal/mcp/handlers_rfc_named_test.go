@@ -49,7 +49,7 @@ func TestRFCNamedSystemMismatch_RefusedBeforeTheGateway(t *testing.T) {
 	if !handled || err == nil || !strings.Contains(err.Error(), "this server is connected to") {
 		t.Fatalf("want a mismatch refusal, got handled=%v err=%v", handled, err)
 	}
-	if n := waitDials(dials, 1, 200*time.Millisecond); n != 0 {
+	if n := dials(); n != 0 {
 		t.Errorf("a mismatched named system still dialled its gateway %d time(s)", n)
 	}
 }
@@ -135,7 +135,7 @@ func TestRFCOverride_AnotherHostIsNeverDialled(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "is blocked") {
 		t.Fatalf("want an override refusal, got %v", err)
 	}
-	if n := waitDials(dials, 1, 200*time.Millisecond); n != 0 {
+	if n := dials(); n != 0 {
 		t.Errorf("an override to another host dialled %d time(s)", n)
 	}
 }

@@ -6,14 +6,14 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
-// lockWindowServer answers LOCK, UNLOCK, DELETE and the CSRF/ping probe, and
+// lockWindowHandler answers LOCK, UNLOCK, DELETE and the CSRF/ping probe, and
 // records every path it is asked for.
-func lockWindowServer(t *testing.T, seen *[]string, mu *sync.Mutex) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func lockWindowHandler(seen *[]string, mu *sync.Mutex) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		*seen = append(*seen, r.URL.Path+"?"+r.URL.Query().Get("_action"))
 		mu.Unlock()
@@ -26,7 +26,13 @@ func lockWindowServer(t *testing.T, seen *[]string, mu *sync.Mutex) *httptest.Se
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-	}))
+	})
+}
+
+// lockWindowServer serves lockWindowHandler over a real socket.
+func lockWindowServer(t *testing.T, seen *[]string, mu *sync.Mutex) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(lockWindowHandler(seen, mu))
 }
 
 func newLockWindowClient(t *testing.T, url string) *Client {
@@ -138,49 +144,57 @@ func TestLockWindow_IsConcurrencySafe(t *testing.T) {
 // Without the skip, a tick inside the window sends a request to the discovery
 // endpoint, and on a live system that request retires the ADT session the lock
 // handle is bound to.
+//
+// It runs in a synctest bubble against an in-memory server, so the ticker
+// runs on fake time: sleeping 150 ms is exactly 15 ticks, every one of which
+// the keep-alive has handled once synctest.Wait returns.
 func TestKeepAlive_DoesNotPingDuringALockWindow(t *testing.T) {
-	var mu sync.Mutex
-	var seen []string
-	srv := lockWindowServer(t, &seen, &mu)
-	defer srv.Close()
+	synctest.Test(t, func(t *testing.T) {
+		const interval, ticks = 10 * time.Millisecond, 15
+		var mu sync.Mutex
+		var seen []string
+		c := newInMemoryClient(lockWindowHandler(&seen, &mu))
+		if _, err := c.LockObject(context.Background(), "/sap/bc/adt/programs/programs/ZDEMO", "MODIFY"); err != nil {
+			t.Fatalf("LockObject: %v", err)
+		}
 
-	c := newLockWindowClient(t, srv.URL)
-	if _, err := c.LockObject(context.Background(), "/sap/bc/adt/programs/programs/ZDEMO", "MODIFY"); err != nil {
-		t.Fatalf("LockObject: %v", err)
-	}
+		mu.Lock()
+		afterLock := len(seen)
+		mu.Unlock()
 
-	mu.Lock()
-	afterLock := len(seen)
-	mu.Unlock()
+		c.StartKeepAlive(interval, false)
+		time.Sleep(ticks * interval)
+		synctest.Wait() // the tick due now has been handled too
+		c.StopKeepAlive()
 
-	c.StartKeepAlive(10*time.Millisecond, false)
-	time.Sleep(150 * time.Millisecond) // ~15 ticks
-	c.StopKeepAlive()
+		mu.Lock()
+		extra := seen[afterLock:]
+		mu.Unlock()
 
-	mu.Lock()
-	extra := seen[afterLock:]
-	mu.Unlock()
+		if len(extra) != 0 {
+			t.Fatalf("keep-alive sent %d request(s) while a lock was outstanding: %v", len(extra), extra)
+		}
 
-	if len(extra) != 0 {
-		t.Fatalf("keep-alive sent %d request(s) while a lock was outstanding: %v", len(extra), extra)
-	}
+		// And once the lock is released it must resume, or the feature is just off.
+		if err := c.UnlockObject(context.Background(), "/sap/bc/adt/programs/programs/ZDEMO", "HANDLE-1"); err != nil {
+			t.Fatalf("UnlockObject: %v", err)
+		}
+		mu.Lock()
+		afterUnlock := len(seen)
+		mu.Unlock()
 
-	// And once the lock is released it must resume, or the feature is just off.
-	if err := c.UnlockObject(context.Background(), "/sap/bc/adt/programs/programs/ZDEMO", "HANDLE-1"); err != nil {
-		t.Fatalf("UnlockObject: %v", err)
-	}
-	mu.Lock()
-	afterUnlock := len(seen)
-	mu.Unlock()
+		c.StartKeepAlive(interval, false)
+		time.Sleep(ticks * interval)
+		synctest.Wait()
+		c.StopKeepAlive()
 
-	c.StartKeepAlive(10*time.Millisecond, false)
-	time.Sleep(150 * time.Millisecond)
-	c.StopKeepAlive()
-
-	mu.Lock()
-	resumed := len(seen) - afterUnlock
-	mu.Unlock()
-	if resumed == 0 {
-		t.Fatal("with no lock outstanding the keep-alive must ping; it pinged not at all")
-	}
+		mu.Lock()
+		resumed := len(seen) - afterUnlock
+		mu.Unlock()
+		// One ping per tick: the same fifteen ticks that were all skipped
+		// above all went out once the window closed.
+		if resumed != ticks {
+			t.Fatalf("with no lock outstanding the keep-alive must ping on every tick: %d pings in %d ticks", resumed, ticks)
+		}
+	})
 }

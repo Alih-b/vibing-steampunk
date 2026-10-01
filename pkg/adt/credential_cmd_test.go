@@ -2,6 +2,7 @@ package adt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -82,10 +83,13 @@ func TestCredentialCmd_InvalidJSON(t *testing.T) {
 }
 
 func TestCredentialCmd_Timeout(t *testing.T) {
-	// Use an immediately-expired context.
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	// A context whose deadline has already passed: expired from the start,
+	// with no sleep to wait for it.
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
-	time.Sleep(5 * time.Millisecond) // Ensure context is expired.
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("the context is not expired: %v", ctx.Err())
+	}
 
 	var args []string
 	if runtime.GOOS == "windows" {

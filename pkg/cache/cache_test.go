@@ -3,6 +3,7 @@ package cache_test
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/oisee/vibing-steampunk/pkg/cache"
@@ -14,12 +15,12 @@ func TestMemoryCache_BasicOperations(t *testing.T) {
 
 	// Test PutNode and GetNode
 	node := &cache.Node{
-		ID:          "ME.ZCL_TEST\\ME:METHOD",
-		ObjectType:  "CLAS",
-		ObjectName:  "ZCL_TEST",
-		Package:     "$TMP",
-		SourceHash:  "abc123",
-		Valid:       true,
+		ID:         "ME.ZCL_TEST\\ME:METHOD",
+		ObjectType: "CLAS",
+		ObjectName: "ZCL_TEST",
+		Package:    "$TMP",
+		SourceHash: "abc123",
+		Valid:      true,
 	}
 
 	err := c.PutNode(ctx, node)
@@ -77,33 +78,41 @@ func TestMemoryCache_Invalidation(t *testing.T) {
 	}
 }
 
+// On fake time inside a synctest bubble the entry's age is exactly what the
+// test slept, so both sides of the TTL are checked, not only the far one.
 func TestMemoryCache_TTLExpiration(t *testing.T) {
-	ctx := context.Background()
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		const ttl = 10 * time.Millisecond
 
-	config := cache.DefaultConfig()
-	config.InvalidationPolicy.UseTTL = true
-	config.InvalidationPolicy.TTL = 1 * time.Millisecond
+		config := cache.DefaultConfig()
+		config.InvalidationPolicy.UseTTL = true
+		config.InvalidationPolicy.TTL = ttl
 
-	c := cache.NewMemoryCache(config)
+		c := cache.NewMemoryCache(config)
 
-	node := &cache.Node{
-		ID:         "TEST_NODE",
-		ObjectType: "CLAS",
-		ObjectName: "ZCL_TEST",
-		Valid:      true,
-		CachedAt:   time.Now(),
-	}
+		node := &cache.Node{
+			ID:         "TEST_NODE",
+			ObjectType: "CLAS",
+			ObjectName: "ZCL_TEST",
+			Valid:      true,
+			CachedAt:   time.Now(),
+		}
 
-	c.PutNode(ctx, node)
+		c.PutNode(ctx, node)
 
-	// Wait for TTL to expire
-	time.Sleep(10 * time.Millisecond)
+		time.Sleep(ttl / 2)
+		if _, err := c.GetNode(ctx, node.ID); err != nil {
+			t.Fatalf("an entry halfway through its TTL: got %v, want a hit", err)
+		}
 
-	// Should return ErrExpired
-	_, err := c.GetNode(ctx, node.ID)
-	if err != cache.ErrExpired {
-		t.Errorf("Expected ErrExpired, got %v", err)
-	}
+		// Past the TTL: should return ErrExpired
+		time.Sleep(ttl)
+		_, err := c.GetNode(ctx, node.ID)
+		if err != cache.ErrExpired {
+			t.Errorf("Expected ErrExpired, got %v", err)
+		}
+	})
 }
 
 func TestMemoryCache_Edges(t *testing.T) {

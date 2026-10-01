@@ -6,25 +6,30 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
 // A server that counts what reaches it, so the test can say how many
-// requests the cache turned into none.
-func cachingTestServer(t *testing.T) (*httptest.Server, *atomic.Int64) {
-	t.Helper()
-	var hits atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// requests the cache turned into none. Only reads of content count; the CSRF
+// fetch and the writes do not.
+func cachingHandler(hits *atomic.Int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("X-CSRF-Token", "token")
 		if r.Method != http.MethodGet || r.URL.Path == "/sap/bc/adt/discovery" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		// Only reads of content count; the CSRF fetch and the writes do not.
 		hits.Add(1)
 		_, _ = w.Write([]byte("source of " + r.URL.Path + " " + r.Header.Get("Accept")))
-	}))
+	})
+}
+
+func cachingTestServer(t *testing.T) (*httptest.Server, *atomic.Int64) {
+	t.Helper()
+	var hits atomic.Int64
+	srv := httptest.NewServer(cachingHandler(&hits))
 	t.Cleanup(srv.Close)
 	return srv, &hits
 }
@@ -116,22 +121,32 @@ func TestStableQuery(t *testing.T) {
 	}
 }
 
+// An entry is served until its TTL runs out and refetched after. On fake time
+// both halves are exact: the clock reads what the test slept, never more.
 func TestResponseCacheExpires(t *testing.T) {
-	srv, upstream := cachingTestServer(t)
-	c := NewClient(srv.URL, "u", "p", WithCache(20*time.Millisecond))
-	ctx := context.Background()
-	for i := 0; i < 2; i++ {
-		if _, err := c.transport.Request(ctx, "/x", &RequestOptions{}); err != nil {
-			t.Fatal(err)
+	synctest.Test(t, func(t *testing.T) {
+		const ttl = 20 * time.Millisecond
+		var upstream atomic.Int64
+		c := newInMemoryClient(cachingHandler(&upstream), WithCache(ttl))
+		ctx := context.Background()
+		get := func() {
+			t.Helper()
+			if _, err := c.transport.Request(ctx, "/x", &RequestOptions{}); err != nil {
+				t.Fatal(err)
+			}
 		}
-	}
-	time.Sleep(40 * time.Millisecond)
-	if _, err := c.transport.Request(ctx, "/x", &RequestOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	if n := upstream.Load(); n != 2 {
-		t.Errorf("expired entry not refetched: %d requests", n)
-	}
+		get()
+		time.Sleep(ttl / 2)
+		get()
+		if n := upstream.Load(); n != 1 {
+			t.Fatalf("an entry within its TTL was refetched: %d requests", n)
+		}
+		time.Sleep(ttl)
+		get()
+		if n := upstream.Load(); n != 2 {
+			t.Errorf("expired entry not refetched: %d requests", n)
+		}
+	})
 }
 
 func TestNoCacheByDefault(t *testing.T) {
