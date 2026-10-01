@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -66,7 +67,7 @@ func TestDebugUIRun_RefusedOnAReadOnlySystem(t *testing.T) {
 		readOnly: true,
 	}
 	rec := httptest.NewRecorder()
-	srv.handleRun(rec, httptest.NewRequest("GET", "/api/run?seconds=1", nil))
+	srv.handleRun(rec, httptest.NewRequestWithContext(context.Background(), "GET", "/api/run?seconds=1", nil))
 	if !strings.Contains(rec.Body.String(), "blocked by safety configuration") {
 		t.Fatalf("want a safety refusal in the page state, got %s", rec.Body.String())
 	}
