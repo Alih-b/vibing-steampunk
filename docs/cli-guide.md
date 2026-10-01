@@ -375,6 +375,24 @@ vsp copy backup.zip '$TMP'
 
 **Requirements:** Export needs ZADT_VSP WebSocket. Standard ADT for import via deploy.
 
+### Self Update
+
+```bash
+vsp update --check                     # compare the running version with the latest release
+vsp update                             # download, verify against checksums.txt, install
+vsp update --version v2.55.0 --force   # a specific tag, newer or not
+vsp update --repo owner/name           # look in a different repository for this one run
+vsp update --json                      # machine-readable report (repo, current, latest, asset, ...)
+```
+
+The release comes from the repository the running binary was built for
+(build-stamped at release time); `--repo owner/name` overrides it for one
+run. Resolution order: `--repo`, then the stamped repository, then
+`oisee/vibing-steampunk`. `GITHUB_TOKEN` or `GH_TOKEN` lifts the GitHub API
+rate limit but is not required.
+
+**Requirements:** No SAP system. HTTPS to `api.github.com` and `github.com`.
+
 ---
 
 ## Feature Requirements Matrix
@@ -402,6 +420,7 @@ vsp copy backup.zip '$TMP'
 | `execute` | ✅ | optional | — | — |
 | `export` | — | ✅ | — | — |
 | `install` | ✅ | — | — | — |
+| `update` | — | — | — | ✅ |
 
 **Legend:**
 - **Standard ADT** — works with any SAP system that has ADT enabled (default since 7.50)

@@ -34,7 +34,8 @@ S/4, AMDP needs HANA, and some ADT resources present on S/4 are absent on ERP.
 >   and a hint after every program create that names the fields still without one; the
 >   [description set without touching the source](#the-description-and-the-binary-itself).
 > - **`vsp update`** — the release for this platform, verified against `checksums.txt`,
->   renamed into place of the running binary.
+>   renamed into place of the running binary, from the repository the binary was built
+>   for (`--repo owner/name` to point elsewhere).
 > - **[A response cache](#response-cache)** that turns a 4-second `slim` into 10 ms, on
 >   Go-native SQLite when it should outlive the process.
 >
@@ -423,11 +424,17 @@ system — redeploy it after this release, the bridge changed.
 the running version, verifies the download against the release's
 `checksums.txt`, and puts it in place of the running binary — the old one is
 renamed aside first, which is what Windows allows for a running executable.
+The release comes from the repository the binary was built for: these
+releases are `github.com/oisee/vibing-steampunk`, and a fork's own releases
+update from that fork; a local `make build` carries no stamp and uses the
+default. `--repo owner/name` points at a different repository
+for one run.
 
 ```bash
-vsp update --check                                   # vsp 2.56.0, latest is 2.57.0: update available
+vsp update --check                                   # vsp 2.56.0, latest in oisee/vibing-steampunk is 2.57.0 (vsp-linux-amd64): update available
 vsp update                                           # download, verify, replace
 vsp update --version v2.55.0 --force                 # a particular release, newer or not
+vsp update --repo myorg/vibing-steampunk --check     # a different fork's releases
 ```
 
 ### Cluster tables, decoded — BALDAT, INDX, STXL over plain ADT
@@ -1155,6 +1162,7 @@ vsp -s a4h docs img "cleanup job"                    # where in the IMG, and whi
 vsp -s a4h texts set ZDEMO_RUN P_DEVC="Package to scan"  # selection texts, a plan first
 vsp -s a4h description ZDEMO_RUN "What the report does"  # SE38's title, without touching the source
 vsp update                                           # the latest release, verified, in place of this binary
+vsp update --repo owner/name                         # from a different repository than the one this build was released from
 
 # Cluster tables — what only IMPORT could read, decoded here
 vsp -s a4h cluster read INDX --where "relid = 'ZV'" --schema

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -157,8 +158,10 @@ func TestUpdateReplaceExecutableRollback(t *testing.T) {
 }
 
 // fakeRelease serves a GitHub-shaped release for the running platform. The
-// checksums text is chosen per call so a test can serve a wrong one.
-func fakeRelease(t *testing.T, tag string, binary []byte, checksums func(asset, sum string) string) *httptest.Server {
+// checksums text is chosen per call so a test can serve a wrong one. repo is
+// the owner/name the release is served under, matching what the client is
+// expected to resolve and request.
+func fakeRelease(t *testing.T, repo, tag string, binary []byte, checksums func(asset, sum string) string) *httptest.Server {
 	t.Helper()
 	asset := assetName(runtime.GOOS, runtime.GOARCH)
 	sum := sha256.Sum256(binary)
@@ -177,9 +180,10 @@ func fakeRelease(t *testing.T, tag string, binary []byte, checksums func(asset, 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(rel)
 	}
-	mux.HandleFunc("/releases/latest", serveRelease)
-	mux.HandleFunc("/releases/tags/"+tag, serveRelease)
-	mux.HandleFunc("/releases/tags/", func(w http.ResponseWriter, r *http.Request) {
+	repoPrefix := "/repos/" + repo
+	mux.HandleFunc(repoPrefix+"/releases/latest", serveRelease)
+	mux.HandleFunc(repoPrefix+"/releases/tags/"+tag, serveRelease)
+	mux.HandleFunc(repoPrefix+"/releases/tags/", func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	})
 	mux.HandleFunc("/dl/"+asset, func(w http.ResponseWriter, r *http.Request) {
@@ -203,9 +207,9 @@ func goodChecksums(asset, sum string) string {
 
 func setUpdateBase(t *testing.T, url string) {
 	t.Helper()
-	prev := updateAPIBase
-	updateAPIBase = url
-	t.Cleanup(func() { updateAPIBase = prev })
+	prev := updateAPIRoot
+	updateAPIRoot = url
+	t.Cleanup(func() { updateAPIRoot = prev })
 }
 
 func writeTarget(t *testing.T) string {
@@ -219,7 +223,7 @@ func writeTarget(t *testing.T) string {
 
 func TestUpdateEndToEndInstall(t *testing.T) {
 	binary := bytes.Repeat([]byte("new binary bytes "), 100)
-	srv := fakeRelease(t, "v2.57.0", binary, goodChecksums)
+	srv := fakeRelease(t, defaultReleaseRepo, "v2.57.0", binary, goodChecksums)
 	setUpdateBase(t, srv.URL)
 	t.Setenv("GITHUB_TOKEN", "test-token")
 	target := writeTarget(t)
@@ -254,7 +258,7 @@ func TestUpdateEndToEndInstall(t *testing.T) {
 	if len(leftovers) != 0 {
 		t.Errorf("temp files left behind: %v", leftovers)
 	}
-	want := "vsp 2.56.0 → 2.57.0 (" + rep.Asset + ", 1.7 KB) installed to " + target + "\n"
+	want := "vsp 2.56.0 → 2.57.0 (" + rep.Asset + ", 1.7 KB) installed to " + target + " from " + defaultReleaseRepo + "\n"
 	if runtime.GOOS != "windows" && out.String() != want {
 		t.Errorf("output = %q\nwant     %q", out.String(), want)
 	}
@@ -262,7 +266,7 @@ func TestUpdateEndToEndInstall(t *testing.T) {
 
 func TestUpdateEndToEndSpecificTagJSON(t *testing.T) {
 	binary := []byte("pinned release")
-	srv := fakeRelease(t, "v2.50.0", binary, goodChecksums)
+	srv := fakeRelease(t, defaultReleaseRepo, "v2.50.0", binary, goodChecksums)
 	setUpdateBase(t, srv.URL)
 	target := writeTarget(t)
 
@@ -283,6 +287,9 @@ func TestUpdateEndToEndSpecificTagJSON(t *testing.T) {
 	if decoded.Latest != "2.50.0" || !decoded.Installed || decoded.Path != target {
 		t.Errorf("decoded = %+v", decoded)
 	}
+	if decoded.Repo != defaultReleaseRepo {
+		t.Errorf("decoded.Repo = %q, want %q", decoded.Repo, defaultReleaseRepo)
+	}
 	if got, _ := os.ReadFile(target); !bytes.Equal(got, binary) {
 		t.Error("target does not hold the pinned binary")
 	}
@@ -293,7 +300,7 @@ func TestUpdateEndToEndSpecificTagJSON(t *testing.T) {
 }
 
 func TestUpdateEndToEndCheckOnly(t *testing.T) {
-	srv := fakeRelease(t, "v2.57.0", []byte("x"), goodChecksums)
+	srv := fakeRelease(t, defaultReleaseRepo, "v2.57.0", []byte("x"), goodChecksums)
 	setUpdateBase(t, srv.URL)
 	target := writeTarget(t)
 
@@ -316,7 +323,7 @@ func TestUpdateEndToEndCheckOnly(t *testing.T) {
 	if _, err = runUpdate(context.Background(), updateOptions{Current: "v2.57.0", Target: target, Check: true}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.String() != "vsp 2.57.0 is the latest\n" {
+	if out.String() != "vsp 2.57.0 is the latest in "+defaultReleaseRepo+"\n" {
 		t.Errorf("output = %q", out.String())
 	}
 
@@ -334,7 +341,7 @@ func TestUpdateEndToEndCheckOnly(t *testing.T) {
 }
 
 func TestUpdateEndToEndRefusals(t *testing.T) {
-	srv := fakeRelease(t, "v2.57.0", []byte("x"), goodChecksums)
+	srv := fakeRelease(t, defaultReleaseRepo, "v2.57.0", []byte("x"), goodChecksums)
 	setUpdateBase(t, srv.URL)
 	target := writeTarget(t)
 	var out bytes.Buffer
@@ -351,7 +358,7 @@ func TestUpdateEndToEndRefusals(t *testing.T) {
 	if err != nil || rep.Installed {
 		t.Errorf("current: err = %v, report = %+v", err, rep)
 	}
-	if out.String() != "vsp 2.57.0 is the latest\n" {
+	if out.String() != "vsp 2.57.0 is the latest in "+defaultReleaseRepo+"\n" {
 		t.Errorf("output = %q", out.String())
 	}
 
@@ -368,7 +375,7 @@ func TestUpdateEndToEndRefusals(t *testing.T) {
 }
 
 func TestUpdateEndToEndBadChecksum(t *testing.T) {
-	srv := fakeRelease(t, "v2.57.0", []byte("tampered"), func(asset, sum string) string {
+	srv := fakeRelease(t, defaultReleaseRepo, "v2.57.0", []byte("tampered"), func(asset, sum string) string {
 		return strings.Repeat("ab", 32) + "  " + asset + "\n"
 	})
 	setUpdateBase(t, srv.URL)
@@ -392,7 +399,7 @@ func TestUpdateEndToEndBadChecksum(t *testing.T) {
 }
 
 func TestUpdateEndToEndMissingChecksum(t *testing.T) {
-	srv := fakeRelease(t, "v2.57.0", []byte("x"), func(asset, sum string) string {
+	srv := fakeRelease(t, defaultReleaseRepo, "v2.57.0", []byte("x"), func(asset, sum string) string {
 		return sum + "  some-other-asset\n"
 	})
 	setUpdateBase(t, srv.URL)
@@ -405,5 +412,155 @@ func TestUpdateEndToEndMissingChecksum(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(target); string(got) != "the old binary" {
 		t.Error("a missing checksum must leave the binary alone")
+	}
+}
+
+func TestResolveReleaseRepo(t *testing.T) {
+	cases := []struct {
+		name    string
+		flag    string
+		stamped string
+		want    string
+	}{
+		{"flag wins over stamped and default", "frd1201/vibing-steampunk", "someone-else/fork", "frd1201/vibing-steampunk"},
+		{"stamped wins over default", "", "frd1201/vibing-steampunk", "frd1201/vibing-steampunk"},
+		{"default when neither is set", "", "", defaultReleaseRepo},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := resolveReleaseRepo(c.flag, c.stamped)
+			if err != nil {
+				t.Fatalf("resolveReleaseRepo(%q, %q): %v", c.flag, c.stamped, err)
+			}
+			if got != c.want {
+				t.Errorf("resolveReleaseRepo(%q, %q) = %q, want %q", c.flag, c.stamped, got, c.want)
+			}
+		})
+	}
+}
+
+func TestResolveReleaseRepoValidation(t *testing.T) {
+	good := []string{"oisee/vibing-steampunk", "frd1201/vibing-steampunk", "a-b/c.d_e"}
+	for _, repo := range good {
+		if got, err := resolveReleaseRepo(repo, ""); err != nil || got != repo {
+			t.Errorf("resolveReleaseRepo(%q, \"\") = %q, %v; want %q, nil", repo, got, err, repo)
+		}
+	}
+
+	// An empty slot falls through to the next one in the precedence chain,
+	// so the empty string is checked against the regex directly below.
+	bad := []string{"noslash", "a/b/c", "../x", "a/b?x", "a b/c", "x/..", "x/."}
+	for _, repo := range bad {
+		_, err := resolveReleaseRepo(repo, "")
+		if err == nil {
+			t.Errorf("resolveReleaseRepo(%q, \"\") unexpectedly succeeded", repo)
+			continue
+		}
+		if want := fmt.Sprintf("repository %q is not owner/name", repo); err.Error() != want {
+			t.Errorf("resolveReleaseRepo(%q, \"\") error = %q, want %q", repo, err.Error(), want)
+		}
+	}
+	if releaseRepoRe.MatchString("") {
+		t.Error("releaseRepoRe accepted an empty string")
+	}
+}
+
+func TestUpdateStampedReleaseRepoIsUsed(t *testing.T) {
+	prev := ReleaseRepo
+	ReleaseRepo = "frd1201/vibing-steampunk"
+	t.Cleanup(func() { ReleaseRepo = prev })
+
+	srv := fakeRelease(t, ReleaseRepo, "v2.57.0", []byte("x"), goodChecksums)
+	setUpdateBase(t, srv.URL)
+	target := writeTarget(t)
+
+	var out bytes.Buffer
+	rep, err := runUpdate(context.Background(), updateOptions{Current: "v2.56.0", Target: target, Check: true}, &out)
+	if err != nil {
+		t.Fatalf("runUpdate: %v\n%s", err, out.String())
+	}
+	if rep.Repo != ReleaseRepo {
+		t.Errorf("rep.Repo = %q, want %q", rep.Repo, ReleaseRepo)
+	}
+	if !strings.Contains(out.String(), ReleaseRepo) {
+		t.Errorf("output = %q, want it to mention %q", out.String(), ReleaseRepo)
+	}
+}
+
+func TestUpdateRepoFlagNoteAgainstStampedRepo(t *testing.T) {
+	prev := ReleaseRepo
+	ReleaseRepo = "frd1201/vibing-steampunk"
+	t.Cleanup(func() { ReleaseRepo = prev })
+
+	srv := fakeRelease(t, defaultReleaseRepo, "v2.57.0", []byte("x"), goodChecksums)
+	setUpdateBase(t, srv.URL)
+	target := writeTarget(t)
+
+	var out bytes.Buffer
+	if _, err := runUpdate(context.Background(), updateOptions{Current: "v2.56.0", Target: target, Check: true, Repo: defaultReleaseRepo}, &out); err != nil {
+		t.Fatalf("runUpdate: %v\n%s", err, out.String())
+	}
+	wantNote := "note: this build was released from " + ReleaseRepo + "; --repo points at " + defaultReleaseRepo + "\n"
+	if !strings.HasPrefix(out.String(), wantNote) {
+		t.Errorf("output = %q, want it to start with %q", out.String(), wantNote)
+	}
+
+	out.Reset()
+	rep, err := runUpdate(context.Background(), updateOptions{Current: "v2.56.0", Target: target, Check: true, Repo: defaultReleaseRepo, JSON: true}, &out)
+	if err != nil {
+		t.Fatalf("runUpdate JSON: %v\n%s", err, out.String())
+	}
+	if strings.Contains(out.String(), "note:") {
+		t.Errorf("json output = %q, must not carry the note", out.String())
+	}
+	if rep.Repo != defaultReleaseRepo {
+		t.Errorf("rep.Repo = %q, want %q", rep.Repo, defaultReleaseRepo)
+	}
+}
+
+func TestUpdateNoNoteWhenRepoFlagMatchesStamp(t *testing.T) {
+	prev := ReleaseRepo
+	ReleaseRepo = "frd1201/vibing-steampunk"
+	t.Cleanup(func() { ReleaseRepo = prev })
+
+	srv := fakeRelease(t, ReleaseRepo, "v2.57.0", []byte("x"), goodChecksums)
+	setUpdateBase(t, srv.URL)
+	target := writeTarget(t)
+
+	var out bytes.Buffer
+	if _, err := runUpdate(context.Background(), updateOptions{Current: "v2.56.0", Target: target, Check: true, Repo: ReleaseRepo}, &out); err != nil {
+		t.Fatalf("runUpdate: %v\n%s", err, out.String())
+	}
+	if strings.Contains(out.String(), "note:") {
+		t.Errorf("output = %q, must not carry a note when --repo matches the stamp", out.String())
+	}
+}
+
+func TestUpdateInvalidRepoFlagFailsBeforeHTTP(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected HTTP request to %s", r.URL)
+	}))
+	defer srv.Close()
+	setUpdateBase(t, srv.URL)
+	target := writeTarget(t)
+
+	var out bytes.Buffer
+	_, err := runUpdate(context.Background(), updateOptions{Current: "v2.56.0", Target: target, Repo: "not a valid repo"}, &out)
+	want := `repository "not a valid repo" is not owner/name`
+	if err == nil || err.Error() != want {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+}
+
+func TestUpdateRepoWithoutReleaseNamesTheRepo(t *testing.T) {
+	srv := fakeRelease(t, defaultReleaseRepo, "v2.57.0", []byte("x"), goodChecksums)
+	setUpdateBase(t, srv.URL)
+	target := writeTarget(t)
+
+	var out bytes.Buffer
+	_, err := runUpdate(context.Background(), updateOptions{Current: "v2.56.0", Target: target, Check: true, Repo: "owner/no-releases"}, &out)
+	want := "no published release found in owner/no-releases"
+	if err == nil || err.Error() != want {
+		t.Errorf("err = %v, want %q", err, want)
 	}
 }

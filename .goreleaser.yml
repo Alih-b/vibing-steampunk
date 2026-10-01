@@ -20,6 +20,10 @@ builds:
       - -X main.Version={{.Version}}
       - -X main.Commit={{.Commit}}
       - -X main.BuildDate={{.Date}}
+      # GitHub Actions sets GITHUB_REPOSITORY, so a release names the repository
+      # it was published from and `vsp update` looks there; the line is the same
+      # in every fork; outside Actions it is empty and the default applies.
+      - -X main.ReleaseRepo={{ envOrDefault "GITHUB_REPOSITORY" "" }}
     goos:
       - linux
       - darwin

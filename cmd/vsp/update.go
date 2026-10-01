@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -18,9 +19,36 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// updateAPIBase is the GitHub REST prefix the release lookups are built on.
+// updateAPIRoot is the GitHub REST host the release lookups are built on.
 // It is a variable so a test can point the whole flow at an httptest server.
-var updateAPIBase = "https://api.github.com/repos/oisee/vibing-steampunk"
+var updateAPIRoot = "https://api.github.com"
+
+// defaultReleaseRepo is the repository releases are fetched from when the
+// binary carries no ReleaseRepo build stamp and --repo is not given.
+const defaultReleaseRepo = "oisee/vibing-steampunk"
+
+// releaseRepoRe matches an owner/name GitHub repository slug.
+var releaseRepoRe = regexp.MustCompile(`^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$`)
+
+// resolveReleaseRepo picks the repository to update from: the --repo flag
+// wins, then the build-time ReleaseRepo stamp, then defaultReleaseRepo. The
+// result is validated as owner/name shaped before any HTTP request is made.
+func resolveReleaseRepo(flag, stamped string) (string, error) {
+	repo := defaultReleaseRepo
+	if stamped != "" {
+		repo = stamped
+	}
+	if flag != "" {
+		repo = flag
+	}
+	// "." and ".." fit the character class but are path segments, not
+	// repository names: "owner/.." would turn /repos/owner/../releases/latest
+	// into a request against a different API endpoint.
+	if !releaseRepoRe.MatchString(repo) || strings.HasSuffix(repo, "/.") || strings.HasSuffix(repo, "/..") {
+		return "", fmt.Errorf("repository %q is not owner/name", repo)
+	}
+	return repo, nil
+}
 
 type releaseAsset struct {
 	Name string `json:"name"`
@@ -35,6 +63,7 @@ type release struct {
 
 // updateReport is what --json prints and what the tests inspect.
 type updateReport struct {
+	Repo         string `json:"repo"`
 	Current      string `json:"current"`
 	CurrentKnown bool   `json:"current_known"`
 	Latest       string `json:"latest"`
@@ -47,6 +76,7 @@ type updateReport struct {
 
 type updateOptions struct {
 	Current string // the running version, normally main.Version
+	Repo    string // --repo; empty means resolveReleaseRepo picks it
 	Tag     string // a specific release tag; empty means latest
 	Target  string // the file to replace; empty means the running executable
 	Check   bool
@@ -57,14 +87,19 @@ type updateOptions struct {
 var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Replace this binary with the latest GitHub release",
-	Long: `Download the release built for this OS and architecture from
-github.com/oisee/vibing-steampunk, verify it against checksums.txt, and
+	Long: `Download the release built for this OS and architecture from the
+repository this binary was released from (github.com/oisee/vibing-steampunk
+unless the build stamped another one), verify it against checksums.txt, and
 swap it in place of the running executable.
 
   vsp update                  # install the latest release if it is newer
   vsp update --check          # only report what would happen
   vsp update --version v2.57.0
+  vsp update --repo owner/name
   vsp update --force          # install even if not newer, or from a dev build
+
+--repo overrides the repository to update from, for checking a fork other
+than the one this binary was built for.
 
 The current binary is kept as <path>.old until the swap has succeeded; on
 Windows the running executable cannot be deleted, so the .old file stays
@@ -79,6 +114,7 @@ anonymous rate limit.`,
 		opts.Force, _ = cmd.Flags().GetBool("force")
 		opts.JSON, _ = cmd.Flags().GetBool("json")
 		opts.Tag, _ = cmd.Flags().GetString("version")
+		opts.Repo, _ = cmd.Flags().GetString("repo")
 		_, err := runUpdate(cmd.Context(), opts, os.Stdout)
 		return err
 	},
@@ -88,23 +124,33 @@ func init() {
 	updateCmd.Flags().Bool("check", false, "Only report the current and latest version")
 	updateCmd.Flags().Bool("force", false, "Install even if the release is not newer or the current version is unknown")
 	updateCmd.Flags().String("version", "", "Install this release tag instead of the latest (e.g. v2.57.0)")
+	updateCmd.Flags().String("repo", "", "Release repository to update from (default: the one this binary was built for)")
 	updateCmd.Flags().Bool("json", false, "Print the result as JSON")
 	rootCmd.AddCommand(updateCmd)
 }
 
 // runUpdate is the whole command behind a testable seam: the release comes
-// from updateAPIBase and the binary goes to opts.Target.
+// from updateAPIRoot and the repository resolved by resolveReleaseRepo, and
+// the binary goes to opts.Target.
 func runUpdate(ctx context.Context, opts updateOptions, out io.Writer) (*updateReport, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	rel, err := fetchRelease(ctx, opts.Tag)
+	repo, err := resolveReleaseRepo(opts.Repo, ReleaseRepo)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Repo != "" && ReleaseRepo != "" && !strings.EqualFold(ReleaseRepo, opts.Repo) && !opts.JSON {
+		fmt.Fprintf(out, "note: this build was released from %s; --repo points at %s\n", ReleaseRepo, opts.Repo)
+	}
+	rel, err := fetchRelease(ctx, repo, opts.Tag)
 	if err != nil {
 		return nil, err
 	}
 
 	asset := assetName(runtime.GOOS, runtime.GOARCH)
 	rep := &updateReport{
+		Repo:    repo,
 		Current: strings.TrimPrefix(opts.Current, "v"),
 		Latest:  strings.TrimPrefix(rel.TagName, "v"),
 		Asset:   asset,
@@ -123,27 +169,27 @@ func runUpdate(ctx context.Context, opts updateOptions, out io.Writer) (*updateR
 		}
 		switch {
 		case !curOK:
-			fmt.Fprintf(out, "vsp %s: version unknown, latest is %s (%s); --force installs it\n", rep.Current, rep.Latest, asset)
+			fmt.Fprintf(out, "vsp %s: version unknown, latest in %s is %s (%s); --force installs it\n", rep.Current, repo, rep.Latest, asset)
 		case rep.Available:
-			fmt.Fprintf(out, "vsp %s, latest is %s (%s): update available\n", rep.Current, rep.Latest, asset)
+			fmt.Fprintf(out, "vsp %s, latest in %s is %s (%s): update available\n", rep.Current, repo, rep.Latest, asset)
 		default:
-			fmt.Fprintf(out, "vsp %s is the latest\n", rep.Current)
+			fmt.Fprintf(out, "vsp %s is the latest in %s\n", rep.Current, repo)
 		}
 		return rep, nil
 	}
 
 	if !opts.Force {
 		if !curOK {
-			return rep, fmt.Errorf("vsp %s is not a release version; --force installs %s (%s)", rep.Current, rep.Latest, asset)
+			return rep, fmt.Errorf("vsp %s is not a release version; --force installs %s from %s (%s)", rep.Current, rep.Latest, repo, asset)
 		}
 		if !rep.Available {
 			if opts.JSON {
 				return rep, printJSONTo(out, rep)
 			}
 			if newerThan(cur, latest) {
-				fmt.Fprintf(out, "vsp %s is newer than %s; --force installs it anyway\n", rep.Current, rep.Latest)
+				fmt.Fprintf(out, "vsp %s is newer than %s in %s; --force installs it anyway\n", rep.Current, rep.Latest, repo)
 			} else {
-				fmt.Fprintf(out, "vsp %s is the latest\n", rep.Current)
+				fmt.Fprintf(out, "vsp %s is the latest in %s\n", rep.Current, repo)
 			}
 			return rep, nil
 		}
@@ -222,7 +268,7 @@ func runUpdate(ctx context.Context, opts updateOptions, out io.Writer) (*updateR
 	if opts.JSON {
 		return rep, printJSONTo(out, rep)
 	}
-	fmt.Fprintf(out, "vsp %s → %s (%s, %s) installed to %s\n", rep.Current, rep.Latest, asset, formatSize(size), target)
+	fmt.Fprintf(out, "vsp %s → %s (%s, %s) installed to %s from %s\n", rep.Current, rep.Latest, asset, formatSize(size), target, repo)
 	if leftover {
 		fmt.Fprintf(out, "%s can be deleted later\n", old)
 	}
@@ -326,13 +372,14 @@ func checksumFor(text, asset string) (string, bool) {
 	return "", false
 }
 
-func fetchRelease(ctx context.Context, tag string) (*release, error) {
-	url := updateAPIBase + "/releases/latest"
+func fetchRelease(ctx context.Context, repo, tag string) (*release, error) {
+	base := updateAPIRoot + "/repos/" + repo + "/releases"
+	url := base + "/latest"
 	if tag != "" {
 		if _, ok := parseVersion(tag); ok && !strings.HasPrefix(tag, "v") {
 			tag = "v" + tag
 		}
-		url = updateAPIBase + "/releases/tags/" + tag
+		url = base + "/tags/" + tag
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -348,8 +395,13 @@ func fetchRelease(ctx context.Context, tag string) (*release, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound && tag != "" {
-		return nil, fmt.Errorf("release %s not found", tag)
+	if resp.StatusCode == http.StatusNotFound {
+		// GitHub answers 404 both for a repository that does not exist (or is
+		// private without a token) and for one with no published release.
+		if tag != "" {
+			return nil, fmt.Errorf("release %s not found in %s", tag, repo)
+		}
+		return nil, fmt.Errorf("no published release found in %s", repo)
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
