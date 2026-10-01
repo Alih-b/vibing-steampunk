@@ -457,6 +457,11 @@ func resolveConfig(cmd *cobra.Command) {
 	if !cmd.Flags().Changed("allow-transportable-edits") {
 		cfg.AllowTransportableEdits = viper.GetBool("ALLOW_TRANSPORTABLE_EDITS")
 	}
+	// The server's own system in .vsp.json, for its per-system settings.
+	cfg.SystemName = systemName
+	if cfg.SystemName == "" {
+		cfg.SystemName = viper.GetString("SYSTEM")
+	}
 	if !cmd.Flags().Changed("transport-choice") {
 		if v := viper.GetString("TRANSPORT_CHOICE"); v != "" {
 			cfg.TransportChoice = v

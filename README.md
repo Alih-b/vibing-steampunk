@@ -612,7 +612,12 @@ The destination is derived from the system you already configured: host from the
 URL, system number from its port, gateway port `3300 + sysnr`. Override per system in
 `.vsp.json` (`rfc_host`, `rfc_sysnr`, `rfc_port`) or per command (`--rfc-host`,
 `--sysnr`, `--port`). RFC logon uses `rfc_user`/`rfc_password`, else `SAP_USER`/
-`SAP_PASSWORD`, else the system's own credentials.
+`SAP_PASSWORD`, else the system's own credentials. An MCP server takes the RFC
+settings of its own system (the one named by `-s`/`SAP_SYSTEM`, else the entry whose
+URL and client match its own), and logs on with that entry's `rfc_user`/`rfc_password`,
+else its own credentials. `SAP_USER`/`SAP_PASSWORD` are used only by a server without
+credentials of its own (cookie or SSO logon), and only when `SAP_URL` and
+`SAP_CLIENT` name its system.
 
 In MCP it is one more action on the single `SAP` tool — the tool space stays as small
 as it was:

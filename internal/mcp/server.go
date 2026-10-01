@@ -113,6 +113,11 @@ type Config struct {
 	// Graph / co-change configuration
 	TransportAttribute string // E070A attribute name for CR-level co-change aggregation
 
+	// SystemName is this server's system in .vsp.json (-s / SAP_SYSTEM). Empty
+	// finds it by URL and client; its per-system settings (the RFC gateway and
+	// credentials) apply to this server only.
+	SystemName string
+
 	// Debugger configuration
 	TerminalID string // SAP GUI terminal ID for cross-tool breakpoint sharing
 
