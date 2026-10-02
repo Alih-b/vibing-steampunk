@@ -6,16 +6,18 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // --- DELETE inside the lock window (issue #238) ---
 //
 // DeleteObject runs the full mutation gate itself, and with AllowedPackages
-// configured that gate resolves the object's package through a stateless
-// search. Called under a lock, that search retires the session the handle
+// configured that gate resolves the object's package through a search. Sent
+// stateless under a lock, that search can retire the session the handle
 // belongs to and the DELETE comes back 423 ExceptionResourceInvalidLockHandle.
-// The fix is the one the update paths already use: gate above the LOCK, carry
-// the mark into the window.
+// Two fixes apply: the workflow's own path gates above the LOCK and carries the
+// mark into the window, and a delete with a caller-supplied handle sends the
+// lookup in the lock's stateful session (#292; the tests below).
 
 func isDelete(c wireCall) bool {
 	return c.method == http.MethodDelete
@@ -153,5 +155,142 @@ func TestPrepareDelete_StillEnforcesOperationPolicy(t *testing.T) {
 	if _, err := client.PrepareDelete(context.Background(),
 		"/sap/bc/adt/programs/programs/ZDEMO_RO", ""); err == nil {
 		t.Fatal("PrepareDelete accepted a delete in read-only mode")
+	}
+}
+
+// A package lookup for a mutation that carries no lock handle stays stateless,
+// even while this client still has a lock record for something else (here an
+// unrelated lock whose UNLOCK was lost two hours ago). Only the write's own
+// lock may pull its lookup into a stateful session; a stale record must not
+// route every lookup through the context gate.
+func TestCheckMutation_NoHandleLookupStaysStatelessDespiteStaleLockRecord(t *testing.T) {
+	const objURL = "/sap/bc/adt/programs/programs/zdemo_upd"
+	rec := &adtRecorder{}
+	client := newStubbedClient(t, rec, deleteRoute(objURL, "ZDEMO_UPD", "$TMP"),
+		WithAllowedPackages("$TMP"))
+
+	client.locks.mu.Lock()
+	if client.locks.open == nil {
+		client.locks.open = make(map[string]time.Time)
+	}
+	client.locks.open["STALE-UNRELATED"] = time.Now().Add(-2 * time.Hour)
+	client.locks.mu.Unlock()
+	if !client.locks.present() {
+		t.Fatal("setup: want the stale lock record present")
+	}
+
+	if err := client.checkMutation(context.Background(), MutationContext{
+		Op:        OpUpdate,
+		OpName:    "UpdateSource",
+		ObjectURL: objURL + "/source/main",
+	}); err != nil {
+		t.Fatalf("checkMutation: %v", err)
+	}
+
+	calls := rec.snapshot()
+	searchAt := indexOfCall(calls, isSearch)
+	if searchAt < 0 {
+		dumpCalls(t, calls)
+		t.Fatal("no package lookup was sent")
+	}
+	if calls[searchAt].sessionType != "stateless" {
+		t.Errorf("package lookup without a lock handle is not stateless: %s", calls[searchAt])
+		dumpCalls(t, calls)
+	}
+}
+
+// A caller-supplied handle whose lock is older than the keep-alive window
+// (lockWindowMaxAge) is still a lock the write needs. DeleteObject's package
+// lookup must then still go out in the lock's stateful session, not fall back
+// to stateless after thirty minutes.
+func TestDeleteObject_SuppliedHandlePastKeepAliveWindowKeepsLookupStateful(t *testing.T) {
+	const objURL = "/sap/bc/adt/programs/programs/zdemo_del"
+	rec := &adtRecorder{}
+	client := newStubbedClient(t, rec, deleteRoute(objURL, "ZDEMO_DEL", "$TMP"),
+		WithAllowedPackages("$TMP"))
+	ctx := context.Background()
+
+	lock, err := client.LockObject(ctx, objURL, "MODIFY")
+	if err != nil {
+		t.Fatalf("LockObject: %v", err)
+	}
+	// Age the lock past the keep-alive window, short of the transport's record.
+	client.locks.mu.Lock()
+	for h := range client.locks.open {
+		client.locks.open[h] = time.Now().Add(-lockWindowMaxAge - time.Minute)
+	}
+	client.locks.mu.Unlock()
+	if client.lockOutstanding() || !client.locks.present() {
+		t.Fatal("setup: want the lock outside the keep-alive window but still present")
+	}
+
+	if err := client.DeleteObject(ctx, objURL, lock.LockHandle, ""); err != nil {
+		t.Fatalf("DeleteObject: %v", err)
+	}
+
+	calls := rec.snapshot()
+	delAt := indexOfCall(calls, isDelete)
+	lockAt := lastIndexBefore(calls, delAt, isLock)
+	if delAt < 0 || lockAt < 0 {
+		dumpCalls(t, calls)
+		t.Fatal("expected a LOCK followed by a DELETE")
+	}
+	searchAt := -1
+	for i := lockAt + 1; i < delAt; i++ {
+		if isSearch(calls[i]) {
+			searchAt = i
+		}
+	}
+	if searchAt < 0 {
+		dumpCalls(t, calls)
+		t.Fatal("no package lookup between LOCK and DELETE")
+	}
+	if calls[searchAt].sessionType != "stateful" {
+		t.Errorf("package lookup between LOCK and DELETE is not stateful: %s", calls[searchAt])
+		dumpCalls(t, calls)
+	}
+}
+
+// WriteMessageClassTexts with a caller-supplied handle runs its gate after the
+// caller's LOCK, so its package lookup must go out in that lock's stateful
+// session, like DeleteObject's.
+func TestWriteMessageClassTexts_SuppliedHandleKeepsLookupStateful(t *testing.T) {
+	const objURL = "/sap/bc/adt/messageclass/zdemo_mc"
+	rec := &adtRecorder{}
+	client := newStubbedClient(t, rec, deleteRoute(objURL, "ZDEMO_MC", "$TMP"),
+		WithAllowedPackages("$TMP"))
+	ctx := context.Background()
+
+	lock, err := client.LockObject(ctx, objURL, "MODIFY")
+	if err != nil {
+		t.Fatalf("LockObject: %v", err)
+	}
+	if err := client.WriteMessageClassTexts(ctx, "ZDEMO_MC", "EN",
+		[]MessageClassMessage{{Number: "001", Text: "hello"}}, lock.LockHandle, ""); err != nil {
+		t.Fatalf("WriteMessageClassTexts: %v", err)
+	}
+
+	calls := rec.snapshot()
+	putAt := indexOfCall(calls, func(c wireCall) bool {
+		return c.method == http.MethodPut && strings.Contains(c.path, "/messageclass/")
+	})
+	lockAt := lastIndexBefore(calls, putAt, isLock)
+	if putAt < 0 || lockAt < 0 {
+		dumpCalls(t, calls)
+		t.Fatal("expected a LOCK followed by a PUT of the message class")
+	}
+	searchAt := -1
+	for i := lockAt + 1; i < putAt; i++ {
+		if isSearch(calls[i]) {
+			searchAt = i
+		}
+	}
+	if searchAt < 0 {
+		dumpCalls(t, calls)
+		t.Fatal("no package lookup between LOCK and PUT")
+	}
+	if calls[searchAt].sessionType != "stateful" {
+		t.Errorf("package lookup between LOCK and PUT is not stateful: %s", calls[searchAt])
+		dumpCalls(t, calls)
 	}
 }
