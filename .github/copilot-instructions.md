@@ -22,8 +22,16 @@ go test -v ./pkg/cache/
 # Integration tests (require live SAP system via SAP_* env vars)
 go test -tags=integration -v ./pkg/adt/
 
-# Lint (golangci-lint with .golangci.yml config)
+# Lint: the CI gate. Correctness linters, issues new since origin/main only
+# (.golangci.yml). CI pins golangci-lint v2.13.2 and runs it fail-closed with a
+# canary: ./.github/ci/lint.sh gate
 golangci-lint run ./...
+
+# Lint debt over the whole tree, advisory (.github/ci/golangci-full.yml)
+./.github/ci/lint.sh full
+
+# Size and complexity metrics, as the PR report shows them
+make metrics
 
 # Format (gofumpt preferred, falls back to go fmt)
 gofumpt -w .

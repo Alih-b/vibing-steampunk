@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# pre-push: the interactive moment, where quality checks may stop you.
+#
+# Opt in, once per clone:
+#   git config core.hooksPath .githooks
+# Skip one push:  git push --no-verify
+#
+# Policy: correctness gates block in CI and here; quality and style (complexity,
+# size) can only ever block here, never in CI, where they are advisory. This
+# hook runs:
+#   1. The CI lint gate, blocking: the same pinned golangci-lint, the same
+#      correctness linters (.golangci.yml), new code since the merge base,
+#      fail-closed with the canary (.github/ci/lint.sh gate).
+#   2. The complexity linters of the full config (gocyclo > 30, gocognit > 40,
+#      funlen > 150) on new code, as a yellow warning. It never blocks.
+# It lints the working tree as it is, including changes not yet committed.
+#
+# Base: origin/main, or VSP_PREPUSH_BASE. `git fetch` first if it is stale.
+set -uo pipefail
+
+repo=$(git rev-parse --show-toplevel) || exit 1
+cd "$repo" || exit 1
+base=${VSP_PREPUSH_BASE:-origin/main}
+
+if [ -t 2 ]; then red=$'\033[31m' yellow=$'\033[33m' reset=$'\033[0m'; else red='' yellow='' reset=''; fi
+
+# The version CI pins, read from ci.yml so there is one place to bump it.
+GOLANGCI_LINT_VERSION=$(sed -n 's/^  GOLANGCI_LINT_VERSION: *//p' .github/workflows/ci.yml)
+export GOLANGCI_LINT_VERSION
+
+echo "pre-push: lint gate (golangci-lint ${GOLANGCI_LINT_VERSION}, new code since ${base})" >&2
+if ! ./.github/ci/lint.sh gate "$base" >&2; then
+  cat >&2 <<MSG
+${red}pre-push: blocked by the lint gate.${reset} Fix the findings above, or push with --no-verify.
+If golangci-lint is missing or the wrong version:
+  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}
+MSG
+  exit 1
+fi
+
+out=$(mktemp)
+trap 'rm -f "$out"' EXIT
+status=0
+golangci-lint run -c .github/ci/golangci-full.yml --enable-only=gocyclo,gocognit,funlen \
+  --new-from-merge-base="$base" --show-stats=false ./... >"$out" 2>&1 || status=$?
+case $status in
+  0) ;;
+  1) { echo "${yellow}pre-push: warning: new or changed functions over a complexity threshold (not blocking):${reset}"
+       cat "$out"; } >&2 ;;
+  *) { echo "${yellow}pre-push: warning: the complexity check could not run (exit $status); not blocking:${reset}"
+       tail -n 5 "$out"; } >&2 ;;
+esac
+exit 0

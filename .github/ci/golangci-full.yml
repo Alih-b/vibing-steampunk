@@ -1,0 +1,104 @@
+# The advisory full lint run: every linter we look at, over the whole tree, so
+# the debt stays visible as one number per linter. Never blocks.
+#
+#   golangci-lint run -c .github/ci/golangci-full.yml ./...
+#
+# The gate is the root .golangci.yml; see the comment there for why there are two.
+version: "2"
+
+run:
+  modules-download-mode: readonly
+  # Without this, paths resolve against this file's directory (.github/ci).
+  relative-path-mode: gitroot
+
+linters:
+  enable:
+    - bodyclose
+    # Complexity, at the thresholds of the 2026-10-02 complexity map and of
+    # .github/ci/metrics (which is what the PR report reads; these three are
+    # here so the same functions also show up per file in the lint log).
+    - funlen
+    - gocognit
+    - gocyclo
+    - misspell
+    - noctx
+    - prealloc
+    - unconvert
+    - unparam
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+    funlen:
+      lines: 150
+      statements: -1
+      # Count every line from `func` to the closing brace, as the metrics
+      # tool does.
+      ignore-comments: false
+    gocognit:
+      min-complexity: 40
+    gocyclo:
+      min-complexity: 30
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    misspell:
+      # CLAS is the ADT object-type code for a class, not a typo for CLASS.
+      # It appears in URLs, tool schemas and switch statements; "correcting" it
+      # breaks the code. The first lint run after the v2 migration flagged six
+      # of these, which is a fair illustration of why lint output gets read
+      # rather than applied.
+      ignore-rules:
+        - clas
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - unparam
+          - funlen
+          - gocognit
+          - gocyclo
+      # The research packages are experiments, not product; the complexity map
+      # and the metrics keep them out of the headline too.
+      - path: ^pkg/(llvm2abap|wasmcomp|ts2abap|ts2go|jseval)/
+        linters:
+          - funlen
+          - gocognit
+          - gocyclo
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+
+issues:
+  # Count everything: no caps, and no folding of findings that share a line
+  # (gocyclo, gocognit and funlen all report on the `func` line).
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: false
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      # Was github.com/vibingsteamer/mcp-abap-adt-go — a module path this repo
+      # has never had (see go.mod), so local-import grouping matched nothing.
+      local-prefixes:
+        - github.com/oisee/vibing-steampunk
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

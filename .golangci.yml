@@ -1,42 +1,69 @@
+# The blocking lint gate: correctness linters only, on new code only.
+#
+#   golangci-lint run ./...        # what the `lint` CI job runs, locally
+#
+# Policy: in CI only correctness and safety are red. Quality and style
+# (complexity, size, formatting, simplifications) are advisory annotations in CI
+# and can be red only at the interactive moment, the opt-in pre-push hook
+# (.githooks/pre-push). Every linter in this file is a bug class, so this file
+# may block; anything that is a matter of taste goes in golangci-full.yml.
+#
 # Schema version. golangci-lint v2 refuses a v1 config outright — "unsupported
 # version of the configuration" — before it reads a line of Go. That is what
-# happened here: the action asked for `latest`, v2 shipped, and this file stayed
-# v1, so the advisory lint job failed in 67ms on every run and checked nothing
-# at all. Keep this line, and pin the version in ci.yml.
+# happened here once: the action asked for `latest`, v2 shipped, this file stayed
+# v1, and the lint job failed in 67ms on every run and checked nothing at all.
+# Keep this line, and keep the version pinned in ci.yml (GOLANGCI_LINT_VERSION).
+#
+# Two configs, because a linter's settings cannot differ between two runs of one
+# file:
+#   .golangci.yml                   this one: the gate. Five correctness linters,
+#                                   new issues only, red on any finding.
+#   .github/ci/golangci-full.yml    the advisory full run: every linter we care
+#                                   about, the whole tree, a count of the debt.
+# A finding moves from the full run into the gate only when it is a bug class,
+# never a style preference: the gate must stay something nobody argues with.
 version: "2"
 
 run:
   modules-download-mode: readonly
+  # Paths in this file, and in issue reports, are relative to the repository root
+  # whichever config is used.
+  relative-path-mode: gitroot
 
 linters:
+  # The `standard` set, spelled out so a new golangci-lint release cannot widen
+  # the gate behind our back.
+  default: none
   enable:
-    - bodyclose
-    - misspell
-    - noctx
-    - prealloc
-    - unconvert
-    - unparam
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
 
   settings:
     errcheck:
+      # An unchecked single-value type assertion panics on the first unexpected
+      # SAP answer. `v, _ := x.(T)` stays fine.
       check-type-assertions: true
     govet:
-      enable-all: true
-      disable:
-        - fieldalignment
-    misspell:
-      # CLAS is the ADT object-type code for a class, not a typo for CLASS.
-      # It appears in URLs, tool schemas and switch statements; "correcting" it
-      # breaks the code. The first lint run after the v2 migration flagged six
-      # of these, which is a fair illustration of why lint output gets read
-      # rather than applied.
-      ignore-rules:
-        - clas
+      # vet's default analyzers plus two more that find real bugs. Not
+      # enable-all: `shadow` is 89 of the 95 govet findings in the full run, and
+      # shadowing `err` is a style call, not a bug.
+      enable:
+        - nilness
+        - unusedwrite
+    staticcheck:
+      # The SA (bug) checks only. S (simplify), ST (style) and QF (quick fix)
+      # stay in the full run. SA1019 (use of something marked Deprecated) is a
+      # migration task, not a defect in the new code.
+      checks:
+        - "SA*"
+        - "-SA1019"
 
   exclusions:
     generated: lax
     presets:
-      - comments
       - common-false-positives
       - legacy
       - std-error-handling
@@ -44,25 +71,17 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
-          - unparam
     paths:
       - third_party$
       - builtin$
       - examples$
 
-formatters:
-  enable:
-    - gofmt
-    - goimports
-  settings:
-    goimports:
-      # Was github.com/vibingsteamer/mcp-abap-adt-go — a module path this repo
-      # has never had (see go.mod), so local-import grouping matched nothing.
-      local-prefixes:
-        - github.com/oisee/vibing-steampunk
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
+issues:
+  # New code only: 51 files carry findings from before the gate existed,
+  # and they must not block whoever touches the file next. CI passes the PR's
+  # base explicitly; this is the local default.
+  new-from-merge-base: origin/main
+  # Never truncate: the canary in ci.yml counts on seeing every finding.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: false

@@ -2259,7 +2259,29 @@ make build-all      # All 9 platforms
 # Test (go.mod pins toolchain go1.26.8)
 go test ./...                              # Unit tests (1354)
 go test -tags=integration -v ./pkg/adt/    # Integration tests (34+)
+
+# Lint and metrics, as CI runs them
+make lint                                  # correctness linters, new code since origin/main
+make lint-full                             # every linter, whole tree (advisory debt count)
+make metrics                               # size and complexity, as in the PR report
 ```
+
+**What CI blocks on.** Build, vet, tests, and the `lint` gate are blocking. The
+gate runs correctness linters (errcheck, govet, staticcheck SA, unused,
+ineffassign) on new code only. Complexity, size and style are never red in CI:
+the PR report shows them as advisory drift.
+
+**Opt-in pre-push hook.** It runs the same gate before a push, using the pinned
+golangci-lint version from `.github/workflows/ci.yml`, and blocks on a finding.
+It also warns, in yellow, about new or changed functions over the complexity
+thresholds (cyclomatic 30, cognitive 40, 150 lines). Enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2   # if not installed
+```
+
+Skip it for one push with `git push --no-verify`.
 
 <details>
 <summary><strong>Architecture</strong></summary>

@@ -1,9 +1,10 @@
 name: CI
 
 # The point of this workflow is a cheap verdict on someone else's patch: does it
-# build, vet clean, and pass the tests. It deliberately stays small — the heavy
-# cross-platform work belongs to the release pipeline, and lint is advisory and
-# pull-request-only.
+# build, vet clean, pass the tests, and add no new lint findings. It deliberately
+# stays small — the heavy cross-platform work belongs to the release pipeline.
+# Debt that predates a check (old lint findings, big functions) is measured and
+# reported, never blocking.
 # Nothing here talks to a SAP system: live tests sit behind the `integration` tag.
 #
 # One job per check, so each check is one row in the PR comment that
@@ -17,6 +18,15 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # One pin for both lint jobs. A major version must move because someone moved
+  # it: `latest` is what once broke lint here (v2 shipped, refused the v1
+  # config, and the job "passed" in 67ms without reading a line of Go).
+  # .github/ci/lint.sh refuses to run any other version, and the binary is
+  # checked against this hash (from the release's checksums.txt) before use.
+  GOLANGCI_LINT_VERSION: v2.13.2
+  GOLANGCI_LINT_SHA256: 2277d43b98ec0054280f2ac26b53268bae97682444678a59a657dd565da021d6
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -184,39 +194,109 @@ jobs:
           path: pkg/**/testdata/fuzz/
           if-no-files-found: ignore
 
+  # Policy: in CI only correctness and safety gates are red. Quality and style
+  # (complexity, size, formatting) are advisory here, and can block only in the
+  # opt-in pre-push hook (.githooks/pre-push).
+  #
+  # Blocking: red on any finding in code the change adds or touches, from five
+  # correctness linters (errcheck, govet, ineffassign, staticcheck SA, unused;
+  # config in .golangci.yml). The ~50 files with findings older than the gate
+  # do not block anyone. Fails closed: a linter crash, config error, load
+  # failure or timeout is red, and a canary package with one known finding per
+  # linter must come back in the report, so "0 issues" can only mean the linter
+  # ran and found nothing. Locally: ./.github/ci/lint.sh gate
   lint:
-    name: lint (advisory)
-    # Pull requests only. On main the gate is build/vet/test; lint is here to
-    # tell a contributor what their own diff introduced, which is a question
-    # that only has a meaning on a PR.
-    if: github.event_name == 'pull_request'
+    name: lint
     runs-on: ubuntu-latest
-    # Advisory: a linter release built against an older Go than this module's
-    # directive fails before it reads a line of code, and that must not block a
-    # contributor. Read the output, do not gate on it.
-    continue-on-error: true
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          # only-new-issues needs the merge base to diff against.
+          # The merge base with the base branch, to tell new code from old.
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+      - name: Install golangci-lint
+        run: |
+          ./.github/ci/install-golangci-lint.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # On a push to main the merge base is the commit itself, so only the
+      # canary is new: the run still proves the gate works on the main branch.
+      - name: Lint new code
+        env:
+          BASE_REF: origin/${{ github.base_ref || github.ref_name }}
+        run: ./.github/ci/lint.sh gate "$BASE_REF"
+
+  # Advisory: every linter in .github/ci/golangci-full.yml over the whole tree,
+  # so the debt stays visible as one number per linter. New code over a
+  # complexity threshold becomes a warning annotation, never an error. A crash or config error
+  # still fails the job (it is advisory, so that is grey, not red).
+  lint-full:
+    name: lint (advisory, full)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
         with:
-          # Pinned, not `latest`. `latest` is what broke this job: v2 shipped,
-          # refused the v1 .golangci.yml, and failed in 67ms without reading a
-          # line of Go. A major version must move because someone moved it.
-          version: v2.13.2
-          # The repo carries findings that predate this job ever running.
-          # Reporting them on every PR would bury whatever the PR itself
-          # introduced, which is the only part its author can act on.
-          only-new-issues: true
-          args: --timeout=5m
+          # The merge base, for the new-code complexity warnings.
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install golangci-lint
+        run: |
+          ./.github/ci/install-golangci-lint.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Lint everything
+        env:
+          BASE_REF: origin/${{ github.base_ref || github.ref_name }}
+        run: ./.github/ci/lint.sh full "$BASE_REF"
+
+  # Advisory, observation only: size and complexity per package, file and
+  # function (.github/ci/metrics). ci-report.yml compares the artifact with the
+  # last green run on main and draws the trend from earlier main runs, which is
+  # why it runs on pushes too and is kept for 90 days. Locally:
+  #   cd .github/ci/metrics && go run . -root ../../.. -baseline ../complexity-baseline.json -o -
+  metrics:
+    name: metrics (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: .github/ci/metrics/go.sum
+
+      - name: Test the metrics tool
+        working-directory: .github/ci/metrics
+        run: go test ./...
+
+      - name: Measure
+        working-directory: .github/ci/metrics
+        run: |
+          status=0
+          go run . -root "$GITHUB_WORKSPACE" -baseline ../complexity-baseline.json -o "$GITHUB_WORKSPACE/metrics.json" 2> summary.txt || status=$?
+          cat summary.txt
+          [ "$status" -eq 0 ] || exit "$status"
+          echo "::notice title=ci-report::$(tail -n 1 summary.txt)"
+
+      - name: Upload the metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics
+          path: metrics.json
+          retention-days: 90
 
   fix-proven:
     name: fix proven (advisory)

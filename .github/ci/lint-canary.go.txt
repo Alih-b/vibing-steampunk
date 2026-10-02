@@ -1,0 +1,37 @@
+// Package lintcanary is written into the tree by .github/ci/lint.sh for one
+// lint run and removed afterwards. Each function below trips exactly one of the
+// five gate linters. If any of the five is missing from the report, the linter
+// did not run, did not load the code, or new-code filtering hid new code, and
+// the gate is red. Never commit this as a .go file.
+package lintcanary
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// errcheck: the error from Atoi is dropped.
+func CanaryErrcheck() {
+	strconv.Atoi("1")
+}
+
+// govet (printf): %d with a string.
+func CanaryGovet() string {
+	return fmt.Sprintf("%d", "one")
+}
+
+// ineffassign: the first value of n is never read.
+func CanaryIneffassign() int {
+	n := 1
+	n = 2
+	return n
+}
+
+// staticcheck SA4017: the result of a pure function is discarded.
+func CanaryStaticcheck() {
+	strings.ToUpper("x")
+}
+
+// unused: never called.
+func canaryUnused() {}

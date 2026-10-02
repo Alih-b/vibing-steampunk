@@ -50,7 +50,7 @@ CURRENT_ARCH=$(shell go env GOARCH)
 EXE=$(if $(filter windows,$(CURRENT_OS)),.exe,)
 LOCAL_BINARY=$(BINARY_NAME)-$(CURRENT_OS)-$(CURRENT_ARCH)$(EXE)
 
-.PHONY: all build clean test lint fmt deps tidy help install install-user link local-alias run
+.PHONY: all build clean test lint lint-full metrics fmt deps tidy help install install-user link local-alias run
 .PHONY: build-all build-all-all build-linux build-darwin build-windows build-win sso-helper
 .PHONY: deploy-windows sync-embedded release refresh-deps fetch-deps check-deps
 
@@ -242,12 +242,18 @@ fmt: ## Format code
 		$(GOCMD) fmt ./...; \
 	fi
 
-lint: ## Run linter
+lint: ## Run linter (the CI gate: correctness linters, new issues since origin/main)
 	@if command -v $(GOLINT) >/dev/null 2>&1; then \
 		$(GOLINT) run ./...; \
 	else \
 		echo "golangci-lint not installed, skipping..."; \
 	fi
+
+lint-full: ## Run every linter over the whole tree (advisory debt count, as CI does)
+	./.github/ci/lint.sh full
+
+metrics: ## Size and complexity metrics (JSON on stdout, summary on stderr)
+	cd .github/ci/metrics && go run . -root ../../.. -baseline ../complexity-baseline.json -o -
 
 ## Testing
 
