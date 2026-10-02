@@ -309,7 +309,7 @@ vibing-steampunk/
 │   ├── cookie-auth-implementation-guide.md  # Cookie auth research
 │   └── *.md                     # Discovery and analysis documents
 │
-├── build/                       # Cross-platform binaries (9 targets)
+├── build/                       # Cross-platform binaries (6 targets)
 ├── Makefile                     # Build automation
 └── .gitignore                   # Excludes .env, cookies.txt, .mcp.json
 ```
@@ -527,15 +527,16 @@ result, err := client.GetSource(ctx, "PROG", "ZTEST", &GetSourceOptions{})
 
 ## Build Targets
 
-The Makefile supports cross-compilation to 9 platform targets:
+The Makefile supports cross-compilation to the 6 release platform targets
+(linux/386, linux/arm and windows/386 are not built since v2.60.0):
 
 | OS | Architectures |
 |----|---------------|
-| Linux | amd64, arm64, 386, arm |
+| Linux | amd64, arm64 |
 | macOS | amd64, arm64 (Apple Silicon) |
-| Windows | amd64, arm64, 386 |
+| Windows | amd64, arm64 |
 
 Build commands:
 - `make build` - Current platform
-- `make build-all` - All 9 targets
+- `make build-all-all` - All 6 targets (`make build-all` builds the common 3)
 - `make build-linux` / `make build-darwin` / `make build-windows` - OS-specific
