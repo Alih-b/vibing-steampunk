@@ -99,7 +99,12 @@ internal/mcp/
   tools_focused.go    Focused mode whitelist
   handlers_universal.go  Hyperfocused single-tool (SAP)
 pkg/
-  adt/                ADT client (HTTP, CSRF, sessions, all SAP ops)
+  adt/                ADT client (HTTP, CSRF, sessions, all SAP ops); one file per domain:
+    client.go           Client, NewClient*, keep-alive, cookies, Language, Safety
+    package_guard.go    package allowlist / safety checks (safety gate, used by checkMutation)
+    search.go  objects_read.go  package_read.go  ddic_read.go  query_sql.go  system_info.go
+    callgraph.go  object_explorer.go  traces.go  sqltrace.go  api_release.go
+    crud.go  devtools.go  codeintel.go  http.go  ...
   graph/              Dependency graph engine (in progress)
   datacluster/        EXPORT data cluster parser (BALDAT, INDX, STXL): descriptors, rows, typed values
   sapcompress/        SAP LZH (= DEFLATE + prefix, via compress/flate) and LZC (compress(1)) decoders
@@ -117,7 +122,7 @@ pkg/
 | Task | Files |
 |------|-------|
 | Add MCP tool | `tools_<domain>.go` + `handlers_*.go` + `tools_focused.go` |
-| Add ADT operation | `pkg/adt/client.go`, `crud.go`, `devtools.go`, `codeintel.go` |
+| Add ADT operation | `pkg/adt/client.go` (core) + the domain file (`search.go`, `objects_read.go`, `query_sql.go`, `system_info.go`, `crud.go`, `devtools.go`, `codeintel.go`, ...); `package_guard.go` when mutating |
 | Touch SSO auth | `pkg/adt/sso*.go`, `cmd/vsp-sso/`, `cmd/vsp/sso.go` |
 | Add graph feature | `pkg/graph/` |
 | Add lint rule | `pkg/abaplint/rules.go` |

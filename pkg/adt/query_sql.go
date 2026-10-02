@@ -2,8 +2,11 @@ package adt
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -347,4 +350,251 @@ func (c *Client) missingSourceHint(ctx context.Context, name string) string {
 		return "no table or view " + name + " in the dictionary; similar names: " + strings.Join(ns, ", ")
 	}
 	return "no table or view " + name + " in the dictionary (a CDS entity is addressed by its entity name)"
+}
+
+// --- Table Contents (Data Preview) ---
+
+// TableContentsResult represents the result of a table contents query.
+type TableContentsResult struct {
+	Columns []TableColumn
+	Rows    []map[string]interface{}
+	// Notes says what RunQuery rewrote before sending the statement.
+	Notes []string `json:",omitempty"`
+}
+
+// TableColumn represents a column in table contents.
+type TableColumn struct {
+	Name        string
+	Type        string
+	Description string
+	Length      int
+	IsKey       bool
+}
+
+// GetTableContents retrieves data from a database table.
+// Optional sqlQuery can be a full SELECT statement to filter/transform results
+// (e.g., "SELECT * FROM T000 WHERE MANDT = '001'").
+func (c *Client) GetTableContents(ctx context.Context, tableName string, maxRows int, sqlFilter string) (*TableContentsResult, error) {
+	// A statement in the body is freestyle SQL, whatever the entity name
+	// says: the data preview runs it as given. --block-free-sql refuses it
+	// here, at the one place every caller's statement goes through, before
+	// anything is sent. A plain table read sends no statement.
+	if strings.TrimSpace(sqlFilter) != "" {
+		if err := c.checkSafety(OpFreeSQL, "GetTableContents"); err != nil {
+			return nil, err
+		}
+	}
+	tableName = strings.ToUpper(tableName)
+	if maxRows <= 0 {
+		maxRows = 100
+	}
+
+	params := url.Values{}
+	params.Set("rowNumber", fmt.Sprintf("%d", maxRows))
+	params.Set("ddicEntityName", tableName)
+
+	opts := &RequestOptions{
+		Method: http.MethodPost,
+		Query:  params,
+		Accept: "application/*",
+	}
+
+	// Add SQL filter as request body if provided
+	if sqlFilter != "" {
+		opts.Body = []byte(sqlFilter)
+		opts.ContentType = "text/plain"
+	}
+
+	resp, err := c.transport.Request(ctx, "/sap/bc/adt/datapreview/ddic", opts)
+	if err != nil {
+		return nil, fmt.Errorf("getting table contents: %w", err)
+	}
+
+	return parseTableContents(resp.Body)
+}
+
+// RunQuery executes a freestyle SQL query against the SAP database.
+// Example: "SELECT * FROM T000 WHERE MANDT = '001'"
+//
+// ANSI spellings the data preview rejects (t.col, DESC, a closing period)
+// are rewritten first, and the result says so in Notes. A query SAP refuses
+// comes back as a *QueryError: SAP's message without the XML around it, and
+// hints such as the columns the table does have.
+func (c *Client) RunQuery(ctx context.Context, sqlQuery string, maxRows int) (*TableContentsResult, error) {
+	// Safety check - free SQL can be dangerous
+	if err := c.checkSafety(OpFreeSQL, "RunQuery"); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(sqlQuery) == "" {
+		return nil, fmt.Errorf("SQL query is required")
+	}
+	sent, notes := normalizeOpenSQL(sqlQuery)
+	res, err := c.runQueryRaw(ctx, sent, maxRows)
+	if err != nil {
+		return nil, c.explainQueryError(ctx, sent, notes, err)
+	}
+	res.Notes = notes
+	return res, nil
+}
+
+// runQueryRaw sends a statement to the data preview as it is.
+func (c *Client) runQueryRaw(ctx context.Context, sqlQuery string, maxRows int) (*TableContentsResult, error) {
+	if sqlQuery == "" {
+		return nil, fmt.Errorf("SQL query is required")
+	}
+	if maxRows <= 0 {
+		maxRows = 100
+	}
+
+	params := url.Values{}
+	params.Set("rowNumber", fmt.Sprintf("%d", maxRows))
+
+	resp, err := c.transport.Request(ctx, "/sap/bc/adt/datapreview/freestyle", &RequestOptions{
+		Method:      http.MethodPost,
+		Query:       params,
+		Accept:      "application/*",
+		Body:        []byte(wrapSQL(sqlQuery)),
+		ContentType: "text/plain",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("running query: %w", err)
+	}
+
+	return parseTableContents(resp.Body)
+}
+
+// wrapSQL keeps every line of a statement under the data preview's limit.
+// The service puts the text into ABAP source lines of 255 characters, and a
+// token cut by that wrap — a literal, a column name — is a syntax error that
+// names half a word. Lines are broken at blanks outside quotes only, so the
+// statement means the same thing.
+func wrapSQL(query string) string {
+	const limit = 200
+	var out strings.Builder
+	lineLen := 0
+	inQuote := false
+	start := 0
+	var emit func(word string)
+	emit = func(word string) {
+		if word == "" {
+			return
+		}
+		// A word longer than a line -- an IN list written without blanks --
+		// is broken after its commas, which ABAP SQL reads the same way.
+		if len(word) > limit {
+			if parts := splitAtCommas(word); len(parts) > 1 {
+				for _, p := range parts {
+					emit(p)
+				}
+				return
+			}
+		}
+		if lineLen > 0 && lineLen+1+len(word) > limit {
+			out.WriteByte('\n')
+			lineLen = 0
+		} else if lineLen > 0 {
+			out.WriteByte(' ')
+			lineLen++
+		}
+		out.WriteString(word)
+		lineLen += len(word)
+	}
+	for i := 0; i < len(query); i++ {
+		switch query[i] {
+		case '\'':
+			inQuote = !inQuote
+		case ' ', '\n':
+			if inQuote {
+				continue
+			}
+			emit(query[start:i])
+			start = i + 1
+			if query[i] == '\n' {
+				out.WriteByte('\n')
+				lineLen = 0
+			}
+		}
+	}
+	emit(query[start:])
+	return out.String()
+}
+
+// splitAtCommas cuts a word after each comma outside quotes.
+func splitAtCommas(word string) []string {
+	var parts []string
+	in := false
+	start := 0
+	for i := 0; i < len(word); i++ {
+		switch word[i] {
+		case '\'':
+			in = !in
+		case ',':
+			if !in {
+				parts = append(parts, word[start:i+1])
+				start = i + 1
+			}
+		}
+	}
+	if start < len(word) {
+		parts = append(parts, word[start:])
+	}
+	return parts
+}
+
+// parseTableContents parses the XML response for table contents.
+func parseTableContents(data []byte) (*TableContentsResult, error) {
+	// The ADT table data response is complex XML
+	// We'll parse it into a generic structure
+	type tableData struct {
+		Columns []struct {
+			Metadata struct {
+				Name        string `xml:"name,attr"`
+				Type        string `xml:"type,attr"`
+				Description string `xml:"description,attr"`
+				Length      int    `xml:"length,attr"`
+				IsKey       bool   `xml:"keyAttribute,attr"`
+			} `xml:"metadata"`
+			DataSet struct {
+				Data []string `xml:"data"`
+			} `xml:"dataSet"`
+		} `xml:"columns"`
+	}
+
+	var td tableData
+	if err := xml.Unmarshal(data, &td); err != nil {
+		return nil, fmt.Errorf("parsing table data: %w", err)
+	}
+
+	result := &TableContentsResult{
+		Columns: make([]TableColumn, len(td.Columns)),
+		Rows:    []map[string]interface{}{},
+	}
+
+	// Extract columns
+	maxRows := 0
+	for i, col := range td.Columns {
+		result.Columns[i] = TableColumn{
+			Name:        col.Metadata.Name,
+			Type:        col.Metadata.Type,
+			Description: col.Metadata.Description,
+			Length:      col.Metadata.Length,
+			IsKey:       col.Metadata.IsKey,
+		}
+		if len(col.DataSet.Data) > maxRows {
+			maxRows = len(col.DataSet.Data)
+		}
+	}
+
+	// Build rows
+	for rowIdx := 0; rowIdx < maxRows; rowIdx++ {
+		row := make(map[string]interface{})
+		for _, col := range td.Columns {
+			if rowIdx < len(col.DataSet.Data) {
+				row[col.Metadata.Name] = col.DataSet.Data[rowIdx]
+			}
+		}
+		result.Rows = append(result.Rows, row)
+	}
+
+	return result, nil
 }
