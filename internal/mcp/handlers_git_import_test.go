@@ -302,3 +302,25 @@ func TestGitImportZipWaitFailureIsAnError(t *testing.T) {
 		t.Errorf("got %s", text)
 	}
 }
+
+// keep_order, as a bool or the string "true", deletes in the order given;
+// without it, or false, users go before what they use.
+func TestGitDeleteOptionsKeepOrder(t *testing.T) {
+	cases := []struct {
+		v    any
+		want bool
+	}{{nil, false}, {false, false}, {"false", false}, {true, true}, {"true", true}, {"TRUE", true}}
+	for _, c := range cases {
+		args := map[string]any{}
+		if c.v != nil {
+			args["keep_order"] = c.v
+		}
+		opts, err := gitDeleteOptions(args, "")
+		if err != nil {
+			t.Fatalf("%v: %v", c.v, err)
+		}
+		if opts.KeepOrder != c.want {
+			t.Errorf("keep_order %#v: KeepOrder %t, want %t", c.v, opts.KeepOrder, c.want)
+		}
+	}
+}

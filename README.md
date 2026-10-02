@@ -549,7 +549,7 @@ vsp -s devsys git delete-objects --package '$ZDEMO' "CLAS ZCL_DEMO" \
 MCP: `system` with `git_import_zip` (`file_path` or `zip_base64`, `package`,
 `repo_name`, `overwrite`, `transport`, `wait_seconds`), the read-only
 `git_import_status` (`job`), `git_delete_objects` (`package`, `objects`,
-`delete_repo`, `expect_repo`), and the read-only `git_object_versions`
+`delete_repo`, `expect_repo`, `keep_order`), and the read-only `git_object_versions`
 (`package`, `objects`, `sha256`).
 
 Nothing that exists is overwritten without `overwrite`, and a package that
@@ -593,6 +593,20 @@ and it is kept. A version that cannot be read never matches. Objects are
 checked and deleted one at a time: when one comes back `changed` (or
 `failed`), **the other objects listed are still deleted**; only the
 repository and the package are kept. There is no all-or-nothing mode yet.
+
+Objects are deleted users before what they use: code (PROG, CLAS, INTF,
+FUGR, XSLT and any type not named here), then RAP (SRVB, SRVD, BDEF,
+DCLS/DDLX, DDLS), then search helps and lock objects (SHLP, ENQU), table
+types (TTYP), tables and structures (TABL), data elements (DTEL), domains
+(DOMA); within a type, in the order given. An append structure is not
+yet ordered before the table it extends (both are TABL): list it first.
+`keep_order: true` (`--keep-order`) deletes exactly in the order given.
+The result's `order` is every delete attempt in the order made; an object
+retried after a failure is listed twice. Each expectation is read right before its own delete,
+after the deletes ahead of it, while a sha256 read before the call is of the
+state before any of them -- which is why the order matters: deleting a data
+element first changes the serialisation, and so the sha256, of a table that
+uses it, and the table would come back `changed`.
 
 The ADT lock is the workbench enqueue: a second ADT session -- even the same
 user's -- is refused while it is held (checked live: `EU 510`), and abapGit's

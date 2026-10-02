@@ -236,6 +236,11 @@ func (s *Server) handleGitImportStatus(ctx context.Context, request mcp.CallTool
 // back "changed", with what was observed, and is kept, as are the
 // repository and the package. expect_repo {"key","name"} (with delete_repo)
 // drops the repository row only when it is exactly that row.
+//
+// Objects go users before what they use (code, RAP, SHLP/ENQU, TTYP, TABL,
+// DTEL, DOMA; the order given within a type), each checked right before its
+// own delete; keep_order: true deletes them in the order given. The
+// result's "order" is the order used.
 func (s *Server) handleGitDeleteObjects(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 	pkg := getStringParam(args, "package")
@@ -251,25 +256,9 @@ func (s *Server) handleGitDeleteObjects(ctx context.Context, request mcp.CallToo
 	if err != nil {
 		return newToolResultError(err.Error()), nil
 	}
-	opts := adt.GitDeleteOptions{Transport: transport}
-	opts.DeleteRepo, _ = getBoolParam(args, "delete_repo")
-	if v := strings.ToLower(getStringParam(args, "delete_repo")); v == "true" {
-		opts.DeleteRepo = true
-	}
-	if rawRepo, ok := args["expect_repo"]; ok && rawRepo != nil {
-		m, ok := rawRepo.(map[string]any)
-		if !ok {
-			return newToolResultError(fmt.Sprintf("expect_repo must be {\"key\", \"name\"}, not %T", rawRepo)), nil
-		}
-		key, _ := m["key"].(string)
-		name, _ := m["name"].(string)
-		if strings.TrimSpace(key) == "" || strings.TrimSpace(name) == "" {
-			return newToolResultError("expect_repo needs key and name, as strings"), nil
-		}
-		if !opts.DeleteRepo {
-			return newToolResultError("expect_repo is only for delete_repo: the repository is kept without it"), nil
-		}
-		opts.ExpectRepo = &adt.GitRepoExpect{Key: key, Name: name}
+	opts, err := gitDeleteOptions(args, transport)
+	if err != nil {
+		return newToolResultError(err.Error()), nil
 	}
 	ws, err := s.gitService(ctx)
 	if err != nil {
@@ -285,6 +274,36 @@ func (s *Server) handleGitDeleteObjects(ctx context.Context, request mcp.CallToo
 		return out, nil
 	}
 	return newToolResultJSON(res), nil
+}
+
+// gitDeleteOptions reads git_delete_objects' options: delete_repo,
+// expect_repo, keep_order (a bool, or the string "true").
+func gitDeleteOptions(args map[string]any, transport string) (adt.GitDeleteOptions, error) {
+	opts := adt.GitDeleteOptions{Transport: transport}
+	opts.DeleteRepo, _ = getBoolParam(args, "delete_repo")
+	if v := strings.ToLower(getStringParam(args, "delete_repo")); v == "true" {
+		opts.DeleteRepo = true
+	}
+	opts.KeepOrder, _ = getBoolParam(args, "keep_order")
+	if v := strings.ToLower(getStringParam(args, "keep_order")); v == "true" {
+		opts.KeepOrder = true
+	}
+	if rawRepo, ok := args["expect_repo"]; ok && rawRepo != nil {
+		m, ok := rawRepo.(map[string]any)
+		if !ok {
+			return opts, fmt.Errorf("expect_repo must be {\"key\", \"name\"}, not %T", rawRepo)
+		}
+		key, _ := m["key"].(string)
+		name, _ := m["name"].(string)
+		if strings.TrimSpace(key) == "" || strings.TrimSpace(name) == "" {
+			return opts, errors.New("expect_repo needs key and name, as strings")
+		}
+		if !opts.DeleteRepo {
+			return opts, errors.New("expect_repo is only for delete_repo: the repository is kept without it")
+		}
+		opts.ExpectRepo = &adt.GitRepoExpect{Key: key, Name: name}
+	}
+	return opts, nil
 }
 
 // handleGitObjectVersions reads the version of objects of a package -- what

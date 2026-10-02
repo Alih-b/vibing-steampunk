@@ -58,6 +58,12 @@ Git/abapGit:
       misses documentation, GUI status, SOTR and other parts; an object with an inactive version never matches
       a sha256. "expect_repo": {"key": ..., "name": ...} (with delete_repo) drops the repository row only when
       it is exactly that row; otherwise repoNote "kept: registered repository is ..."
+      Order: users before what they use -- code (PROG, CLAS, INTF, FUGR, ... and any other type), then SRVB,
+      SRVD, BDEF, DCLS/DDLX, DDLS, then SHLP/ENQU, TTYP, TABL, DTEL, DOMA; the order given within a type;
+      "keep_order": true deletes in the order given. "order" in the result is every delete attempt in order (a
+      retried object twice). An append structure is not ordered before its table: list it first. Each expect is
+      read right before its own delete, after the deletes ahead of it: a sha256 read before the call is of the
+      state before any of them, and deleting a DTEL first changes the sha256 of a TABL that uses it
   SAP(action="system", params={"type": "git_object_versions", "package": "$ZDEMO", "objects": ["CLAS ZCL_DEMO"], "sha256": true})
     - read-only: with sha256: true, the SHA-256 of each object's abapGit serialisation (original language,
       active version only; sorted "<file>=<sha256>" lines joined by LF) and "inactive"; and its stamp

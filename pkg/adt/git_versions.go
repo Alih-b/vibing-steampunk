@@ -86,6 +86,9 @@ type GitDeleteOptions struct {
 	// ExpectRepo, with DeleteRepo: drop the repository row only when it is
 	// exactly this one.
 	ExpectRepo *GitRepoExpect
+	// KeepOrder deletes the objects in the order given, not users before
+	// what they use (see GitDeleteRank).
+	KeepOrder bool
 }
 
 // GitChangedError says an object is no longer the version the caller

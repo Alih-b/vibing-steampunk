@@ -279,6 +279,16 @@ Objects are checked and deleted one by one: when one comes back "changed"
 and the package are kept. --expect-repo-key and --expect-repo-name (with
 --delete-repo) drop the repository row only when it is exactly that row.
 
+Objects go users before what they use: code (and any type not named
+here), then SRVB, SRVD, BDEF, DCLS/DDLX, DDLS, then SHLP/ENQU, TTYP, TABL,
+DTEL, DOMA; within a type, in the order given. An append structure is
+not ordered before the table it extends: list it first. --keep-order
+deletes them exactly in the order given. The "order" line lists every
+delete attempt, a retried object twice. Each --expect is read right before its own
+delete, after the deletes ahead of it: a sha256 read before the call is of
+the state before any of them, and deleting a data element before the table
+that uses it changes the table's sha256.
+
 Refused under read_only/SAP_READ_ONLY; the package must pass
 allowed_packages; a transportable package needs --allow-transportable-edits
 and --transport.
@@ -315,6 +325,7 @@ and --transport.
 		}
 		opts := adt.GitDeleteOptions{Transport: transport}
 		opts.DeleteRepo, _ = cmd.Flags().GetBool("delete-repo")
+		opts.KeepOrder, _ = cmd.Flags().GetBool("keep-order")
 		repoKey, _ := cmd.Flags().GetString("expect-repo-key")
 		repoName, _ := cmd.Flags().GetString("expect-repo-name")
 		if repoKey != "" || repoName != "" {
@@ -339,6 +350,9 @@ and --transport.
 			} else {
 				for _, o := range res.Objects {
 					fmt.Fprintf(os.Stderr, "  %-8s %s %s %s\n", o.Status, o.Type, o.Name, o.Reason)
+				}
+				if len(res.Order) > 1 {
+					fmt.Fprintln(os.Stderr, "  order: "+strings.Join(res.Order, ", "))
 				}
 				switch {
 				case res.RepoDeleted && res.Repo != nil:
@@ -456,6 +470,7 @@ func init() {
 	gitDeleteObjectsCmd.Flags().String("transport", "", "Transport request, for a transportable package")
 	gitDeleteObjectsCmd.Flags().Bool("delete-repo", false, "Also unregister the package's abapGit repository: only an offline one, only once the package is empty")
 	gitDeleteObjectsCmd.Flags().Bool("json", false, "Emit JSON")
+	gitDeleteObjectsCmd.Flags().Bool("keep-order", false, "Delete in the order given, not users before what they use")
 	gitDeleteObjectsCmd.Flags().StringArray("expect", nil, `Delete "TYPE NAME" only while it is still this version: "TYPE NAME sha256=<h>" and/or "stamp=<v>"; with both, sha256 decides (repeatable)`)
 	gitDeleteObjectsCmd.Flags().String("expect-repo-key", "", "With --delete-repo: drop the repository row only when its key is this")
 	gitDeleteObjectsCmd.Flags().String("expect-repo-name", "", "With --delete-repo: drop the repository row only when its name is this")
