@@ -295,8 +295,8 @@ VSP exposes different tool sets depending on the mode:
 
 | Mode | Tools | Use Case |
 |------|-------|----------|
-| `focused` | 100 | Default. Core ABAP development tools. Best for most testing. |
-| `expert` | 147 | All tools including AMDP debugger, UI5, gCTS, i18n, advanced features. |
+| `focused` | 98 | Default. Core ABAP development tools. Best for most testing. |
+| `expert` | 148 | All tools including AMDP debugger, UI5, gCTS, i18n, advanced features. |
 
 Set via `SAP_MODE` environment variable in the MCP config.
 
