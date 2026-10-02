@@ -2376,6 +2376,55 @@ go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2   # if
 
 Skip it for one push with `git push --no-verify`.
 
+**Leak scan.** This repository is public, and agents capture raw answers from
+live SAP systems. The `leak scan` job in CI and the first step of the pre-push
+hook block on live identifiers and secrets in what a change adds: SAP session
+and SSO cookies, `Authorization: Basic` headers, CSRF token values, private
+addresses, and passwords in `.vsp.json`/`.mcp.json`-style config, plus the
+host names, addresses, SIDs and user names on a private list. The scanner
+(`.github/ci/leakscan`) decodes UTF-16LE, hex and base64 before it matches, and
+prints only `file:line` and the class that matched, never the value. It reads
+every commit of a push or pull request, not just its last state: a value one
+commit added and a later one deleted is still in the history, and blocks.
+
+The list of names is never committed. Seed it once per clone, one value per
+line, optionally `class: value`:
+
+```bash
+mkdir -p .local && cat > .local/leak-identifiers.txt <<'EOF'
+host: <your SAP host name>
+ip:   <its address>
+sid:  <its SID, if it is not a public one>
+user: <your SAP user name>
+EOF
+chmod 600 .local/leak-identifiers.txt    # .local/ is gitignored
+```
+
+Leave out a SID that is public anyway, such as the `A4H` of SAP's developer
+edition: it is all over this repository's docs, and a gate on it would block
+every change to them. A private system's SID belongs on the list.
+
+Without the file the hook still runs the generic patterns and warns that the
+names were not checked. A reviewed false positive of a generic pattern goes in
+`.github/ci/leakscan-allow.txt`, with a reason on every line; a name from the
+list can never be excused. CI reads that file from the base branch, so a new
+rule takes effect only once merged: propose it in a pull request of its own.
+
+A force push to main is refused by the repository's ruleset, so a push scan
+always has a previous tip to start from. If one ever got through, the job is
+red (the replaced commits cannot be told from the new ones), and the recovery
+is a maintainer scanning the rewritten history by hand with
+`-range <last trusted commit>..<new tip>`. Known limitation: a pull request from a branch of
+this repository runs its own copy of the workflow and the scanner, so it could
+weaken the gate it is judged by. Branch protection would close that and this
+repository does not use it, so the job warns, and the report row says so,
+whenever a pull request touches `.github/workflows/ci.yml`,
+`.github/ci/leakscan/` or `.githooks/pre-push`: review those changes as
+changes to the gate. In CI the
+list is the `VSP_LEAK_IDENTIFIERS` secret: a pull request from a fork has no
+secrets, so it gets the generic patterns only and the report row says
+"PARTIAL"; on this repository's own branches and on main a missing list is red.
+
 <details>
 <summary><strong>Architecture</strong></summary>
 

@@ -231,6 +231,117 @@ jobs:
           BASE_REF: origin/${{ github.base_ref || github.ref_name }}
         run: ./.github/ci/lint.sh gate "$BASE_REF"
 
+  # Safety gate, blocking: live SAP identifiers (hosts, addresses, SIDs, users)
+  # and secrets (session cookies, basic auth, CSRF tokens, config passwords) in
+  # what this change publishes. .github/ci/leakscan decodes every byte view of a
+  # file (text, UTF-16LE, hex, base64) before matching. What it reads:
+  #   pull request: the files it changes (as they are at its head), the lines
+  #     every one of its commits added (so a value added and deleted again is
+  #     still caught: it is in the history), and every commit message;
+  #   push to main: every file in the tree, plus the lines and messages of the
+  #     pushed range (event.before..event.after; a new branch: every commit not
+  #     on main; a force push, whose before is gone: red. The main ruleset refuses
+  #     force pushes; if one got through, a maintainer scans by hand, -range).
+  # The allow-file is read from the base revision on a pull request, so a PR
+  # cannot excuse its own hits; a PR that changes it gets a warning to review it.
+  # Known limitation: a PR from a branch of this repository runs its own copy
+  # of this job and of the scanner, so it could weaken the gate; without branch
+  # protection only review stops that, and the job warns when a PR touches it.
+  #
+  # The identifier list is the VSP_LEAK_IDENTIFIERS secret (one value per line,
+  # optionally `class: value`), masked line by line before anything runs. It is
+  # expected on a push to this repository and on a pull request from a branch
+  # of it, and its absence there is red (fail closed). A pull request from a
+  # fork gets no secrets: it runs the generic patterns only, and the job says
+  # so in a warning and in the report row, never as a plain pass.
+  # Locally: the pre-push hook, or
+  #   cd .github/ci/leakscan && go build -o /tmp/leakscan . && /tmp/leakscan -root ../../.. -diff origin/main
+  leak-scan:
+    name: leak scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge base, to tell what the pull request adds.
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .github/ci/leakscan/go.mod
+          cache: false
+
+      - name: Test the scanner
+        working-directory: .github/ci/leakscan
+        run: go test ./...
+
+      # Built, not `go run`: go run turns every non-zero exit into 1, and the
+      # step below tells "hits" (1) from "fail closed" (2) from "partial" (3).
+      - name: Build the scanner
+        working-directory: .github/ci/leakscan
+        run: go build -o "$RUNNER_TEMP/leakscan" .
+
+      - name: Scan
+        env:
+          VSP_LEAK_IDENTIFIERS: ${{ secrets.VSP_LEAK_IDENTIFIERS }}
+          EXPECTED: ${{ github.repository == 'oisee/vibing-steampunk' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) }}
+          EVENT: ${{ github.event_name }}
+          BASE_REF: origin/${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          # Mask every line, and the value after a `class:` prefix, before the
+          # scanner (or anything else) can print one.
+          while IFS= read -r line || [ -n "$line" ]; do
+            line=${line%$'\r'}
+            case $line in ''|'#'*) continue ;; esac
+            echo "::add-mask::$line"
+            value=$(printf '%s' "${line#*:}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            [ -n "$value" ] && echo "::add-mask::$value"
+          done <<< "$VSP_LEAK_IDENTIFIERS"
+
+          require=()
+          [ "$EXPECTED" = true ] && require=(-require-identifiers)
+          allow_note=
+          if [ "$EVENT" = pull_request ]; then
+            mode=(-diff "$BASE_REF" -allow-rev "$BASE_REF")
+            what="pull request's files, added lines and commit messages"
+            if ! git diff --quiet "$(git merge-base "$BASE_REF" HEAD)" HEAD -- .github/ci/leakscan-allow.txt; then
+              echo "::warning title=leak scan::This pull request changes .github/ci/leakscan-allow.txt. The scan used the base's allow-file; the new rules take effect only after merge, so review each one and its reason."
+              allow_note="; allow-file changed, needs review"
+            fi
+            # Known limitation: the job runs the PR's own copy of this workflow
+            # and of the scanner, so a PR from a branch of this repository can
+            # weaken the gate it is judged by. Branch protection would close
+            # that; this repository does not use it, so a reviewer is told.
+            gate_files=$(git diff --name-only "$(git merge-base "$BASE_REF" HEAD)" HEAD -- .github/workflows/ci.yml .github/ci/leakscan/ .githooks/pre-push | tr '\n' ' ')
+            if [ -n "$gate_files" ]; then
+              echo "::warning title=leak scan::This pull request changes the leak scan itself (${gate_files% }), and this run used the changed version. Review that the gate is not weakened before merging."
+              allow_note="${allow_note}; changes the gate itself, review it"
+            fi
+          else
+            # A new branch (all-zero BEFORE) is read as every commit not on
+            # main; a force push, whose BEFORE is gone, fails closed in the
+            # scanner, because the replaced commits cannot be told from the new
+            # ones (the main ruleset refuses force pushes; recovery is manual).
+            mode=(-all -push "$BEFORE..$AFTER" -push-base origin/main)
+            what="tree and the pushed commits"
+          fi
+          status=0
+          "$RUNNER_TEMP/leakscan" -root "$GITHUB_WORKSPACE" "${require[@]}" "${mode[@]}" || status=$?
+          case $status in
+            0) echo "::notice title=ci-report::full scan of the ${what}: clean${allow_note}" ;;
+            3) echo "::warning title=leak scan::Identifier list unavailable (fork pull request, no secrets): only the generic patterns ran. Host, user and SID names were NOT checked; a maintainer's run on main checks them."
+               echo "::notice title=ci-report::PARTIAL: generic patterns only, identifier list unavailable (fork)${allow_note}"
+               { echo "### Leak scan: partial"; echo; echo "The identifier list (secret \`VSP_LEAK_IDENTIFIERS\`) is not available to a pull request from a fork, so only the generic patterns ran over the ${what}. Host, user and SID names were not checked."; } >> "$GITHUB_STEP_SUMMARY"
+               ;;
+            1) echo "::error title=leak scan::Possible leak in the ${what}: see the file:line list above. Replace the value with a placeholder; a value in a commit that a later commit removed is still in the history, so rewrite the branch. A generic false positive can be excused in .github/ci/leakscan-allow.txt, with a reason, in a pull request of its own."
+               echo "::notice title=ci-report::hits in the ${what}${allow_note}"
+               exit 1 ;;
+            *) echo "::error title=leak scan::The scan could not run in full (exit $status), so it cannot pass. If the identifier list is missing, a repository admin must set the VSP_LEAK_IDENTIFIERS secret."
+               echo "::notice title=ci-report::fail closed (exit $status)"
+               exit "$status" ;;
+          esac
+
   # Advisory: every linter in .github/ci/golangci-full.yml over the whole tree,
   # so the debt stays visible as one number per linter. New code over a
   # complexity threshold becomes a warning annotation, never an error. A crash or config error
