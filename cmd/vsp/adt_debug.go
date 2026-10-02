@@ -189,10 +189,68 @@ function group — those are function modules and need an RFC channel:
 // statefulADTTransport builds one ADT transport and keeps it: a new transport
 // is a new session, and a new session has no debuggee attached.
 func statefulADTTransport(params *systemParams, timeout time.Duration) (saprfc.ADTTransport, error) {
+	t, err := debugHTTPTransport(params, timeout, adt.SessionStateful)
+	if err != nil {
+		return nil, err
+	}
+	return saprfc.HTTPSession(t), nil
+}
+
+// statelessADTTransport builds a transport of the same logon that belongs to
+// no session: a separate connection for the requests the debug session cannot
+// carry while a request is still open on it (see saprfc.HTTPStateless).
+func statelessADTTransport(params *systemParams, timeout time.Duration) (saprfc.ADTTransport, error) {
+	t, err := debugHTTPTransport(params, timeout, adt.SessionStateless)
+	if err != nil {
+		return nil, err
+	}
+	return saprfc.HTTPStateless(t), nil
+}
+
+// withoutContext drops a stored sap-contextid: it selects a stateful session,
+// which is exactly what a stateless side connection must not join.
+func withoutContext(cookies map[string]string) map[string]string {
+	out := make(map[string]string, len(cookies))
+	for k, v := range cookies {
+		if strings.EqualFold(k, "sap-contextid") {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// ssoAuthOptions are the single sign-on cookies and the refresh hook, both
+// passed through filter. The refresh matters as much as the first set: on a
+// re-authentication the transport replaces its cookies with whatever the
+// refresh returns, so an unfiltered refresh would hand a stateless side
+// connection the sap-contextid it must never send.
+func ssoAuthOptions(cookies map[string]string, refresh func(context.Context) (map[string]string, error),
+	budget time.Duration, filter func(map[string]string) map[string]string) []adt.Option {
+	return []adt.Option{
+		adt.WithCookies(filter(cookies)),
+		adt.WithReauthFunc(func(ctx context.Context) (map[string]string, error) {
+			fresh, err := refresh(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return filter(fresh), nil
+		}),
+		adt.WithReauthTimeout(budget),
+	}
+}
+
+// debugHTTPTransport builds the HTTP transport the debugger's ADT requests go
+// over, in the given session type.
+func debugHTTPTransport(params *systemParams, timeout time.Duration, session adt.SessionType) (*adt.Transport, error) {
+	cookieFilter := func(c map[string]string) map[string]string { return c }
+	if session != adt.SessionStateful {
+		cookieFilter = withoutContext
+	}
 	opts := []adt.Option{
 		adt.WithClient(params.Client),
 		adt.WithLanguage(params.Language),
-		adt.WithSessionType(adt.SessionStateful),
+		adt.WithSessionType(session),
 		// The debugger's listener is a request that deliberately does not answer
 		// until something stops, so the client timeout has to outlast it. The
 		// stock 60s turns a 90s listen into "context deadline exceeded" and the
@@ -218,13 +276,9 @@ func statefulADTTransport(params *systemParams, timeout time.Duration) (saprfc.A
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts,
-			adt.WithCookies(cookies),
-			adt.WithReauthFunc(provider.Refresh),
-			adt.WithReauthTimeout(provider.ReauthBudget()),
-		)
+		opts = append(opts, ssoAuthOptions(cookies, provider.Refresh, provider.ReauthBudget(), cookieFilter)...)
 		cfg := adt.NewConfig(params.URL, "", "", opts...)
-		return saprfc.HTTPSession(adt.NewTransport(cfg)), nil
+		return adt.NewTransport(cfg), nil
 	}
 
 	user, password := params.User, params.Password
@@ -234,15 +288,15 @@ func statefulADTTransport(params *systemParams, timeout time.Duration) (saprfc.A
 		if err != nil {
 			return nil, fmt.Errorf("loading cookies from %s: %w", params.CookieFile, err)
 		}
-		opts = append(opts, adt.WithCookies(cookies))
+		opts = append(opts, adt.WithCookies(cookieFilter(cookies)))
 		user, password = "", ""
 	case params.CookieString != "":
-		opts = append(opts, adt.WithCookies(adt.ParseCookieString(params.CookieString)))
+		opts = append(opts, adt.WithCookies(cookieFilter(adt.ParseCookieString(params.CookieString))))
 		user, password = "", ""
 	}
 
 	cfg := adt.NewConfig(params.URL, user, password, opts...)
-	return saprfc.HTTPSession(adt.NewTransport(cfg)), nil
+	return adt.NewTransport(cfg), nil
 }
 
 func init() {
