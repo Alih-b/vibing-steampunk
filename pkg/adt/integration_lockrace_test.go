@@ -19,7 +19,7 @@ func TestIntegration_StatelessRequestInsideAnotherCallersLockWindow(t *testing.T
 
 	name := fmt.Sprintf("ZVSP_LR_%05d", time.Now().Unix()%100000)
 	if err := client.CreateObject(ctx, CreateObjectOptions{
-		ObjectType: ObjectTypeProgram, Name: name, Description: "vsp lock race probe", PackageName: "$TMP",
+		ObjectType: ObjectTypeProgram, Name: name, Description: "vsp lock race probe", PackageName: integrationPackage(),
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestIntegration_ConcurrentLockChainsAndReaders(t *testing.T) {
 	names := []string{fmt.Sprintf("ZVSP_LRA_%04d", base), fmt.Sprintf("ZVSP_LRB_%04d", base)}
 	for _, name := range names {
 		if err := client.CreateObject(ctx, CreateObjectOptions{
-			ObjectType: ObjectTypeProgram, Name: name, Description: "vsp lock race probe", PackageName: "$TMP",
+			ObjectType: ObjectTypeProgram, Name: name, Description: "vsp lock race probe", PackageName: integrationPackage(),
 		}); err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}

@@ -23,11 +23,7 @@ func functionTestTarget(t *testing.T) (group, pkg string) {
 	if group == "" {
 		t.Skip("VSP_TEST_FUGR (an existing function group) required for function module tests")
 	}
-	pkg = os.Getenv("VSP_TEST_PACKAGE")
-	if pkg == "" {
-		pkg = "$TMP"
-	}
-	return group, pkg
+	return group, integrationPackage()
 }
 
 // TestIntegration_CreateRFCFunctionModule covers the whole reason
@@ -120,10 +116,7 @@ func TestIntegration_CreateFunctionGroupThenRFCModule(t *testing.T) {
 	client := getIntegrationClient(t)
 	ctx := context.Background()
 
-	pkg := os.Getenv("VSP_TEST_PACKAGE")
-	if pkg == "" {
-		pkg = "$TMP"
-	}
+	pkg := integrationPackage()
 
 	const group = "ZVSP_IT_GRP"
 	const name = "ZVSP_IT_GRP_FM"
