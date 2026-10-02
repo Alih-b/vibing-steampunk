@@ -1,6 +1,6 @@
 {
  "_comment": "Size ratchet for .github/ci/metrics (advisory). files: lines of every non-test file over 1000 lines; packages: non-test lines. The PR report warns when a file not listed here passes 1000 lines, or a listed file or package grows past its number here or past its size on main, whichever is smaller (so a shrink tightens the ratchet without an edit here). A PR with a reason to grow something raises its number here, so the reason is in the diff.",
- "commit": "5745b59a0c8c999428907d0657f1397ff3fedb4f",
+ "commit": "d48fb794f00b0f1a597773bcf81aa2565fb094ae",
  "date": "2026-10-02",
  "files": {
   "cmd/vsp/cli_cr_config_audit.go": 1816,
@@ -10,7 +10,6 @@
   "internal/mcp/handlers_graph.go": 1973,
   "internal/mcp/sweep.go": 1081,
   "pkg/adt/client.go": 2855,
-  "pkg/adt/crud.go": 2004,
   "pkg/adt/debugger.go": 1840,
   "pkg/adt/devtools.go": 1459,
   "pkg/adt/git_import.go": 1610,
@@ -30,7 +29,7 @@
   "internal/lsp": 806,
   "internal/mcp": 22055,
   "pkg/abaplint": 2032,
-  "pkg/adt": 45963,
+  "pkg/adt": 46023,
   "pkg/cache": 1293,
   "pkg/config": 363,
   "pkg/ctxcomp": 1991,
