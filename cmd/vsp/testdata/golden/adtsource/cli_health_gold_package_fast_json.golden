@@ -28,8 +28,8 @@
       "status": "STALE",
       "details": {
         "age_days": N,
-        "checked": 0,
-        "last_changed": "2019-03-01T00:00:00Z"
+        "checked": 2,
+        "last_changed": "2019-03-01T10:00:00Z"
       }
     },
     "tests": {
@@ -110,10 +110,13 @@
 === error
 <nil>
 === requests
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/includes/main/versions
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/includes/main/versions
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_TEST/includes/main/versions
+GET /sap/bc/adt/oo/interfaces/ZIF_GOLD/includes/main/versions
 GET atc/customizing
 GET atc/worklists/WL1
 GET nodestructure $ZGOLD
 GET nodestructure $ZGOLD
 POST atc/runs /sap/bc/adt/packages/$ZGOLD
 POST atc/worklists
-SQL SELECT MAX( AS4DATE ) AS LAST_DATE FROM E070 WHERE TRKORR IN ( SELECT TRKORR FROM E071 WHERE OBJ_NAME IN ( SELECT OBJ_NAME FROM TADIR WHERE DEVCLASS LIKE '$ZGOLD%' ) )

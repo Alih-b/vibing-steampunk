@@ -5,14 +5,14 @@ Package Boundary Analysis: $ZGOLD
 Total dependencies: 8
 
 --- SAME PACKAGE (3) ---
-  ZCL_GOLD_A → ZGOLD_T (REFERENCES)
   ZCL_GOLD_A → ZIF_GOLD (REFERENCES)
+  ZCL_GOLD_A → ZGOLD_T (REFERENCES)
   ZCL_GOLD_TEST → ZCL_GOLD_A (REFERENCES)
 
 --- VIOLATIONS (3) ---
   ✗ ZCL_GOLD_A → ZCL_FOREIGN (REFERENCES, pkg: $ZOTHER) [TYPE_REF_TO:zcl_foreign]
-  ✗ ZCL_GOLD_A → ZGOLD_REPORT (CALLS, pkg: $ZGOLD_SUB) [SUBMIT:zgold_report]
   ✗ ZCL_GOLD_A → Z_GOLD_FM (CALLS, pkg: $ZOTHER) [FM:Z_GOLD_FM]
+  ✗ ZCL_GOLD_A → ZGOLD_REPORT (CALLS, pkg: $ZGOLD_SUB) [SUBMIT:zgold_report]
 
 --- DYNAMIC CALLS (1) ---
   ⚠ ZCL_GOLD_A → DYNAMIC:lv_fm [DYNAMIC_FM:lv_fm]
@@ -26,11 +26,11 @@ Total dependencies: 8
   Unknown:           1
 
   Packages crossed:
-    $ZGOLD_SUB — 1 refs
     $ZOTHER — 2 refs
+    $ZGOLD_SUB — 1 refs
 
   ? INCONCLUSIVE — 1 of 8 references could not be attributed to a package, and an unattributed reference is one this cannot judge.
-    unattributed: &{CLAS:ZCL_GOLD_A ZCL_GOLD_A CLAS $ZGOLD [] map[]} → &{FUGR:Z_LOST_FM Z_LOST_FM FUGR  [] map[]}
+    unattributed: CLAS:ZCL_GOLD_A → FUGR:Z_LOST_FM (CALLS)
   ✗ 3 violation(s) in 1 object(s) among the references it could judge
 
 objects in $ZGOLD could not be read, so their dependencies are absent from this verdict.

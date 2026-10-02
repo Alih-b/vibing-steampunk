@@ -11,6 +11,8 @@ MEDIUM      PROG  ZGOLD_MISSING  -
 Querying WBCROSSGT and CROSS for TVARVC references...
 WARN: object-oriented callers were not searched: WBCROSSGT: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
 Found 2 candidate programs. Grep confirmed 1.
+WARN: PROG ZGOLD_MISSING could not be grepped: Failed to read source: ADT API error: status 404 at /sap/bc/adt/programs/programs/zgold_missing/source/main: Resource does not exist
+WARN: 1 of 2 candidates could not be grepped, so an unconfirmed row below may only mean unread.
 
 2 readers (1 HIGH, 1 MEDIUM)
 

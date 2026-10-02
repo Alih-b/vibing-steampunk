@@ -13,23 +13,23 @@
       "sourceObject": "ZCL_GOLD_A",
       "sourceType": "CLAS",
       "sourcePackage": "$ZGOLD",
-      "targetObject": "ZCL_FOREIGN",
-      "targetType": "CLAS",
-      "targetPackage": "$ZOTHER",
-      "direction": "EXTERNAL",
-      "edgeKind": "REFERENCES",
-      "refDetail": "TYPE_REF_TO:zcl_foreign"
-    },
-    {
-      "sourceObject": "ZCL_GOLD_A",
-      "sourceType": "CLAS",
-      "sourcePackage": "$ZGOLD",
       "targetObject": "ZGOLD_REPORT",
       "targetType": "PROG",
       "targetPackage": "$ZGOLD_SUB",
       "direction": "DOWNWARD",
       "edgeKind": "CALLS",
       "refDetail": "SUBMIT:zgold_report"
+    },
+    {
+      "sourceObject": "ZCL_GOLD_A",
+      "sourceType": "CLAS",
+      "sourcePackage": "$ZGOLD",
+      "targetObject": "ZCL_FOREIGN",
+      "targetType": "CLAS",
+      "targetPackage": "$ZOTHER",
+      "direction": "EXTERNAL",
+      "edgeKind": "REFERENCES",
+      "refDetail": "TYPE_REF_TO:zcl_foreign"
     },
     {
       "sourceObject": "ZCL_GOLD_A",
@@ -57,23 +57,23 @@
       "sourceObject": "ZGOLD_REPORT",
       "sourceType": "PROG",
       "sourcePackage": "$ZGOLD_SUB",
-      "targetObject": "ZCL_GOLD_A",
-      "targetType": "CLAS",
-      "targetPackage": "$ZGOLD",
-      "direction": "UPWARD",
-      "edgeKind": "CALLS",
-      "refDetail": "STATIC_CALL:zcl_gold_a=\u003erun"
-    },
-    {
-      "sourceObject": "ZGOLD_REPORT",
-      "sourceType": "PROG",
-      "sourcePackage": "$ZGOLD_SUB",
       "targetObject": "Z_GOLD_FM",
       "targetType": "FUNC",
       "targetPackage": "$ZOTHER",
       "direction": "EXTERNAL",
       "edgeKind": "CALLS",
       "refDetail": "FM:Z_GOLD_FM"
+    },
+    {
+      "sourceObject": "ZGOLD_REPORT",
+      "sourceType": "PROG",
+      "sourcePackage": "$ZGOLD_SUB",
+      "targetObject": "ZCL_GOLD_A",
+      "targetType": "CLAS",
+      "targetPackage": "$ZGOLD",
+      "direction": "UPWARD",
+      "edgeKind": "CALLS",
+      "refDetail": "STATIC_CALL:zcl_gold_a=\u003erun"
     }
   ],
   "upward": 1,

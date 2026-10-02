@@ -79,18 +79,20 @@ func (g *Graph) CheckBoundaries(rootPackage string, opts *BoundaryOptions) *Boun
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	// Find all nodes in root package
-	rootNodes := make(map[string]bool)
+	// Find all nodes in root package, in ID order so the walk is the same on
+	// every run.
+	var rootNodes []string
 	for _, n := range g.nodes {
 		if strings.EqualFold(n.Package, rootPkg) {
-			rootNodes[n.ID] = true
+			rootNodes = append(rootNodes, n.ID)
 		}
 	}
+	sort.Strings(rootNodes)
 
 	// Analyze outgoing edges from root package nodes
 	violatingObjs := make(map[string]bool)
 
-	for nodeID := range rootNodes {
+	for _, nodeID := range rootNodes {
 		edges := g.outEdges[nodeID]
 		for _, e := range edges {
 			// Filter by edge kind if specified
@@ -166,8 +168,62 @@ func (g *Graph) CheckBoundaries(rootPackage string, opts *BoundaryOptions) *Boun
 		report.ViolatingObjects = append(report.ViolatingObjects, id)
 	}
 	sort.Strings(report.ViolatingObjects)
+	sortBoundaryEntries(report.Entries)
 
 	return report
+}
+
+// verdictOrder ranks verdicts from the one that needs acting on to the ones
+// that are fine: a violation, then a reference that could not be judged (it may
+// hide one), then a dynamic call, then the allowed kinds.
+var verdictOrder = []BoundaryVerdict{
+	VerdictViolation, VerdictUnknown, VerdictDynamic, VerdictAllowed, VerdictSamePackage, VerdictStandard,
+}
+
+func verdictRank(v BoundaryVerdict) int {
+	for i, o := range verdictOrder {
+		if o == v {
+			return i
+		}
+	}
+	return len(verdictOrder)
+}
+
+// sortBoundaryEntries orders entries worst verdict first (verdictOrder), then by
+// the referencing object's ID. Within one object the entries keep the order its
+// edges were added in, which for parsed source is the order of the statements.
+func sortBoundaryEntries(entries []BoundaryEntry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		a, b := entries[i], entries[j]
+		if ra, rb := verdictRank(a.Verdict), verdictRank(b.Verdict); ra != rb {
+			return ra < rb
+		}
+		return a.From.ID < b.From.ID
+	})
+}
+
+// CrossedPackageCount is one line of "Packages crossed".
+type CrossedPackageCount struct {
+	Package string
+	Refs    int
+}
+
+// SortedCrossedPackages lists the crossed packages with the most references
+// first, and by name where the counts tie. CrossedPackages is a map, and
+// printing it as it ranged put the same packages in a different order on every
+// run.
+func (r *BoundaryReport) SortedCrossedPackages() []CrossedPackageCount {
+	out := make([]CrossedPackageCount, 0, len(r.CrossedPackages))
+	for pkg, n := range r.CrossedPackages {
+		out = append(out, CrossedPackageCount{Package: pkg, Refs: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Refs != out[j].Refs {
+			return out[i].Refs > out[j].Refs
+		}
+		return out[i].Package < out[j].Package
+	})
+	return out
 }
 
 // classify determines the verdict for a dependency target.
@@ -273,8 +329,8 @@ func (r *BoundaryReport) FormatText() string {
 
 	if len(r.CrossedPackages) > 0 {
 		sb.WriteString("\n  Packages crossed:\n")
-		for pkg, cnt := range r.CrossedPackages {
-			sb.WriteString(fmt.Sprintf("    %s — %d refs\n", pkg, cnt))
+		for _, c := range r.SortedCrossedPackages() {
+			sb.WriteString(fmt.Sprintf("    %s — %d refs\n", c.Package, c.Refs))
 		}
 	}
 
@@ -288,7 +344,8 @@ func (r *BoundaryReport) FormatText() string {
 			"and an unattributed reference is one this cannot judge.\n", r.Unknown, r.TotalDeps))
 		for _, e := range r.Entries {
 			if e.Verdict == VerdictUnknown {
-				sb.WriteString(fmt.Sprintf("    unattributed: %s → %s\n", e.From, e.To))
+				// IDs, not the nodes: a *Node formats as a Go struct literal.
+				sb.WriteString(fmt.Sprintf("    unattributed: %s → %s (%s)\n", e.From.ID, e.To.ID, e.Edge.Kind))
 			}
 		}
 		if r.Violations > 0 {

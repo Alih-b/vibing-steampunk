@@ -105,11 +105,7 @@ func printCLIHealth(result *cliHealthResult, details bool) {
 		fmt.Printf("\n--- Boundary Crossings ---\n\n")
 
 		// Group by direction, show violations first
-		dirOrder := []graph.CrossingDirection{
-			graph.CrossSibling, graph.CrossDownward, graph.CrossCommonDown,
-			graph.CrossExternal, graph.CrossUpward, graph.CrossUpwardSkip, graph.CrossCommon,
-		}
-		for _, dir := range dirOrder {
+		for _, dir := range graph.CrossingDirectionOrder {
 			var entries []graph.CrossingEntry
 			for _, e := range result.CrossingDetails.Entries {
 				if e.Direction == dir {
@@ -434,11 +430,7 @@ func printCLIHealthHTML(result *cliHealthResult, details bool) {
 	// Crossing details
 	if result.CrossingDetails != nil && len(result.CrossingDetails.Entries) > 0 {
 		fmt.Println(`<h2 id="boundaries">Boundary Crossings</h2>`)
-		dirOrder := []graph.CrossingDirection{
-			graph.CrossSibling, graph.CrossDownward, graph.CrossCommonDown,
-			graph.CrossExternal, graph.CrossUpward, graph.CrossUpwardSkip, graph.CrossCommon,
-		}
-		for _, dir := range dirOrder {
+		for _, dir := range graph.CrossingDirectionOrder {
 			var entries []graph.CrossingEntry
 			for _, e := range result.CrossingDetails.Entries {
 				if e.Direction == dir {

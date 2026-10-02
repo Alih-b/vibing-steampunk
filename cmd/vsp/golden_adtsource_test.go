@@ -114,6 +114,7 @@ func cliGoldenCases() []goldenCase {
 		{name: "where_used_config_gold_text", world: gold, cmd: graphWhereUsedConfigCmd, run: runGraphWhereUsedConfig, args: []string{"ZGOLD_VAR"}},
 		{name: "where_used_config_gold_json", world: gold, cmd: graphWhereUsedConfigCmd, run: runGraphWhereUsedConfig, args: []string{"ZGOLD_VAR"}, flags: map[string]string{"format": "json"}},
 		{name: "where_used_config_wbcrossgt_down_text", world: func() fakesap.World { return fakesap.CrossDown(false) }, cmd: graphWhereUsedConfigCmd, run: runGraphWhereUsedConfig, args: []string{"ZGOLD_VAR"}},
+		{name: "where_used_config_wbcrossgt_down_json", world: func() fakesap.World { return fakesap.CrossDown(false) }, cmd: graphWhereUsedConfigCmd, run: runGraphWhereUsedConfig, args: []string{"ZGOLD_VAR"}, flags: map[string]string{"format": "json"}},
 		{name: "where_used_config_both_down_text", world: func() fakesap.World { return fakesap.CrossDown(true) }, cmd: graphWhereUsedConfigCmd, run: runGraphWhereUsedConfig, args: []string{"ZGOLD_VAR"}},
 
 		{name: "loads_gold_both_text", world: gold, cmd: loadsCmd, run: runLoads, args: []string{"ZCL_GOLD_A"}, flags: map[string]string{"direction": "both"}},

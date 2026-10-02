@@ -199,11 +199,7 @@ func printCrossingsText(report *graph.CrossingReport) {
 		return
 	}
 
-	dirOrder := []graph.CrossingDirection{
-		graph.CrossSibling, graph.CrossDownward, graph.CrossCommonDown,
-		graph.CrossExternal, graph.CrossUpward, graph.CrossUpwardSkip, graph.CrossCommon,
-	}
-	for _, dir := range dirOrder {
+	for _, dir := range graph.CrossingDirectionOrder {
 		var entries []graph.CrossingEntry
 		for _, e := range report.Entries {
 			if e.Direction == dir {
@@ -373,11 +369,7 @@ func printCrossingsMD(report *graph.CrossingReport) {
 	}
 	fmt.Print("\n## Boundary Crossings\n\n")
 
-	dirOrder := []graph.CrossingDirection{
-		graph.CrossSibling, graph.CrossDownward, graph.CrossCommonDown,
-		graph.CrossExternal, graph.CrossUpward, graph.CrossUpwardSkip, graph.CrossCommon,
-	}
-	for _, dir := range dirOrder {
+	for _, dir := range graph.CrossingDirectionOrder {
 		var entries []graph.CrossingEntry
 		for _, e := range report.Entries {
 			if e.Direction == dir {

@@ -125,7 +125,7 @@ func (s *Server) collectPackageTests(ctx context.Context, pkg string) healthSign
 
 	var testClasses []adt.PackageObject
 	for _, obj := range content.Objects {
-		if strings.ToUpper(obj.Type) == "CLAS" && graph.IsTestCaller(obj.Name, "") {
+		if adtsource.SourceKind(obj.Type) == "CLAS" && graph.IsTestCaller(obj.Name, "") {
 			testClasses = append(testClasses, obj)
 		}
 	}
@@ -263,41 +263,16 @@ func (s *Server) collectObjectBoundaries(ctx context.Context, objType, objName, 
 }
 
 func (s *Server) collectPackageBoundaries(ctx context.Context, pkg string) healthSignal {
-	g := graph.New()
-	content, err := s.adtClient.GetPackage(ctx, pkg)
+	// The same scan check_boundaries makes. This collector had its own loop,
+	// which took only classes, programs and interfaces and dropped every other
+	// entry without a word — a package of function groups calling across
+	// packages came back with nothing read, or with the classes beside them
+	// read and the groups left out of a verdict that looked complete.
+	scan, err := s.packageGraph(ctx, pkg, 1)
 	if err != nil {
 		return healthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}
 	}
-
-	count := 0
-	skipped := 0
-	var missed []adt.Unsearched
-	for _, obj := range content.Objects {
-		objType := strings.ToUpper(obj.Type)
-		if objType != "CLAS" && objType != "PROG" && objType != "INTF" {
-			continue
-		}
-		if count >= 30 {
-			skipped++
-			continue
-		}
-		source, err := s.adtClient.GetSource(ctx, objType, obj.Name, nil)
-		if err != nil || source == "" {
-			// No source means no edges, and no edges is exactly what a
-			// well-behaved object looks like to CheckBoundaries. Unread code
-			// cannot violate a boundary, so this can only ever undercount.
-			reason := "source came back empty"
-			if err != nil {
-				reason = err.Error()
-			}
-			missed = append(missed, adt.Unsearched{Object: objType + " " + obj.Name, Reason: reason})
-			continue
-		}
-		nodeID := graph.NodeID(objType, obj.Name)
-		g.AddNode(&graph.Node{ID: nodeID, Name: obj.Name, Type: objType, Package: pkg})
-		g.AddSourceDeps(nodeID, source)
-		count++
-	}
+	g, count, missed, skipped := scan.Graph, scan.Read, scan.Unreadable, scan.Truncated
 	unresolved := s.resolvePackages(ctx, g)
 	report := g.CheckBoundaries(pkg, &graph.BoundaryOptions{IncludeDynamic: true})
 	status := "CLEAN"
@@ -327,7 +302,7 @@ func (s *Server) collectPackageBoundaries(ctx context.Context, pkg string) healt
 	)
 	if skipped > 0 {
 		signal.Note = joinNotes(signal.Note, fmt.Sprintf(
-			"only the first %d source-bearing objects were scanned; %d more were not looked at.", count, skipped))
+			"only the first %d source-bearing objects were scanned; %d more were not looked at.", scan.Cap, skipped))
 	}
 	if count == 0 {
 		signal.Note = joinNotes(signal.Note,
@@ -355,7 +330,7 @@ func (s *Server) collectPackageStaleness(ctx context.Context, pkg string) health
 	attempted := 0
 	var missed []adt.Unsearched
 	for _, obj := range content.Objects {
-		objType := strings.ToUpper(obj.Type)
+		objType := adtsource.SourceKind(obj.Type)
 		if objType != "CLAS" && objType != "PROG" && objType != "INTF" {
 			continue
 		}

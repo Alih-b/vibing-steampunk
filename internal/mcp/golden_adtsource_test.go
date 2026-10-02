@@ -127,13 +127,12 @@ func TestGoldenADTSourceResolvePackages(t *testing.T) {
 				g.AddNode(&graph.Node{ID: id, Name: parts[1], Type: parts[0]})
 			}
 			missed := s.resolvePackages(context.Background(), g)
-			// The order of a failed batch's names follows the graph's map, so
-			// the list is sorted here; its contents and count are what is pinned.
+			// Not sorted here: FailedLookups promises an order (stage, then
+			// name), and this pins it.
 			var missedLines []string
 			for _, m := range missed {
 				missedLines = append(missedLines, fmt.Sprintf("%s: %s\n", m.Object, m.Reason))
 			}
-			sort.Strings(missedLines)
 			var nodes []string
 			for _, n := range g.Nodes() {
 				nodes = append(nodes, fmt.Sprintf("%s type=%s package=%s\n", n.ID, n.Type, n.Package))

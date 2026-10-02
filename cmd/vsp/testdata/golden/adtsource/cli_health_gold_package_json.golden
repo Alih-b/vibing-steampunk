@@ -39,8 +39,8 @@
       "status": "STALE",
       "details": {
         "age_days": N,
-        "checked": 0,
-        "last_changed": "2019-03-01T00:00:00Z"
+        "checked": 2,
+        "last_changed": "2019-03-01T10:00:00Z"
       }
     },
     "tests": {
@@ -165,23 +165,23 @@
         "sourceObject": "ZCL_GOLD_A",
         "sourceType": "CLAS",
         "sourcePackage": "$ZGOLD",
-        "targetObject": "ZCL_FOREIGN",
-        "targetType": "CLAS",
-        "targetPackage": "$ZOTHER",
-        "direction": "EXTERNAL",
-        "edgeKind": "REFERENCES",
-        "refDetail": "TYPE_REF_TO:zcl_foreign"
-      },
-      {
-        "sourceObject": "ZCL_GOLD_A",
-        "sourceType": "CLAS",
-        "sourcePackage": "$ZGOLD",
         "targetObject": "ZGOLD_REPORT",
         "targetType": "PROG",
         "targetPackage": "$ZGOLD_SUB",
         "direction": "DOWNWARD",
         "edgeKind": "CALLS",
         "refDetail": "SUBMIT:zgold_report"
+      },
+      {
+        "sourceObject": "ZCL_GOLD_A",
+        "sourceType": "CLAS",
+        "sourcePackage": "$ZGOLD",
+        "targetObject": "ZCL_FOREIGN",
+        "targetType": "CLAS",
+        "targetPackage": "$ZOTHER",
+        "direction": "EXTERNAL",
+        "edgeKind": "REFERENCES",
+        "refDetail": "TYPE_REF_TO:zcl_foreign"
       },
       {
         "sourceObject": "ZCL_GOLD_A",
@@ -209,23 +209,23 @@
         "sourceObject": "ZGOLD_REPORT",
         "sourceType": "PROG",
         "sourcePackage": "$ZGOLD_SUB",
-        "targetObject": "ZCL_GOLD_A",
-        "targetType": "CLAS",
-        "targetPackage": "$ZGOLD",
-        "direction": "UPWARD",
-        "edgeKind": "CALLS",
-        "refDetail": "STATIC_CALL:zcl_gold_a=\u003erun"
-      },
-      {
-        "sourceObject": "ZGOLD_REPORT",
-        "sourceType": "PROG",
-        "sourcePackage": "$ZGOLD_SUB",
         "targetObject": "Z_GOLD_FM",
         "targetType": "FUNC",
         "targetPackage": "$ZOTHER",
         "direction": "EXTERNAL",
         "edgeKind": "CALLS",
         "refDetail": "FM:Z_GOLD_FM"
+      },
+      {
+        "sourceObject": "ZGOLD_REPORT",
+        "sourceType": "PROG",
+        "sourcePackage": "$ZGOLD_SUB",
+        "targetObject": "ZCL_GOLD_A",
+        "targetType": "CLAS",
+        "targetPackage": "$ZGOLD",
+        "direction": "UPWARD",
+        "edgeKind": "CALLS",
+        "refDetail": "STATIC_CALL:zcl_gold_a=\u003erun"
       }
     ],
     "upward": 1,
@@ -250,9 +250,13 @@
 === error
 <nil>
 === requests
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/includes/main/versions
 GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/includes/main/versions
 GET /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_TEST/includes/main/versions
 GET /sap/bc/adt/oo/classes/ZCL_GOLD_TEST/source/main
+GET /sap/bc/adt/oo/interfaces/ZIF_GOLD/includes/main/versions
 GET /sap/bc/adt/oo/interfaces/ZIF_GOLD/source/main
 GET /sap/bc/adt/programs/programs/ZGOLD_REPORT/source/main
 GET atc/customizing
@@ -268,7 +272,6 @@ SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZGOLD%'
 SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZGOLD%'
 SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
 SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
-SQL SELECT MAX( AS4DATE ) AS LAST_DATE FROM E070 WHERE TRKORR IN ( SELECT TRKORR FROM E071 WHERE OBJ_NAME IN ( SELECT OBJ_NAME FROM TADIR WHERE DEVCLASS LIKE '$ZGOLD%' ) )
 SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS IN ('$ZGOLD') AND PGMID = 'R3TR'
 SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS IN ('$ZGOLD_SUB') AND PGMID = 'R3TR'
 SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')

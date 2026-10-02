@@ -475,7 +475,7 @@ func collectPackageStalenessCLI(ctx context.Context, client *adt.Client, pkg str
 	// the answer someone acts on by going looking for the owner.
 	var missed []adt.Unsearched
 	for _, obj := range content.Objects {
-		objType := strings.ToUpper(obj.Type)
+		objType := adtsource.SourceKind(obj.Type)
 		if objType != "CLAS" && objType != "PROG" && objType != "INTF" {
 			continue
 		}

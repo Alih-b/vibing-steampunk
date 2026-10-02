@@ -15,6 +15,11 @@ import (
 // chose. These helpers resolve the group instead of demanding it, and give the
 // module the same one-call edit that programs and classes already have.
 
+// FunctionGroupFromURI returns the group named in a function module's ADT URI
+// (…/functions/groups/<group>/fmodules/<module>), upper-cased, or "" when the
+// URI names none.
+func FunctionGroupFromURI(uri string) string { return groupFromFunctionURI(uri) }
+
 // groupFromFunctionURI extracts the group from a module's ADT URI.
 func groupFromFunctionURI(uri string) string {
 	const marker = "/functions/groups/"

@@ -25,14 +25,6 @@ false
       "status": "UNKNOWN",
       "unsearched": [
         {
-          "object": "FUGR ZGOLD_FG",
-          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
-        },
-        {
-          "object": "FUGR ZLOST_FG",
-          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
-        },
-        {
           "object": "ZCL_NARROW",
           "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
         },
@@ -43,9 +35,17 @@ false
         {
           "object": "Z_LOST_FM",
           "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+        },
+        {
+          "object": "FUGR ZGOLD_FG",
+          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+        },
+        {
+          "object": "FUGR ZLOST_FG",
+          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
         }
       ],
-      "note": "package lookup failed for objects in this graph, so they count as unknown rather than checked — this report can only under-report violations.\n5 of 5 objects could not be searched, so this is not a complete answer:\n  FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  ZCL_NARROW: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+      "note": "package lookup failed for objects in this graph, so they count as unknown rather than checked — this report can only under-report violations.\n5 of 5 objects could not be searched, so this is not a complete answer:\n  ZCL_NARROW: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
     },
     "staleness": {
       "status": "AGING",
@@ -65,7 +65,7 @@ false
     }
   },
   "notes": [
-    "boundaries: package lookup failed for objects in this graph, so they count as unknown rather than checked — this report can only under-report violations.\n5 of 5 objects could not be searched, so this is not a complete answer:\n  FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  ZCL_NARROW: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+    "boundaries: package lookup failed for objects in this graph, so they count as unknown rather than checked — this report can only under-report violations.\n5 of 5 objects could not be searched, so this is not a complete answer:\n  ZCL_NARROW: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
   ]
 }
 === requests

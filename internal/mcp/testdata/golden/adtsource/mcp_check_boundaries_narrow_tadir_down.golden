@@ -19,7 +19,7 @@ Total dependencies: 2
     $ZOTHER — 1 refs
 
   ? INCONCLUSIVE — 1 of 2 references could not be attributed to a package, and an unattributed reference is one this cannot judge.
-    unattributed: &{CLAS:ZCL_NARROW ZCL_NARROW CLAS $ZNARROW [] map[]} → &{FUGR:Z_LOST_FM Z_LOST_FM FUGR  [] map[]}
+    unattributed: CLAS:ZCL_NARROW → FUGR:Z_LOST_FM (CALLS)
   ✗ 1 violation(s) in 1 object(s) among the references it could judge
 
 package lookup failed for objects in this graph, so they count as unknown rather than checked — this report can only under-report violations.

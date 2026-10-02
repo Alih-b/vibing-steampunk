@@ -9,7 +9,7 @@ atc:        FINDINGS {"errors":1,"findings":4,"infos":2,"warnings":1}
 boundaries: VIOLATIONS {"downward":1,"dynamic":1,"external":4,"objects_scanned":4,"packages_scanned":2,"upward":1}
             1 of 3 items could not be searched, so this is not a complete answer:
             CLAS ZCL_GOLD_DENIED: getting class source: ADT API error: status 403 at /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main: No authorisation to display ZCL_GOLD_DENIED
-staleness:  STALE {"age_days":N,"checked":0,"last_changed":"2019-03-01T00:00:00Z"}
+staleness:  STALE {"age_days":N,"checked":2,"last_changed":"2019-03-01T10:00:00Z"}
 
 --- Test Details ---
 
@@ -51,9 +51,13 @@ staleness:  STALE {"age_days":N,"checked":0,"last_changed":"2019-03-01T00:00:00Z
 === error
 <nil>
 === requests
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/includes/main/versions
 GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/includes/main/versions
 GET /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_TEST/includes/main/versions
 GET /sap/bc/adt/oo/classes/ZCL_GOLD_TEST/source/main
+GET /sap/bc/adt/oo/interfaces/ZIF_GOLD/includes/main/versions
 GET /sap/bc/adt/oo/interfaces/ZIF_GOLD/source/main
 GET /sap/bc/adt/programs/programs/ZGOLD_REPORT/source/main
 GET atc/customizing
@@ -69,7 +73,6 @@ SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZGOLD%'
 SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZGOLD%'
 SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
 SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
-SQL SELECT MAX( AS4DATE ) AS LAST_DATE FROM E070 WHERE TRKORR IN ( SELECT TRKORR FROM E071 WHERE OBJ_NAME IN ( SELECT OBJ_NAME FROM TADIR WHERE DEVCLASS LIKE '$ZGOLD%' ) )
 SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS IN ('$ZGOLD') AND PGMID = 'R3TR'
 SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS IN ('$ZGOLD_SUB') AND PGMID = 'R3TR'
 SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')

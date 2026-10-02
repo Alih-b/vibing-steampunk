@@ -29,6 +29,15 @@ false
       "confidence": "MEDIUM",
       "edge_count": 1
     }
+  ],
+  "unsearched": [
+    {
+      "object": "PROG ZGOLD_MISSING",
+      "reason": "Failed to read source: ADT API error: status 404 at /sap/bc/adt/programs/programs/zgold_missing/source/main: Resource does not exist"
+    }
+  ],
+  "notes": [
+    "1 of 3 objects could not be searched, so this is not a complete answer:\n  PROG ZGOLD_MISSING: Failed to read source: ADT API error: status 404 at /sap/bc/adt/programs/programs/zgold_missing/source/main: Resource does not exist"
   ]
 }
 === requests

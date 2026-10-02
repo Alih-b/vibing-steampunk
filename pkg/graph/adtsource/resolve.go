@@ -101,6 +101,9 @@ func ResolvePackages(ctx context.Context, q Querier, g *graph.Graph, onFailure f
 	if len(r.names) == 0 {
 		return r
 	}
+	// g.Nodes() is in map order. Sorted, the batches, the statements sent and
+	// the order failures are recorded in are the same on every run.
+	sort.Strings(r.names)
 	fail := func(f Failure) {
 		r.Failures = append(r.Failures, f)
 		if onFailure != nil {
@@ -276,26 +279,47 @@ func (r *Resolution) Unplaced() []adt.Unsearched {
 // This is the view the MCP server reports. Where a query returned no result at
 // all, a TFDIR or group lookup says "the source came back empty", as it always
 // has there.
+//
+// The list is in the order the lookups are made — TADIR, then TFDIR, then the
+// function groups — and by name within each. It used to follow the graph's map
+// order, so the five a note names out of a longer list changed between runs.
 func (r *Resolution) FailedLookups() []adt.Unsearched {
 	if r == nil {
 		return nil
 	}
-	var out []adt.Unsearched
+	type lookup struct {
+		stage Stage
+		adt.Unsearched
+	}
+	var all []lookup
+	add := func(st Stage, object, reason string) {
+		all = append(all, lookup{st, adt.Unsearched{Object: object, Reason: reason}})
+	}
 	for _, f := range r.Failures {
 		switch f.Stage {
 		case StageTADIR:
 			for _, n := range f.Names {
-				out = append(out, adt.Unsearched{Object: n, Reason: reasonOr(f.Err, "TADIR query returned nothing at all")})
+				add(f.Stage, n, reasonOr(f.Err, "TADIR query returned nothing at all"))
 			}
 		case StageTFDIR:
 			for _, n := range f.Names {
-				out = append(out, adt.Unsearched{Object: "FUNC " + n, Reason: reasonOr(f.Err, "the source came back empty")})
+				add(f.Stage, "FUNC "+n, reasonOr(f.Err, "the source came back empty"))
 			}
 		case StageFUGR:
 			for _, fg := range f.Groups {
-				out = append(out, adt.Unsearched{Object: "FUGR " + fg, Reason: reasonOr(f.Err, "the source came back empty")})
+				add(f.Stage, "FUGR "+fg, reasonOr(f.Err, "the source came back empty"))
 			}
 		}
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].stage != all[j].stage {
+			return all[i].stage < all[j].stage
+		}
+		return all[i].Object < all[j].Object
+	})
+	var out []adt.Unsearched
+	for _, l := range all {
+		out = append(out, l.Unsearched)
 	}
 	return out
 }

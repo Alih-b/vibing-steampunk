@@ -7,12 +7,12 @@ DYNAMIC:LV_FM type=DYNAMIC package=
 FUGR:Z_GOLD_FM type=FUGR package=
 FUGR:Z_LOST_FM type=FUGR package=
 === missed (6)
-FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
-FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
 ZCL_FOREIGN: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
 ZCL_GOLD_A: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
 Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
 Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
 === requests
 SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('ZCL_FOREIGN')
 SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('ZCL_GOLD_A')

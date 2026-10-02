@@ -5,8 +5,8 @@ Package Boundary Analysis: $ZGOLD
 Total dependencies: 2
 
 --- VIOLATIONS (2) ---
-  ✗  → ZCL_FOREIGN (REFERENCES, pkg: $ZOTHER) [TYPE_REF_TO:zcl_foreign]
   ✗  → Z_GOLD_FM (CALLS, pkg: $ZOTHER) [FM:Z_GOLD_FM]
+  ✗  → ZCL_FOREIGN (REFERENCES, pkg: $ZOTHER) [TYPE_REF_TO:zcl_foreign]
 
 --- SUMMARY ---
   Standard (SAP):    0

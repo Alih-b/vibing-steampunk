@@ -21,27 +21,52 @@ false
       }
     },
     "boundaries": {
-      "status": "UNKNOWN",
+      "status": "CLEAN",
       "details": {
         "crossed_packages": {},
-        "scanned_objects": 0,
+        "scanned_objects": 1,
         "violating_objects": null,
         "violations": 0
       },
-      "note": "no source-bearing objects were read in this package, so there is no boundary verdict here — not a clean one."
+      "unsearched": [
+        {
+          "object": "Z_GOLD_FM",
+          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+        },
+        {
+          "object": "Z_LOST_FM",
+          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+        },
+        {
+          "object": "FUGR ZGOLD_FG",
+          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+        },
+        {
+          "object": "FUGR ZLOST_FG",
+          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+        }
+      ],
+      "note": "package lookup failed for objects in this graph, so they count as unknown rather than checked — this report can only under-report violations.\n4 of 4 objects could not be searched, so this is not a complete answer:\n  Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
     },
     "staleness": {
-      "status": "UNKNOWN"
+      "status": "AGING",
+      "details": {
+        "age_days": N,
+        "checked": 1,
+        "last_changed": "2026-01-01T10:00:00Z"
+      }
     },
     "tests": {
       "status": "NONE"
     }
   },
   "notes": [
-    "boundaries: no source-bearing objects were read in this package, so there is no boundary verdict here — not a clean one."
+    "boundaries: package lookup failed for objects in this graph, so they count as unknown rather than checked — this report can only under-report violations.\n4 of 4 objects could not be searched, so this is not a complete answer:\n  Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
   ]
 }
 === requests
+GET /sap/bc/adt/oo/classes/ZCL_NARROW/includes/main/versions
+GET /sap/bc/adt/oo/classes/ZCL_NARROW/source/main
 GET atc/customizing
 GET atc/worklists/WL1
 GET nodestructure $ZNARROW
@@ -49,3 +74,9 @@ GET nodestructure $ZNARROW
 GET nodestructure $ZNARROW
 POST atc/runs /sap/bc/adt/packages/$znarrow
 POST atc/worklists
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

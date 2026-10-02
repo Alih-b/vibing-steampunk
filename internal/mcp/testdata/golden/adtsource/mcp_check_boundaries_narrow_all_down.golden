@@ -13,15 +13,15 @@ Total dependencies: 2
   Unknown:           2
 
   ? INCONCLUSIVE — 2 of 2 references could not be attributed to a package, and an unattributed reference is one this cannot judge.
-    unattributed: &{CLAS:ZCL_NARROW ZCL_NARROW CLAS $ZNARROW [] map[]} → &{FUGR:Z_GOLD_FM Z_GOLD_FM FUGR  [] map[]}
-    unattributed: &{CLAS:ZCL_NARROW ZCL_NARROW CLAS $ZNARROW [] map[]} → &{FUGR:Z_LOST_FM Z_LOST_FM FUGR  [] map[]}
+    unattributed: CLAS:ZCL_NARROW → FUGR:Z_GOLD_FM (CALLS)
+    unattributed: CLAS:ZCL_NARROW → FUGR:Z_LOST_FM (CALLS)
 
 package lookup failed for objects in this graph, so they count as unknown rather than checked — this report can only under-report violations.
 4 of 4 objects could not be searched, so this is not a complete answer:
-  FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
-  FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
   Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
   Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+  FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+  FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
 
 === requests
 GET /sap/bc/adt/oo/classes/ZCL_NARROW/source/main

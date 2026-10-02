@@ -70,3 +70,56 @@ func D010INCRows(rows []adt.LoadRow) []graph.D010INCRow {
 	}
 	return out
 }
+
+// GrepFailure says whether a grep of one object's source failed, and why.
+//
+// adt.Client.GrepObject reports a source it could not read in the result, not
+// in the error: Success stays false and Message carries the reason. A caller
+// that looks only at the error and at the matches files that object as read
+// and not matching, which is the opposite fact, and the one someone deletes a
+// variable on.
+func GrepFailure(res *adt.GrepObjectResult, err error) (reason string, failed bool) {
+	switch {
+	case err != nil:
+		return err.Error(), true
+	case res == nil:
+		return "the grep returned no result", true
+	case !res.Success:
+		if res.Message == "" {
+			return "the source could not be read", true
+		}
+		return res.Message, true
+	}
+	return "", false
+}
+
+// TVARVCTableGaps names the cross-reference tables TVARVCReaders could not
+// read, in the words both front ends report them in.
+func TVARVCTableGaps(wbErr, crossErr error) []adt.Unsearched {
+	var gaps []adt.Unsearched
+	if wbErr != nil {
+		gaps = append(gaps, adt.Unsearched{Object: "WBCROSSGT (object-oriented code)", Reason: wbErr.Error()})
+	}
+	if crossErr != nil {
+		gaps = append(gaps, adt.Unsearched{Object: "CROSS (classic procedural code)", Reason: crossErr.Error()})
+	}
+	return gaps
+}
+
+// ConfigGapNote renders the gaps of a TVARVC where-used answer as a note, or
+// "" when there are none. The total is every candidate plus every table that
+// could not be asked: a candidate whose source could not be read is both a
+// reader row and a gap, and is counted once.
+func ConfigGapNote(refs []graph.TVARVCReference, gaps []adt.Unsearched) string {
+	total := len(refs)
+	candidate := make(map[string]bool, len(refs))
+	for _, r := range refs {
+		candidate[r.ObjectType+" "+r.ObjectName] = true
+	}
+	for _, g := range gaps {
+		if !candidate[g.Object] {
+			total++
+		}
+	}
+	return adt.UnsearchedNote(gaps, total, "object")
+}

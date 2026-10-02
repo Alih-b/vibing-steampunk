@@ -217,57 +217,126 @@ func (s *Server) packageGraph(ctx context.Context, pkg string, depth int) (*pack
 	var unreadable []adt.Unsearched
 	truncated := 0
 
-	for _, obj := range pkgContent.Objects {
-		// The package listing carries SAP's own two-part code — CLAS/OC,
-		// PROG/P, INTF/OI — and this compared it against the bare kind, so
-		// every object was skipped before anything was read. An empty graph
-		// then has no boundary to cross, and the answer was "Total
-		// dependencies: 0, CLEAN" for a package the CLI finds three
-		// crossings in. Nothing reported a failure because nothing was
-		// attempted.
-		objType := strings.ToUpper(obj.Type)
-		if i := strings.Index(objType, "/"); i > 0 {
-			objType = objType[:i]
-		}
-		if objType != "CLAS" && objType != "PROG" && objType != "FUGR" && objType != "INTF" {
-			continue
-		}
-
+	// read reads one object into the graph, or records why it could not, and
+	// says whether it was read.
+	read := func(objType, name, parent string) bool {
 		if count >= maxObjects {
 			// The cap is counted rather than broken on, because "we stopped
 			// at 50 of 130" and "the package has 50 objects" are different
 			// answers and the report cannot otherwise tell them apart.
 			truncated++
-			continue
+			return false
 		}
-
 		// The type is passed, not omitted. GetSource switches on it and has
 		// no branch for the empty string, so asking without one failed for
 		// every object in the package — and an object that contributes no
 		// edges is indistinguishable from a clean one, which is how this
 		// answered "Total dependencies: 0, CLEAN" for a package the CLI
 		// finds three boundary crossings in.
-		source, err := s.adtClient.GetSource(ctx, objType, obj.Name, nil)
+		source, missedParts, err := s.readPackageObjectSource(ctx, objType, name, parent)
 		if err != nil {
 			// An object we could not read contributes no edges, and no
 			// edges is what a clean object looks like. Record it or the
 			// verdict below is about code nobody opened.
-			unreadable = append(unreadable, adt.Unsearched{Object: objType + " " + obj.Name, Reason: err.Error()})
-			continue
+			unreadable = append(unreadable, adt.Unsearched{Object: objType + " " + name, Reason: err.Error()})
+			return false
 		}
-
-		nodeID := graph.NodeID(objType, obj.Name)
+		// A function group is read part by part, and a part that failed is
+		// as absent from the edges as a whole object would be.
+		for _, m := range missedParts {
+			unreadable = append(unreadable, adt.Unsearched{Object: objType + " " + name + ": " + m.Object, Reason: m.Reason})
+		}
+		// A source that came back empty has no edges, which is what a clean
+		// object looks like; it is not one that was read. (A group whose
+		// every part failed is already named part by part above.)
+		if strings.TrimSpace(source) == "" {
+			if len(missedParts) == 0 {
+				unreadable = append(unreadable, adt.Unsearched{Object: objType + " " + name, Reason: "empty source"})
+			}
+			return false
+		}
+		nodeID := graph.NodeID(objType, name)
 		g.AddNode(&graph.Node{
 			ID:      nodeID,
-			Name:    obj.Name,
+			Name:    name,
 			Type:    objType,
 			Package: strings.ToUpper(pkg),
 		})
-
 		g.AddSourceDeps(nodeID, source)
 		count++
+		return true
+	}
+
+	// The package listing carries SAP's own two-part code — CLAS/OC, PROG/P,
+	// INTF/OI. It is mapped, not cut at the slash (adtsource.SourceKind):
+	// PROG/I is an include and is read as one, FUGR/FF is one function module
+	// and not its group. A code that is neither a source kind nor one of the
+	// few excused non-source types is reported, not dropped: an entry nobody
+	// read contributes no edges, and no edges is what a clean object looks
+	// like.
+	type module struct{ name, group string }
+	var modules []module
+	groupsRead := map[string]bool{}
+	for _, obj := range pkgContent.Objects {
+		objType := adtsource.SourceKind(obj.Type)
+		switch objType {
+		case "CLAS", "PROG", "INTF", "INCL":
+			read(objType, obj.Name, "")
+		case "FUGR":
+			// Only a group that was actually read covers its modules. One
+			// refused, empty or past the cap leaves them to be read alone.
+			if read(objType, obj.Name, "") {
+				groupsRead[strings.ToUpper(obj.Name)] = true
+			}
+		case "FUNC":
+			// Decided after the walk, once it is known which groups are read.
+			modules = append(modules, module{obj.Name, adt.FunctionGroupFromURI(obj.URI)})
+		default:
+			if !adtsource.IsNonSourceType(obj.Type) {
+				unreadable = append(unreadable, adt.Unsearched{
+					Object: obj.Type + " " + obj.Name,
+					Reason: "listing type " + obj.Type + " is not one this scan reads source for, so its dependencies are not in this verdict",
+				})
+			}
+		}
+	}
+
+	// A function module's source is read with its group's, and reading it
+	// again would count a part as another whole. But only when the group is
+	// in this listing and was read: a module whose group lies elsewhere, was
+	// left beyond the cap, or could not be read, is read on its own.
+	for _, m := range modules {
+		group := m.group
+		if group == "" {
+			resolved, err := s.adtClient.ResolveFunctionGroup(ctx, m.name)
+			if err != nil {
+				unreadable = append(unreadable, adt.Unsearched{Object: "FUNC " + m.name, Reason: "its function group could not be determined: " + err.Error()})
+				continue
+			}
+			group = strings.ToUpper(resolved)
+		}
+		if groupsRead[group] {
+			continue
+		}
+		read("FUNC", m.name, group)
 	}
 	return &packageScan{Graph: g, Read: count, Unreadable: unreadable, Truncated: truncated, Cap: maxObjects}, nil
+}
+
+// readPackageObjectSource reads the source of one object from a package
+// listing. A function group has no single source: GetSource answers for FUGR
+// with the group's metadata as JSON, which parses to no dependencies at all,
+// so a group calling across packages read that way came out clean. Its
+// includes and modules are read instead, and the ones that could not be read
+// are returned.
+//
+// parent is a function module's group, and empty otherwise.
+func (s *Server) readPackageObjectSource(ctx context.Context, objType, name, parent string) (string, []adt.Unsearched, error) {
+	if objType == "FUGR" {
+		return s.adtClient.GetFunctionGroupAllSources(ctx, name)
+	}
+	source, err := s.adtClient.GetSource(ctx, objType, name, &adt.GetSourceOptions{Parent: parent})
+	return source, nil, err
 }
 
 // resolvePackages queries TADIR to fill in missing package info and correct
@@ -1052,7 +1121,7 @@ func (s *Server) handleWhereUsedConfig(ctx context.Context, request mcp.CallTool
 		Unsearched []adt.Unsearched `json:"unsearched,omitempty"`
 		Notes      []string         `json:"notes,omitempty"`
 	}{ConfigUsageResult: result, Unsearched: gaps}
-	if note := adt.UnsearchedNote(gaps, len(refs)+len(gaps), "object"); note != "" {
+	if note := adtsource.ConfigGapNote(refs, gaps); note != "" {
 		envelope.Notes = append(envelope.Notes, note)
 	}
 
@@ -1137,12 +1206,7 @@ func (s *Server) fetchConfigRefs(ctx context.Context, variable string, doGrep bo
 	if wbErr != nil && crossErr != nil {
 		return nil, nil, fmt.Errorf("neither cross-reference table could be read, so this is not an answer: %v; %v", wbErr, crossErr)
 	}
-	if wbErr != nil {
-		gaps = append(gaps, adt.Unsearched{Object: "WBCROSSGT (object-oriented code)", Reason: wbErr.Error()})
-	}
-	if crossErr != nil {
-		gaps = append(gaps, adt.Unsearched{Object: "CROSS (classic procedural code)", Reason: crossErr.Error()})
-	}
+	gaps = append(gaps, adtsource.TVARVCTableGaps(wbErr, crossErr)...)
 
 	// Step 2: Grep each candidate's source for the variable name
 	var refs []graph.TVARVCReference
@@ -1159,13 +1223,13 @@ func (s *Server) fetchConfigRefs(ctx context.Context, variable string, doGrep bo
 				})
 			} else {
 				grepResult, err := s.adtClient.GrepObject(ctx, objURL, variable, true, 0)
-				switch {
-				case err != nil:
-					// Confirmed=false is the same value we would record for an
-					// object we read and did not find the name in. A failed
-					// grep must not borrow that meaning.
-					gaps = append(gaps, adt.Unsearched{Object: c.Type + " " + c.Name, Reason: err.Error()})
-				case grepResult != nil && len(grepResult.Matches) > 0:
+				// Confirmed=false is the same value we would record for an
+				// object we read and did not find the name in. A failed grep
+				// must not borrow that meaning — and GrepObject reports a
+				// source it could not read in its result, not in err.
+				if reason, failed := adtsource.GrepFailure(grepResult, err); failed {
+					gaps = append(gaps, adt.Unsearched{Object: c.Type + " " + c.Name, Reason: reason})
+				} else if len(grepResult.Matches) > 0 {
 					confirmed = true
 				}
 			}
