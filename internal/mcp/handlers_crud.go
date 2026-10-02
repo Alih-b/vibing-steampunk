@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -63,6 +64,16 @@ func (s *Server) routeCRUDAction(ctx context.Context, action, objectType, object
 		case "OBJECT", "":
 			if getStringParam(params, "object_url") != "" {
 				return s.callHandler(ctx, s.handleDeleteObject, params)
+			}
+		default:
+			// delete <TYPE> <NAME>, as read, edit and create take it (#240).
+			// A type with no delete here falls through, so UI5_FILE and
+			// UI5_APP still reach routeUI5Action.
+			if objectName != "" && deletableByName(objectType) {
+				args := copyParams(params)
+				args["object_type"] = objectType
+				args["object_name"] = objectName
+				return s.callHandler(ctx, s.handleDeleteByName, args)
 			}
 		}
 	}
@@ -608,8 +619,7 @@ func (s *Server) handleDeleteObject(ctx context.Context, request mcp.CallToolReq
 		return newToolResultError("object_url is required"), nil
 	}
 
-	// Optional, as everywhere else: left empty this takes its own lock. DELETE
-	// consumes the handle, so there is nothing to release afterwards (#169).
+	// Optional, as everywhere else: left empty this takes its own lock.
 	lockHandle := ""
 	if lh, ok := request.GetArguments()["lock_handle"].(string); ok {
 		lockHandle = lh
@@ -620,27 +630,123 @@ func (s *Server) handleDeleteObject(ctx context.Context, request mcp.CallToolReq
 		transport = t
 	}
 
-	// When the handler takes its own lock, run DeleteObject's gate first.
-	// Called under the lock, its package lookup is a stateless request that
-	// retires the session the handle belongs to, and the DELETE comes back
-	// 423 (issue #238). A supplied handle was taken in an earlier call, so no
-	// ordering here can protect it; that window is #169.
-	objCtx := ctx
-	if lockHandle == "" {
-		var err error
-		if objCtx, err = s.adtClient.PrepareDelete(ctx, objectURL, transport); err != nil {
+	if lockHandle != "" {
+		// A supplied handle was taken in an earlier call, so the caller owns
+		// the lock and its release; that cross-call window is #169.
+		if err := s.adtClient.DeleteObject(ctx, objectURL, lockHandle, transport); err != nil {
 			return newToolResultError(fmt.Sprintf("Failed to delete object: %v", err)), nil
 		}
+		return mcp.NewToolResultText("Object deleted successfully"), nil
 	}
 
-	err := s.withObjectLockConsumed(objCtx, objectURL, lockHandle, transport, func(handle string) error {
-		return s.adtClient.DeleteObject(objCtx, objectURL, handle, transport)
-	})
+	// The handler's own lock: DeleteObject's gate runs before the LOCK, since
+	// under the lock its package lookup is a stateless request that retires
+	// the session the handle belongs to and the DELETE comes back 423 (issue
+	// #238). The UNLOCK goes out after a successful DELETE too: the DELETE
+	// does not release the ENQUEUE, and the entry stays in SM12 for as long
+	// as the ADT session lives.
+	note, err := s.adtClient.DeleteObjectGated(ctx, objectURL, transport)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("Failed to delete object: %v", err)), nil
 	}
-
+	if note != "" {
+		return mcp.NewToolResultText("Object deleted successfully; " + note), nil
+	}
 	return mcp.NewToolResultText("Object deleted successfully"), nil
+}
+
+// deleteNameTypes are the target types delete <TYPE> <NAME> resolves to an
+// ADT URL without a lookup (FUNC looks up its group when none is given).
+//
+// DEVC is left out on purpose: whether --allowed-packages judges a package
+// by its own name or by its parent's has not been pinned, and a delete gate
+// that may be checking the wrong package is not one to hand a model. A
+// package is still deleted by URL (delete OBJECT), or by git_delete_objects
+// when empty.
+var deleteNameTypes = []string{
+	"PROG", "INCL", "CLAS", "INTF", "FUGR", "FUNC", "TABL", "STRUCT", "DTEL", "DOMA",
+	"TTYP", "DDLS", "DCLS", "BDEF", "SRVD", "SRVB", "MSAG", "XSLT",
+}
+
+// deleteNameTypesLine is deleteNameTypes as help prints it.
+var deleteNameTypesLine = strings.Join(deleteNameTypes, ", ")
+
+// deletableByName reports whether delete <TYPE> <NAME> knows objectType.
+func deletableByName(objectType string) bool {
+	for _, t := range deleteNameTypes {
+		if t == objectType {
+			return true
+		}
+	}
+	return false
+}
+
+// deleteNameRe is what an object name delete <TYPE> <NAME> accepts: letters,
+// digits, _, $ and the / of a namespace. Nothing else -- not a dot, a space or
+// a percent sign -- so the name can only ever be one path segment's worth of
+// object, never a way to address something else.
+var deleteNameRe = regexp.MustCompile(`^[A-Z0-9_/$]*[A-Z0-9][A-Z0-9_/$]*$`)
+
+// validDeleteName reports whether name may go into a delete URL.
+func validDeleteName(name string) bool {
+	return deleteNameRe.MatchString(strings.ToUpper(name))
+}
+
+// deleteURLByName is the ADT URL delete <TYPE> <NAME> deletes at. parent is
+// the function group of a FUNC; the other types ignore it.
+func deleteURLByName(objectType, name, parent string) (string, bool) {
+	switch objectType {
+	case "INCL":
+		return adt.GetObjectURL(adt.ObjectTypeInclude, name, ""), true
+	case "FUNC":
+		if parent == "" {
+			return "", false
+		}
+		return adt.GetObjectURL(adt.ObjectTypeFunctionMod, name, parent), true
+	case "STRUCT":
+		return adt.StructureURL(name), true
+	}
+	return adt.GitObjectURL(objectType, name)
+}
+
+// handleDeleteByName is delete <TYPE> <NAME>: the object's URL is built from
+// its type and name, and it is deleted the way handleDeleteObject deletes a
+// URL. Without lock_handle it locks, deletes and unlocks in this one call.
+func (s *Server) handleDeleteByName(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	objectType := strings.ToUpper(strings.TrimSpace(getStringParam(args, "object_type")))
+	name := strings.TrimSpace(getStringParam(args, "object_name"))
+	if objectType == "" || name == "" {
+		return newToolResultError("delete needs a target \"<TYPE> <NAME>\", e.g. target=\"PROG ZDEMO\""), nil
+	}
+	// Refused before anything is looked up: a FUNC's group is found with a
+	// search, and under --read-only that search is a request for nothing.
+	if err := s.adtClient.Safety().CheckOperation(adt.OpDelete, "DeleteObject"); err != nil {
+		return newToolResultError(fmt.Sprintf("Failed to delete object: %v", err)), nil
+	}
+	parent := firstParam(args, "parent", "parent_name", "function_group")
+	for _, n := range []string{name, parent} {
+		if n != "" && !validDeleteName(n) {
+			return newToolResultError(fmt.Sprintf("delete: %q is not an object name (letters, digits, _, $ and a namespace's /)", n)), nil
+		}
+	}
+	if objectType == "FUNC" && parent == "" {
+		group, err := s.adtClient.ResolveFunctionGroup(ctx, name)
+		if err != nil {
+			return newToolResultError(fmt.Sprintf("Failed to delete object: %v; pass params={\"parent\": \"<group>\"}", err)), nil
+		}
+		parent = group
+	}
+	objectURL, ok := deleteURLByName(objectType, name, parent)
+	if !ok || objectURL == "" {
+		return newToolResultError(fmt.Sprintf("delete: no ADT delete for type %s. Supported: %s; or pass target=\"OBJECT\" with params.object_url",
+			objectType, strings.Join(deleteNameTypes, ", "))), nil
+	}
+	out := copyParams(args)
+	delete(out, "object_type")
+	delete(out, "object_name")
+	out["object_url"] = objectURL
+	return s.handleDeleteObject(ctx, newRequest(out))
 }
 
 func (s *Server) handleMoveObject(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

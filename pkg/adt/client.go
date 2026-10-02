@@ -1313,6 +1313,15 @@ type TableColumn struct {
 // Optional sqlQuery can be a full SELECT statement to filter/transform results
 // (e.g., "SELECT * FROM T000 WHERE MANDT = '001'").
 func (c *Client) GetTableContents(ctx context.Context, tableName string, maxRows int, sqlFilter string) (*TableContentsResult, error) {
+	// A statement in the body is freestyle SQL, whatever the entity name
+	// says: the data preview runs it as given. --block-free-sql refuses it
+	// here, at the one place every caller's statement goes through, before
+	// anything is sent. A plain table read sends no statement.
+	if strings.TrimSpace(sqlFilter) != "" {
+		if err := c.checkSafety(OpFreeSQL, "GetTableContents"); err != nil {
+			return nil, err
+		}
+	}
 	tableName = strings.ToUpper(tableName)
 	if maxRows <= 0 {
 		maxRows = 100

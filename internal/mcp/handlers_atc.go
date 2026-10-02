@@ -17,9 +17,19 @@ func (s *Server) routeATCAction(ctx context.Context, action, objectType, objectN
 		return nil, false, nil
 	}
 	analysisType := getStringParam(params, "type")
+	if analysisType == "" {
+		// Target form: SAP(action="test", target="ATC", params={"object_uri": ...})
+		switch objectType {
+		case "ATC":
+			analysisType = "atc"
+		case "ATC_CUSTOMIZING":
+			analysisType = "atc_customizing"
+		}
+	}
 	switch analysisType {
 	case "atc":
-		return s.callHandler(ctx, s.handleRunATCCheck, params)
+		// The handler expects object_url; object_uri is the documented alias.
+		return s.callHandler(ctx, s.handleRunATCCheck, paramsWithAlias(params, "object_url", "object_uri"))
 	case "atc_customizing":
 		return s.callHandler(ctx, s.handleGetATCCustomizing, params)
 	}

@@ -1326,8 +1326,15 @@ func (c *Client) deleteGated(ctx context.Context, objectURL, transport string) (
 		}
 		return "", true, derr
 	}
+	if c.transport != nil && c.transport.config != nil && c.transport.config.ProxyContextIDGuard {
+		// Behind a session-holding proxy DeleteObject has already retired
+		// the stateful context, and the ENQUEUE went with it. An UNLOCK now
+		// lands in a fresh context that holds no lock, fails, and would
+		// report a stranded lock that is not there.
+		return "", true, nil
+	}
 	if uerr := c.releaseLockAfterFailure(gctx, objectURL, lock.LockHandle); uerr != nil {
-		return "deleted; its lock entry may stay in SM12 until the ADT session ends: " + uerr.Error(), true, nil
+		return "its lock entry may stay in SM12 until the ADT session ends: " + uerr.Error(), true, nil
 	}
 	return "", true, nil
 }

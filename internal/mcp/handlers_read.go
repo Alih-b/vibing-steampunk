@@ -100,7 +100,17 @@ func (s *Server) routeReadAction(ctx context.Context, action, objectType, object
 		// `sql` is what the CLI flag is called and what a caller writes first;
 		// accepting only `sql_query` sent that call down the chain to "no
 		// handler found for action=query", which is not true of any build.
-		sqlQuery := firstParam(params, "sql_query", "sql", "query")
+		sqlQuery := firstParam(params, "sql_query", "sql", "query", "statement")
+		// A table named as the target, with no SQL, is the other thing a
+		// caller plainly means: target="SQL T000", target="TABL T000", or the
+		// bare target="T000".
+		tableName := ""
+		switch {
+		case objectType == "SQL" || objectType == "TABL":
+			tableName = objectName
+		case objectType != "" && objectType != "TABL_CONTENTS" && objectName == "":
+			tableName = objectType
+		}
 		switch objectType {
 		case "TABL_CONTENTS":
 			args := map[string]any{"table_name": objectName}
@@ -125,18 +135,19 @@ func (s *Server) routeReadAction(ctx context.Context, action, objectType, object
 				}
 				return s.callHandler(ctx, s.handleRunQuery, args)
 			}
-			// A table named as the target, with no SQL, is the other thing a
-			// caller plainly means by "query TABL X".
-			if objectName != "" {
-				args := map[string]any{"table_name": objectName}
-				if v, ok := getFloatParam(params, "max_rows"); ok {
-					args["max_rows"] = v
-				}
-				if v, ok := getBoolParam(params, "all_rows"); ok {
-					args["all_rows"] = v
-				}
-				return s.callHandler(ctx, s.handleGetTableContents, args)
+		}
+		if tableName != "" {
+			args := map[string]any{"table_name": tableName}
+			if v, ok := getFloatParam(params, "max_rows"); ok {
+				args["max_rows"] = v
 			}
+			if v, ok := getBoolParam(params, "all_rows"); ok {
+				args["all_rows"] = v
+			}
+			if sqlQuery != "" {
+				args["sql_query"] = sqlQuery
+			}
+			return s.callHandler(ctx, s.handleGetTableContents, args)
 		}
 		// The action was recognised. Saying so is the whole point: the chain
 		// would otherwise report that action="query" does not exist.

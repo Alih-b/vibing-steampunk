@@ -27,6 +27,20 @@ func (s *Server) routeSystemAction(ctx context.Context, action, objectType, obje
 	case "FEATURES":
 		return s.callHandler(ctx, s.handleGetFeatures, params)
 	}
+
+	// Params form: SAP(action="system", params={"type": "system_info"}).
+	// Every other "system" operation (transports, git, install, file I/O) is
+	// selected by params.type, so the info operations answer to it too.
+	switch getStringParam(params, "type") {
+	case "system_info", "info":
+		return s.callHandler(ctx, s.handleGetSystemInfo, params)
+	case "components", "installed_components":
+		return s.callHandler(ctx, s.handleGetInstalledComponents, params)
+	case "connection", "connection_info":
+		return s.callHandler(ctx, s.handleGetConnectionInfo, params)
+	case "features":
+		return s.callHandler(ctx, s.handleGetFeatures, params)
+	}
 	return nil, false, nil
 }
 

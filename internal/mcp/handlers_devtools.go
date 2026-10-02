@@ -16,7 +16,9 @@ import (
 func (s *Server) routeDevToolsAction(ctx context.Context, action, objectType, objectName string, params map[string]any) (*mcp.CallToolResult, bool, error) {
 	if action == "test" {
 		analysisType := getStringParam(params, "type")
-		if analysisType == "" || analysisType == "unit" {
+		// target="ATC" asks for an ATC run, not a unit-test run, even though
+		// both carry an object_url; routeATCAction takes it.
+		if !isATCTarget(objectType) && (analysisType == "" || analysisType == "unit") {
 			// Unit tests
 			objectURL := getStringParam(params, "object_url")
 			if objectURL == "" {
@@ -63,6 +65,12 @@ func (s *Server) routeDevToolsAction(ctx context.Context, action, objectType, ob
 	}
 
 	return nil, false, nil
+}
+
+// isATCTarget reports whether a test target names an ATC run, which
+// routeATCAction answers.
+func isATCTarget(objectType string) bool {
+	return objectType == "ATC" || objectType == "ATC_CUSTOMIZING"
 }
 
 // --- Development Tool Handlers ---

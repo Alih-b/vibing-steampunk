@@ -52,6 +52,13 @@ func (s *Server) analysisTypes() map[string]server.ToolHandlerFunc {
 		"cr_history":          s.handleCRHistory,
 		"tr_boundaries":       s.handleTransportBoundaries,
 		"cr_boundaries":       s.handleCRBoundaries,
+		// Same handler as read target="CDS_IMPACT", which help advertises
+		// under this type too; it reads view_name, so the names a caller
+		// writes for a CDS view are mapped onto it.
+		"cds_impact": func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			args := paramsWithAlias(req.GetArguments(), "view_name", "cds_view", "ddls_name", "object_name", "name")
+			return s.handleGetCDSImpactAnalysis(ctx, newRequest(args))
+		},
 	}
 }
 

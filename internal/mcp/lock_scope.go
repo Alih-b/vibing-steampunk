@@ -52,27 +52,3 @@ func (s *Server) withObjectLock(ctx context.Context, objectURL, supplied, transp
 	released = true
 	return s.adtClient.UnlockObject(ctx, objectURL, lock.LockHandle)
 }
-
-// withObjectLockConsumed is withObjectLock for an operation that consumes the
-// handle rather than returning it — DELETE being the one that matters. There is
-// nothing to release on success, and an UNLOCK sent anyway would fail against
-// an object that no longer exists. On failure the lock is still ours, so it is
-// released.
-func (s *Server) withObjectLockConsumed(ctx context.Context, objectURL, supplied, transport string, fn func(lockHandle string) error) error {
-	if supplied != "" {
-		return fn(supplied)
-	}
-
-	lock, err := s.adtClient.LockObject(ctx, objectURL, "MODIFY", transport)
-	if err != nil {
-		return fmt.Errorf("locking %s: %w", objectURL, err)
-	}
-
-	if err := fn(lock.LockHandle); err != nil {
-		if unlockErr := s.adtClient.UnlockObject(ctx, objectURL, lock.LockHandle); unlockErr != nil {
-			fmt.Fprintf(adt.LogOutput, "[WARN] releasing the lock on %s failed: %v\n", objectURL, unlockErr)
-		}
-		return err
-	}
-	return nil
-}

@@ -48,7 +48,7 @@ func TestFocusedModeHasNothingThatSpendsALockHandle(t *testing.T) {
 }
 
 // TestLockScopeHelpersHaveTheShapeHandlersRelyOn is a compile-time contract
-// check: both helpers must keep the signature the handlers call them through,
+// check: the helper must keep the signature the handlers call it through,
 // so a refactor cannot quietly change how a self-taken lock is released.
 func TestLockScopeHelpersHaveTheShapeHandlersRelyOn(t *testing.T) {
 	// A nil adtClient would panic before reaching the release, so this test
@@ -57,7 +57,6 @@ func TestLockScopeHelpersHaveTheShapeHandlersRelyOn(t *testing.T) {
 	// assertion that the helper exists with the shape the handlers rely on.
 	type lockScope func(context.Context, string, string, string, func(string) error) error
 	var _ lockScope = (*Server)(nil).withObjectLock
-	var _ lockScope = (*Server)(nil).withObjectLockConsumed
 }
 
 // TestSelfLockingToolsDoNotDemandAHandle checks the half of #169 that actually

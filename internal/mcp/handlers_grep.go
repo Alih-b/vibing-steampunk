@@ -44,9 +44,58 @@ func (s *Server) routeGrepAction(ctx context.Context, action, objectType, object
 		return s.callHandler(ctx, s.handleGrepObject, args)
 	}
 
+	// Object given by name rather than by URL:
+	//   SAP(action="grep", params={"object_name": "ZCL_TEST", "pattern": "..."})
+	//   SAP(action="grep", target="CLAS ZCL_TEST", params={"pattern": "..."})
+	// The handler only knows URLs, so build one from type and name.
+	name := getStringParam(params, "object_name")
+	objType := strings.ToUpper(getStringParam(params, "object_type"))
+	if name == "" {
+		// target="CLAS ZCL_TEST", or target="ZCL_TEST"
+		if objectName != "" {
+			name = objectName
+			if objType == "" {
+				objType = objectType
+			}
+		} else {
+			name = objectType
+		}
+	} else if objType == "" && objectName == "" && objectType != "" {
+		// target carried the type only: target="CLAS", params={"object_name": ...}
+		objType = objectType
+	}
+	if name != "" {
+		if objType == "" {
+			// A bare one-word target is ambiguous: target="$TMP" is a package
+			// and target="ZREPORT" is a program, and guessing CLAS for either
+			// builds /sap/bc/adt/oo/classes/$tmp, which answers "Failed to
+			// read source" -- a wrong URL reported as a missing object. Say
+			// what is missing instead. $TMP is the very example the help text
+			// gives for package_name, so this is a likely call.
+			return newToolResultError(fmt.Sprintf(
+				"grep: %q alone does not say what kind of object it is. "+
+					"Pass target=\"CLAS %s\" (or PROG, INTF, FUGR), or params={\"object_type\": \"CLAS\"}, "+
+					"or grep a package with params={\"package_name\": %q}.",
+				name, name, name)), true, nil
+		}
+		url := buildADTObjectURL(objType, name)
+		if url == "" {
+			return newToolResultError(fmt.Sprintf(
+				"Cannot build an object URL for object_type=%q. Supported types: CLAS, PROG, INTF, FUGR. "+
+					"Pass object_url instead, or grep a package with params={\"package_name\": \"...\"}.",
+				objType)), true, nil
+		}
+		args := copyParams(params)
+		delete(args, "object_name")
+		delete(args, "object_type")
+		args["object_url"] = url
+		return s.callHandler(ctx, s.handleGrepObject, args)
+	}
+
 	return needParams("grep", params,
-		[]string{"package_name (or package)", "object_url (or object)", "packages", "object_urls"},
+		[]string{"package_name (or package)", "object_url (or object)", "object_name with object_type, or target=\"CLAS <name>\"", "packages", "object_urls"},
 		`SAP(action="grep", params={"pattern": "SELECT", "package": "$TMP"})
+  SAP(action="grep", target="CLAS ZCL_DEMO", params={"pattern": "TODO"})
   SAP(action="grep", params={"pattern": "TODO", "object_url": "/sap/bc/adt/oo/classes/zcl_demo"})`), true, nil
 }
 

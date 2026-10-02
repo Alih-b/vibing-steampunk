@@ -1172,6 +1172,17 @@ func (c *Client) DeleteObject(ctx context.Context, objectURL string, lockHandle 
 	return nil
 }
 
+// DeleteObjectGated deletes an object in one call, taking and releasing its
+// own lock: DeleteObject's gate (read-only, operation, package whitelist,
+// transportable edit) before the LOCK, then LOCK, DELETE and UNLOCK, with the
+// UNLOCK sent after a successful DELETE too, because the DELETE does not
+// release the ENQUEUE the LOCK took (see deleteGated). note is non-empty
+// when the object was deleted but that UNLOCK failed.
+func (c *Client) DeleteObjectGated(ctx context.Context, objectURL, transport string) (note string, err error) {
+	note, _, err = c.deleteGated(ctx, objectURL, transport)
+	return note, err
+}
+
 // --- Helper to get object URLs ---
 
 // GetObjectURL returns the ADT URL for an object based on its type and name.

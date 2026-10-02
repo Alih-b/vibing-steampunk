@@ -51,9 +51,23 @@ Read metadata:
   SAP(action="read", target="TYPE_INFO ZTYPE")        - Type info
   SAP(action="read", target="STRUCT ZSTRUCT")         - Structure definition
   SAP(action="read", target="CDS_DEPS ZDDL_VIEW")    - CDS dependencies
+  SAP(action="read", target="CDS_IMPACT ZDDL_VIEW")  - CDS consumers (also analyze type=cds_impact)
+  SAP(action="read", target="CDS_ELEMENTS ZDDL_VIEW") - CDS element info
+  SAP(action="read", target="VIEW ZDDIC_VIEW")       - DDIC view
+  SAP(action="read", target="SRVB ZSB_TEST")         - Service binding
+  SAP(action="read", target="CLASS_INFO ZCL_TEST")   - Class metadata
+  SAP(action="read", target="CLAS_INCLUDE ZCL_TEST", params={"include_type": "testclasses"})
+      include_type: definitions, implementations, macros, testclasses
+  SAP(action="read", target="CHECK_RUN 0123456789ABCDEF")  - Results of an earlier check run
+
+UI5 (BSP) repository:
+  SAP(action="read", target="UI5_LIST", params={"query": "Z*"})
+  SAP(action="read", target="UI5_APP ZDEMO_APP")
+  SAP(action="read", target="UI5_FILE", params={"app_name": "ZDEMO_APP", "file_path": "/webapp/manifest.json"})
 
 Query data:
   SAP(action="query", target="TABL_CONTENTS ZTABLE", params={"max_rows": 50})
+  SAP(action="query", target="T000")
   SAP(action="query", target="SQL", params={"sql_query": "SELECT * FROM T000", "max_rows": 10})`)
 
 	case "edit":
@@ -85,8 +99,19 @@ Low-level edit (manual lock/unlock):
   UPDATE_SOURCE with a class include URL (/sap/bc/adt/oo/classes/zcl_test/includes/testclasses) writes that include; lock the class URL.
   SAP(action="edit", target="UNLOCK", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "lock_handle": "..."})
 
+Class include (definitions, implementations, macros, testclasses; auto lock):
+  SAP(action="edit", target="CLAS_INCLUDE", params={"class_name": "ZCL_TEST", "include_type": "testclasses", "source": "..."})
+
+Whole source of a program or a class:
+  SAP(action="edit", params={"type": "write_program", "program_name": "ZREPORT", "source": "REPORT zreport."})
+  SAP(action="edit", params={"type": "write_class", "class_name": "ZCL_TEST", "source": "CLASS zcl_test DEFINITION..."})
+
+Compare two sources (read-only):
+  SAP(action="edit", target="COMPARE_SOURCE", params={"type1": "CLAS", "name1": "ZCL_A", "type2": "CLAS", "name2": "ZCL_B"})
+
 Activate:
   SAP(action="edit", target="ACTIVATE", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "object_name": "ZCL_TEST"})
+  SAP(action="edit", target="ACTIVATE_MULTI", params={"objects": ["PROG ZREPORT", "INCL ZREPORT_F01"]})
   SAP(action="edit", target="ACTIVATE_PACKAGE", params={"package": "$TMP"})
 
 Service binding:
@@ -148,7 +173,24 @@ High-level create (with source):
 	case "delete":
 		return mcp.NewToolResultText(`SAP(action="delete") - Delete objects
 
-  SAP(action="delete", target="OBJECT", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "lock_handle": "..."})`)
+By type and name -- locks, deletes and unlocks in this one call:
+  SAP(action="delete", target="PROG ZDEMO_REPORT")
+  SAP(action="delete", target="CLAS ZCL_DEMO", params={"transport": "A4HK900001"})
+  SAP(action="delete", target="FUNC Z_DEMO_FM", params={"parent": "ZDEMO_FG"})   (the group is looked up when not given)
+  Types: ` + deleteNameTypesLine + `
+
+By ADT URL:
+  SAP(action="delete", target="OBJECT", params={"object_url": "/sap/bc/adt/oo/classes/zcl_demo"})
+
+Do not lock first: without lock_handle the call takes its own lock and releases
+it after the DELETE. A handle carried over from an earlier edit target="LOCK"
+is still accepted, but the session it belongs to may be gone by then (#169).
+--read-only refuses every delete; --allowed-packages must allow the object's
+package; a transportable object needs "transport" and --allow-transportable-edits.
+
+UI5 (BSP) repository:
+  SAP(action="delete", target="UI5_FILE", params={"app_name": "ZDEMO_APP", "file_path": "/webapp/demo.js"})
+  SAP(action="delete", target="UI5_APP", params={"app_name": "ZDEMO_APP"})`)
 
 	case "search":
 		return mcp.NewToolResultText(`SAP(action="search") - Search for objects
@@ -173,6 +215,11 @@ Table contents:
 Free SQL (ABAP SQL, read in the logon client):
   SAP(action="query", target="SQL", params={"sql_query": "SELECT * FROM T000 WHERE MANDT = '001'", "max_rows": 100})
   SAP(action="query", params={"sql": "SELECT h~trkorr, t~as4text FROM e070 AS h INNER JOIN e07t AS t ON t~trkorr = h~trkorr ORDER BY h~trkorr DESCENDING"})
+  SAP(action="query", target="SELECT * FROM T000")
+      the statement may be the target; one passed in params ("sql_query", "sql", "query"
+      or "statement") wins over it
+  --block-free-sql refuses a statement in every form, a table read that carries one
+  included; a table read without one stays allowed.
 
 The data preview wraps the statement in its own SELECT ... INTO, so it takes
 ABAP SQL only. vsp rewrites the common ANSI spellings before sending -- t.col to
@@ -205,7 +252,9 @@ Unit tests:
   SAP(action="test", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "timeout": 600})  — seconds; the run may continue on SAP after it
 
 ATC check:
-  SAP(action="test", params={"type": "atc", "object_url": "/sap/bc/adt/oo/classes/zcl_test"})`)
+  SAP(action="test", params={"type": "atc", "object_url": "/sap/bc/adt/oo/classes/zcl_test"})
+  SAP(action="test", target="ATC", params={"object_uri": "/sap/bc/adt/oo/classes/zcl_test"})
+  SAP(action="test", params={"type": "atc_customizing"})   - the system's ATC settings`)
 
 	case "info":
 		return mcp.NewToolResultText(`SAP(action="info") - What am I talking to?
@@ -238,6 +287,8 @@ gateway is a different port and is often closed.
 
   SAP(action="rfc", params={"op": "info"})
   SAP(action="rfc", params={"op": "ping"})
+  SAP(action="rfc", params={"op": "probe"})     - system fingerprint
+  SAP(action="rfc", target="STFC_CONNECTION", params={"op": "describe"})   (describe is the default with a target)
   SAP(action="rfc", target="STFC_CONNECTION")
   SAP(action="rfc", target="Z_DOUBLE", params={"op": "call", "args": {"N": 21}})
   SAP(action="rfc", params={"op": "search", "pattern": "BAPI_USER*"})
@@ -352,6 +403,9 @@ No ABAP is executed, and no server is involved when source is supplied.`)
 
 Grep single object:
   SAP(action="grep", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "pattern": "SELECT.*FROM"})
+  SAP(action="grep", target="CLAS ZCL_TEST", params={"pattern": "SELECT.*FROM"})
+  SAP(action="grep", params={"object_type": "PROG", "object_name": "ZREPORT", "pattern": "WRITE"})
+      by name the type is needed (CLAS, PROG, INTF, FUGR): a bare target="ZREPORT" is refused
 
 Grep package:
   SAP(action="grep", params={"package_name": "$TMP", "pattern": "WRITE", "max_results": 50})
@@ -388,6 +442,8 @@ Move object:
 
 Report execution:
   SAP(action="debug", target="RUN_REPORT", params={"report": "RSUSR002"})
+  SAP(action="debug", target="RUN_REPORT_ASYNC", params={"report": "RSUSR002"})   - answers a task_id
+  SAP(action="debug", target="GET_ASYNC_RESULT", params={"task_id": "..."})
   SAP(action="debug", target="GET_VARIANTS", params={"report": "RSUSR002"})
   SAP(action="debug", target="GET_TEXT_ELEMENTS", params={"program": "ZREPORT"})
   SAP(action="debug", target="SET_TEXT_ELEMENTS", params={"program": "ZREPORT", "selection_texts": "{\"P_USER\": \"Username\"}"})
@@ -430,6 +486,16 @@ Call graph (one hop; object_type + object_name work instead of object_uri):
 
 Object structure:
   SAP(action="analyze", params={"type": "object_structure", "object_name": "ZCL_TEST"})
+
+CDS impact (consumers; same as read target="CDS_IMPACT"):
+  SAP(action="analyze", params={"type": "cds_impact", "cds_view": "ZDDL_VIEW"})
+
+Compile-time loads (D010INC) -- what must be present, and what loads it:
+  SAP(action="analyze", params={"type": "loads", "object_name": "ZCL_TEST", "direction": "both"})
+
+Side effects (database writes, COMMIT WORK, ...) of a unit, from its source:
+  SAP(action="analyze", params={"type": "effects", "object_type": "CLAS", "name": "ZCL_DEMO"})
+  SAP(action="analyze", params={"type": "effects", "source": "METHOD m. COMMIT WORK. ENDMETHOD."})
 
 Code intelligence:
   SAP(action="analyze", params={"type": "definition", "source_url": "...", "source": "...", "line": 10, "start_column": 5, "end_column": 15})
@@ -573,11 +639,10 @@ Dependency graph & boundary analysis:
 
 Info:
   SAP(action="system", target="INFO")
-  SAP(action="revisions", target="CLAS ZCL_TEST")
-  SAP(action="lint", params={"object_type": "CLAS", "object_name": "ZCL_TEST"})
   SAP(action="system", target="COMPONENTS")
   SAP(action="system", target="CONNECTION")
   SAP(action="system", target="FEATURES")
+  SAP(action="system", params={"type": "system_info"})   (also "components", "connection", "features")
 
 Transports:
   SAP(action="system", params={"type": "list_transports"})
@@ -670,7 +735,7 @@ File operations:
 === SEARCH & GREP ===
 1. Find objects:                 SAP(action="search", target="ZCL_*")
 2. Grep in package:              SAP(action="grep", params={"package_name": "$TMP", "pattern": "SELECT"})
-3. Grep specific object:         SAP(action="grep", params={"object_name": "ZCL_TEST", "pattern": "MODIFY"})
+3. Grep specific object:         SAP(action="grep", target="CLAS ZCL_TEST", params={"pattern": "MODIFY"})
 
 === DEBUGGING ===
 1. Set breakpoint:               SAP(action="debug", target="SET_BREAKPOINT", params={"program": "ZCL_TEST", "line": 10})
@@ -775,18 +840,45 @@ func getUnhandledErrorMessage(action, objectType, objectName string) string {
 	case "create":
 		sb.WriteString("Supported create targets: OBJECT, DEVC, TABL, CLONE, PROGRAM, CLASS_WITH_TESTS, CLAS_TEST_INCLUDE\n")
 		sb.WriteString("Use SAP(action=\"help\", target=\"create\") for examples.")
+	case "query":
+		sb.WriteString("Query needs a statement or a table:\n")
+		sb.WriteString("  SAP(action=\"query\", params={\"sql_query\": \"SELECT * FROM T000\", \"max_rows\": 10})\n")
+		sb.WriteString("  SAP(action=\"query\", target=\"TABL_CONTENTS T000\", params={\"max_rows\": 50})\n")
+		sb.WriteString("Use SAP(action=\"help\", target=\"query\") for examples.")
+	case "search":
+		sb.WriteString("Search needs a query: SAP(action=\"search\", target=\"ZCL_*\")\n")
+		sb.WriteString("Use SAP(action=\"help\", target=\"search\") for examples.")
+	case "grep":
+		sb.WriteString("Grep needs a pattern and something to search:\n")
+		sb.WriteString("  params={\"package_name\": \"$TMP\", \"pattern\": \"SELECT\"}\n")
+		sb.WriteString("  target=\"CLAS ZCL_TEST\", params={\"pattern\": \"MODIFY\"}\n")
+		sb.WriteString("  params={\"object_url\": \"/sap/bc/adt/oo/classes/zcl_test\", \"pattern\": \"MODIFY\"}\n")
+		sb.WriteString("Use SAP(action=\"help\", target=\"grep\") for examples.")
+	case "test":
+		sb.WriteString("Test needs an object:\n")
+		sb.WriteString("  Unit tests: params={\"object_url\": \"/sap/bc/adt/oo/classes/zcl_test\"}\n")
+		sb.WriteString("  ATC:        target=\"ATC\", params={\"object_url\": \"/sap/bc/adt/oo/classes/zcl_test\"}\n")
+		sb.WriteString("Use SAP(action=\"help\", target=\"test\") for examples.")
+	case "analyze":
+		sb.WriteString("Common types (params.type): syntax_check, call_graph, callers, callees,\n")
+		sb.WriteString("object_structure, check_boundaries, impact, health, cds_impact, loads, effects, parse_abap,\n")
+		sb.WriteString("execute_abap, check_abap, list_dumps, list_traces, abap_help\n")
+		sb.WriteString("Use SAP(action=\"help\", target=\"analyze\") for examples.")
+	case "system":
+		sb.WriteString("Supported system targets: INFO, COMPONENTS, CONNECTION, FEATURES\n")
+		sb.WriteString("Types (params.type): system_info, components, connection, features,\n")
+		sb.WriteString("list_transports, get_transport, create_transport, release_transport, delete_transport,\n")
+		sb.WriteString("get_user_transports, get_transport_info, git_types, git_export, install_zadt_vsp,\n")
+		sb.WriteString("install_abapgit, install_dummy_test, list_dependencies, deploy_zip,\n")
+		sb.WriteString("save_to_file, deploy_from_file, rename\n")
+		sb.WriteString("Use SAP(action=\"help\", target=\"system\") for examples.")
+	case "delete":
+		sb.WriteString("Supported delete targets: <TYPE> <NAME> (" + deleteNameTypesLine + "), OBJECT with params.object_url, UI5_FILE, UI5_APP\n")
+		sb.WriteString("Example: SAP(action=\"delete\", target=\"PROG ZDEMO_REPORT\") -- no lock_handle needed\n")
+		sb.WriteString("Use SAP(action=\"help\", target=\"delete\") for examples.")
 	case "debug":
 		sb.WriteString("Supported debug targets: SET_BREAKPOINT, GET_BREAKPOINTS, DELETE_BREAKPOINT, LISTEN, ATTACH, DETACH, STEP, GET_STACK, GET_VARIABLES, CALL_RFC, MOVE, RUN_REPORT, GET_VARIANTS, GET_TEXT_ELEMENTS, SET_TEXT_ELEMENTS, AMDP_ADT_*, AMDP_*\n")
 		sb.WriteString("Use SAP(action=\"help\", target=\"debug\") for examples.")
-	case "system":
-		sb.WriteString("Supported system targets: INFO, COMPONENTS, CONNECTION, FEATURES\n")
-		sb.WriteString("Example: SAP(action=\"system\", target=\"INFO\")")
-	case "analyze":
-		sb.WriteString("Supported analysis types (params.type): call_graph, object_structure, callers, callees,\n")
-		sb.WriteString("analyze_call_graph, compare_call_graphs, trace_execution, check_boundaries, graph_stats,\n")
-		sb.WriteString("co_change, impact, where_used_config, usage_examples, health, cr_history, tr_boundaries,\n")
-		sb.WriteString("cr_boundaries\n")
-		sb.WriteString("Example: SAP(action=\"analyze\", params={\"type\": \"check_boundaries\", \"package\": \"$ZDEV\"})")
 	default:
 		sb.WriteString(validActionsLine)
 		sb.WriteString("Use SAP(action=\"help\") for full documentation.")
