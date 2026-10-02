@@ -1,0 +1,165 @@
+SAP(action="analyze") - Code analysis
+
+Syntax check:
+  SAP(action="analyze", params={"type": "syntax_check", "object_url": "/sap/bc/adt/oo/classes/zcl_test", "content": "..."})
+
+Call graph (one hop; object_type + object_name work instead of object_uri):
+  SAP(action="analyze", params={"type": "call_graph", "object_uri": "/sap/bc/adt/oo/classes/zcl_test"})
+  SAP(action="analyze", params={"type": "callers", "object_type": "CLAS", "object_name": "ZCL_TEST"})
+    who references it — the where-used list behind SE84
+  SAP(action="analyze", params={"type": "callees", "object_type": "CLAS", "object_name": "ZCL_TEST"})
+    what it references — the CROSS and WBCROSSGT tables, filled at activation,
+    so these are recorded references and not observed calls; needs free SQL
+  SAP(action="analyze", params={"type": "analyze_call_graph", "object_uri": "/sap/bc/adt/oo/classes/zcl_test"})
+  SAP(action="analyze", params={"type": "compare_call_graphs", "object_uri": "...", "trace_data": "[...]"})
+  SAP(action="analyze", params={"type": "trace_execution", "object_uri": "..."})
+
+Object structure:
+  SAP(action="analyze", params={"type": "object_structure", "object_name": "ZCL_TEST"})
+
+CDS impact (consumers; same as read target="CDS_IMPACT"):
+  SAP(action="analyze", params={"type": "cds_impact", "cds_view": "ZDDL_VIEW"})
+
+Compile-time loads (D010INC) -- what must be present, and what loads it:
+  SAP(action="analyze", params={"type": "loads", "object_name": "ZCL_TEST", "direction": "both"})
+
+Side effects (database writes, COMMIT WORK, ...) of a unit, from its source:
+  SAP(action="analyze", params={"type": "effects", "object_type": "CLAS", "name": "ZCL_DEMO"})
+  SAP(action="analyze", params={"type": "effects", "source": "METHOD m. COMMIT WORK. ENDMETHOD."})
+
+Code intelligence:
+  SAP(action="analyze", params={"type": "definition", "source_url": "...", "source": "...", "line": 10, "start_column": 5, "end_column": 15})
+  SAP(action="analyze", params={"type": "references", "object_url": "/sap/bc/adt/oo/classes/zcl_test"})
+  SAP(action="analyze", params={"type": "completion", "source_url": "...", "source": "...", "line": 10, "column": 5})
+  SAP(action="analyze", params={"type": "class_components", "class_url": "/sap/bc/adt/oo/classes/zcl_test"})
+  SAP(action="analyze", params={"type": "type_hierarchy", "source_url": "...", "source": "...", "line": 10, "column": 5})
+  SAP(action="analyze", params={"type": "pretty_print", "source": "REPORT ztest. WRITE 'hello'."})
+  SAP(action="analyze", params={"type": "get_pretty_printer_settings"})
+  SAP(action="analyze", params={"type": "set_pretty_printer_settings", "indentation": true, "style": "upperCase"})
+  SAP(action="analyze", params={"type": "inactive_objects"})
+  SAP(action="analyze", params={"type": "context", "object_type": "CLAS", "name": "ZCL_TEST"})
+
+Parse ABAP (tokenize + classify statements):
+  SAP(action="analyze", params={"type": "parse_abap", "source": "DATA lv_x TYPE i. lv_x = 42."})
+  SAP(action="analyze", params={"type": "parse_abap", "object_type": "CLAS", "name": "ZCL_TEST"})
+
+Analyze dependencies (unified 5-layer: regex + parser + SCAN + CROSS + ADT):
+  SAP(action="analyze", params={"type": "analyze_deps", "source": "..."})
+  SAP(action="analyze", params={"type": "analyze_deps", "object_type": "CLAS", "name": "ZCL_TEST"})
+
+Graph queries:
+  SAP(action="analyze", params={"type": "co_change", "object_type": "CLAS", "object_name": "ZCL_FOO", "top_n": 10})
+  SAP(action="analyze", params={"type": "impact", "object_type": "CLAS", "object_name": "ZCL_FOO", "max_depth": 3})
+  SAP(action="analyze", params={"type": "impact", "object_type": "CLAS", "object_name": "ZCL_FOO", "include_source_analysis": true})
+  SAP(action="analyze", params={"type": "where_used_config", "variable": "ZKEKEKE"})
+  SAP(action="analyze", params={"type": "where_used_config", "variable": "ZKEKEKE", "grep": false})
+  SAP(action="analyze", params={"type": "usage_examples", "object_type": "FUNC", "object_name": "Z_MY_FM"})
+  SAP(action="analyze", params={"type": "usage_examples", "object_type": "CLAS", "object_name": "ZCL_API", "method": "GET_DATA"})
+  SAP(action="analyze", params={"type": "usage_examples", "object_type": "PROG", "object_name": "ZLEGACY", "form": "BUILD_OUTPUT"})
+
+Transport analysis:
+  SAP(action="analyze", params={"type": "cr_history", "object_type": "CLAS", "object_name": "ZCL_FOO"})
+  SAP(action="analyze", params={"type": "tr_boundaries", "transports": "A4HK900001,A4HK900002"})
+  SAP(action="analyze", params={"type": "cr_boundaries", "cr_id": "JIRA-123"})
+  SAP(action="analyze", params={"type": "usage_examples", "object_type": "PROG", "object_name": "ZBATCH_RUN", "submit": true})
+  SAP(action="analyze", params={"type": "health", "package": "$ZDEV"})
+  SAP(action="analyze", params={"type": "health", "object_type": "CLAS", "object_name": "ZCL_ORDER_SERVICE"})
+
+Execute ABAP:
+  SAP(action="analyze", params={"type": "execute_abap", "code": "lv_result = |Hello { sy-uname }|."})
+  SAP(action="analyze", params={"type": "execute_abap", "code": "RETURN_VALUE( sy-datum ). RETURN_VALUE( sy-uzeit )."})
+      answers JSON: success, message, output (every value, in order), result_text (the value
+      in full, unwrapped from SAP's "Critical Assertion Error: '...'": a string for one value,
+      an array when RETURN_VALUE( ) was called more than once), failure when the code did not
+      finish, rawAlerts only when no value came back. SAP turns a line break in a value into #.
+      RETURN_VALUE( x ) hands x back at once (a later RETURN, CHECK or exception keeps it);
+      x may be any data object: structures and tables come back as JSON.
+  Long calls (execute_abap, unit tests, deploy_from_file, deploy_zip) take "timeout" in seconds:
+    SAP(action="analyze", params={"type": "execute_abap", "code": "...", "timeout": 300})
+    Default: the server's --call-timeout (SAP_CALL_TIMEOUT); without one each request to SAP is limited to 60s.
+    When it runs out the call says "timed out after Ns; the operation may still be running on SAP".
+
+Check ABAP without running it (SAP's syntax check, which type-checks):
+  SAP(action="analyze", params={"type": "check_abap", "code": "DATA ls TYPE t000. DATA(s) = |{ ls }|."})
+      wrapped as execute_abap wraps it; returns ok plus findings {line, column, severity, message}
+      in the snippet's own lines. Creates and deletes a temporary ZVSP_CHK_* program in $TMP
+      (never activated, never run), so it is refused under --read-only.
+
+Runtime errors (ST22) — a listing, and a post-mortem around one dump:
+  SAP(action="analyze", params={"type": "list_dumps", "since": "2026-08-01", "program": "ZDEMO_POST"})
+  SAP(action="analyze", params={"type": "group_dumps", "since": "2026-08-01"})
+      what keeps failing, not what failed once: count, first seen, last seen, users
+  SAP(action="analyze", params={"type": "get_dump", "dump_id": "latest"})
+      header, termination point and call stack of one dump
+  SAP(action="analyze", params={"type": "explain_dump", "dump_id": "latest", "tolerance": "5m"})
+      the stack, plus application log entries ranked by the argument for each — a log written by
+      the program that died is structural; one merely nearby in time is a coincidence
+  SAP(action="analyze", params={"type": "similar_dumps", "dump_id": "latest", "deep": 10})
+      is this new, and how often: rung 1 same line, 2 same program, 3 same component, 4 same error
+  SAP(action="analyze", params={"type": "dump_impact", "dump_id": "latest"})
+      who else reaches the code that failed — blast radius, not blame
+  dump_id takes "latest", any part of an id from list_dumps, or a whole id.
+  filters shared by all six: program, error_type, user, since, until (YYYY-MM-DD), max_results
+
+Application log (SLG1, read with free SQL — no RFC, no gateway, no Z code):
+  SAP(action="analyze", params={"type": "application_log", "program": "ZDEMO_POST", "max_results": 20})
+  SAP(action="analyze", params={"type": "application_log", "user": "TESTUSER", "since": "2026-08-01"})
+  SAP(action="analyze", params={"type": "application_log", "object": "ZDEMO_LOG", "subobject": "POST", "messages": true})
+      headers by default; messages=true decodes the BALDAT cluster too: class, number, variables,
+      text from T100, context, detail level
+
+Spool and background jobs (SP01/SM37 over free SQL; the job log and file-stored spool over XBP/RFC):
+  SAP(action="analyze", params={"type": "spool_list", "since": "2026-09-01", "user": "TESTUSER", "max_results": 20})
+  SAP(action="analyze", params={"type": "spool_list", "job": "ZDEMO_NIGHTLY"})
+  SAP(action="analyze", params={"type": "spool_read", "number": 27302})
+      the decoded list: pages, lines, the format commands; via="rfc" for spool kept in files
+  SAP(action="analyze", params={"type": "job_list", "since": "2026-09-01", "status": "A"})
+  SAP(action="analyze", params={"type": "job_list", "program": "ZDEMO_NIGHTLY_RUN"})
+      each job with its steps: program, variant, user, the spool number each step wrote
+  SAP(action="analyze", params={"type": "job_log", "job": "ZDEMO_NIGHTLY", "count": "22554500"})
+
+What the system is set up to do — variants, test data, documentation, the IMG (free SQL):
+  SAP(action="analyze", params={"type": "variants", "report": "ZDEMO_NIGHTLY_RUN"})
+  SAP(action="analyze", params={"type": "variants", "report": "ZDEMO_NIGHTLY_RUN", "variant": "MONTH_END"})
+      every field with its label, kind (P/S), type and value or ranges — what the job selects
+  SAP(action="analyze", params={"type": "fm_test_data", "function": "ZDEMO_CALCULATE_TAX"})
+      SE37's saved test sets: inputs, outputs, runtime, return code, and the interface as saved
+  SAP(action="analyze", params={"type": "documentation", "class": "DE", "object": "BALLEVEL"})
+  SAP(action="analyze", params={"type": "documentation", "object": "BAL_LOG_CREATE"})
+      SE61 text as Markdown, includes resolved; without class, the index of what exists.
+      classes: DE data element, DT domain, TB table, RE report, FU function module, CL class,
+      IF interface, NA message, TX general text, HY IMG activity
+  SAP(action="analyze", params={"type": "img_search", "text": "delta link"})
+      IMG nodes whose title matches, the path to each, and the activity or document it opens
+  SAP(action="analyze", params={"type": "img_activity", "activity": "/IWBEP/CP_DELETE_JOB"})
+      transaction, paths, and the activity's documentation
+
+Cluster tables (BALDAT, INDX, STXL, ... — EXPORT data clusters decoded here, no IMPORT needed):
+  SAP(action="analyze", params={"type": "cluster_read", "table": "INDX", "where": "relid = 'ZV'"})
+  SAP(action="analyze", params={"type": "cluster_read", "table": "INDX", "where": "relid = 'ZD'", "layout": "ZDEMO_S_HEADER"})
+  SAP(action="analyze", params={"type": "cluster_read", "table": "INDX", "where": "...", "layout": "HDR=ZDEMO_S_HEADER,ITEMS=ZDEMO_S_ITEM"})
+  SAP(action="analyze", params={"type": "cluster_read", "table": "STXL", "where": "tdname = 'Z...'"})
+  SAP(action="analyze", params={"type": "cluster_read", "table": "BALDAT", "where": "relid = 'AL' AND log_handle = '...'", "layout": "applog"})
+      every exported object with its fields typed and decoded. The cluster holds no field names:
+      without a layout they are numbered; a DDIC structure (read from DD03L, includes resolved) names
+      them, per object as OBJECT=STRUCTURE, and is refused when it does not fit rather than guessed.
+      stxl (the default on STXL) renders SAPscript text; applog prints BALDAT messages.
+      Version 5 clusters (pre-Unicode rows, e.g. EUFUNC test data, AQLDB) are read as well.
+      max_results caps database rows (fragments), 200 by default.
+
+Profiler traces:
+  SAP(action="analyze", params={"type": "list_traces"})
+  SAP(action="analyze", params={"type": "get_trace", "trace_id": "..."})
+
+SQL traces:
+  SAP(action="analyze", params={"type": "sql_trace_state"})
+  SAP(action="analyze", params={"type": "list_sql_traces"})
+
+ABAP help:
+  SAP(action="analyze", params={"type": "abap_help", "keyword": "SELECT"})
+
+Dependency graph & boundary analysis:
+  SAP(action="analyze", params={"type": "check_boundaries", "package": "$ZDEV", "whitelist": "$ZCOMMON,$ZUTIL*"})
+  SAP(action="analyze", params={"type": "check_boundaries", "object": "ZCL_TEST", "whitelist": "$ZCOMMON"})
+  SAP(action="analyze", params={"type": "check_boundaries", "source": "REPORT z.\nCALL FUNCTION 'Z_FM'.", "package": "$Z"})
+  SAP(action="analyze", params={"type": "graph_stats", "source": "REPORT z.\nDATA lo TYPE REF TO zcl_x."})

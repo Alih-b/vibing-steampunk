@@ -1,0 +1,14 @@
+SAP(action="revisions") - Version history
+
+Name the object by type and name, or by target:
+  SAP(action="revisions", params={"type": "CLAS", "name": "ZCL_DEMO"})
+  SAP(action="revisions", target="CLAS ZCL_DEMO")
+
+Read one version's source. The URI comes from the list above and is not
+constructable by hand:
+  SAP(action="revisions", params={"op": "source", "version_uri": "..."})
+
+Compare two versions; version2_uri defaults to the current one:
+  SAP(action="revisions", params={"op": "compare", "type": "CLAS", "name": "ZCL_DEMO", "version1_uri": "..."})
+
+For a function module, name its group as parent.

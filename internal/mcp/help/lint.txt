@@ -1,0 +1,13 @@
+SAP(action="lint") - Static analysis, offline
+
+Supply the source, or name an object to read it from. One or the other —
+neither is optional on its own:
+  SAP(action="lint", params={"source": "REPORT zdemo.\nWRITE 'x'.\n"})
+  SAP(action="lint", params={"object_type": "CLAS", "object_name": "ZCL_DEMO"})
+
+Also reachable as analyze type=lint, because that is where somebody looks
+for static analysis first.
+
+Thirteen rules, eight on by default: empty catch blocks, over-broad
+exception catches, hardcoded credentials, magic numbers, unreachable code.
+No ABAP is executed, and no server is involved when source is supplied.

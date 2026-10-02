@@ -1,0 +1,33 @@
+SAP - Universal ABAP Development Tool
+
+Actions:
+  read     - Read source code, table definitions, packages, messages
+  edit     - Edit source (high-level with auto lock/unlock, or low-level)
+  create   - Create objects, packages, tables, clones
+  delete   - Delete objects
+  search   - Search for objects by name/pattern
+  query    - Query table contents or run SQL
+  grep     - Search patterns in source code
+  test     - Run unit tests, ATC checks
+  analyze  - Syntax check, call graph, code intelligence, profiler, dumps and the log around
+             them, application log, boundary analysis
+  debug    - Breakpoints, stepping, variables, RFC calls, report execution
+  system   - System info, transports, git, install tools, file operations
+  rfc      - Classic RFC to the same system, no gateway library
+  i18n     - Translation texts, language comparison
+  revisions- Version history, one version's source, two versions compared
+  lint     - Static analysis of ABAP source, offline
+  info     - Build, connection, system, and what to call next. Also SAP() with
+             no arguments at all.
+  help     - This help. Use SAP(action="help", target="<action>") for details.
+
+Quick examples:
+  SAP(action="read", target="CLAS ZCL_TEST")
+  SAP(action="edit", target="CLAS ZCL_TEST", params={"source": "CLASS zcl_test..."})
+  SAP(action="search", target="ZCL_*")
+  SAP(action="test", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test"})
+  SAP(action="grep", params={"package_name": "$TMP", "pattern": "SELECT"})
+  SAP(action="analyze", params={"type": "check_boundaries", "package": "$ZDEV", "whitelist": "$ZCOMMON"})
+  SAP(action="system", target="INFO")
+
+Use SAP(action="help", target="tips") for best practices and workflow guides.

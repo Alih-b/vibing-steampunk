@@ -1,0 +1,54 @@
+SAP(action="read") - Read source code and metadata
+
+IDoc, as WE02 shows it (classic RFC; segment data EDID4-SDATA cannot be queried):
+  SAP(action="read", target="IDOC 28757955")
+  SAP(action="read", target="IDOC 28757955", params={"segment": "E1EDKA1"})   (prefix; "all_fields": true, "raw": true, "max_segments": 500)
+  Control record, status records newest first with their texts, segments cut into fields by the segment definition.
+
+Read source with context (recommended):
+  SAP(action="read", target="CLAS ZCL_TEST")
+  SAP(action="read", target="PROG ZREPORT")
+  SAP(action="read", target="INTF ZIF_TEST")
+  SAP(action="read", target="FUNC ZGET_DATA", params={"parent": "ZFUNC_GROUP"})
+  SAP(action="read", target="DDLS ZDDL_VIEW")
+  SAP(action="read", target="BDEF ZBDEF_NAME")
+  SAP(action="read", target="SRVD ZSRVD_NAME")
+  SAP(action="read", target="INCL ZINCLUDE_NAME")
+  SAP(action="read", target="FUGR ZFUNC_GROUP")
+
+Read with options:
+  SAP(action="read", target="CLAS ZCL_TEST", params={"include": "testclasses"})
+  SAP(action="read", target="CLAS ZCL_TEST", params={"method": "GET_DATA"})
+  SAP(action="read", target="CLAS ZCL_TEST", params={"include_context": false})
+
+Read metadata:
+  SAP(action="read", target="TABL ZTABLE")          - Table definition
+  SAP(action="read", target="TABL_CONTENTS ZTABLE") - Table data
+  SAP(action="read", target="DEVC $TMP")             - Package info
+  SAP(action="read", target="DEVC $ZDEMO", params={"inventory": true})
+      - inventory in one call: TADIR objects (type, name, author, created_on), subpackages (TDEVC),
+        abapGit repository registered for the package (if abapGit is installed). Read-only.
+        With --block-free-sql: ADT package contents only; "skipped" says what that leaves out.
+  SAP(action="read", target="MSAG ZMSG_CLASS")       - Message class
+  SAP(action="read", target="TRAN SM30")              - Transaction info
+  SAP(action="read", target="TYPE_INFO ZTYPE")        - Type info
+  SAP(action="read", target="STRUCT ZSTRUCT")         - Structure definition
+  SAP(action="read", target="CDS_DEPS ZDDL_VIEW")    - CDS dependencies
+  SAP(action="read", target="CDS_IMPACT ZDDL_VIEW")  - CDS consumers (also analyze type=cds_impact)
+  SAP(action="read", target="CDS_ELEMENTS ZDDL_VIEW") - CDS element info
+  SAP(action="read", target="VIEW ZDDIC_VIEW")       - DDIC view
+  SAP(action="read", target="SRVB ZSB_TEST")         - Service binding
+  SAP(action="read", target="CLASS_INFO ZCL_TEST")   - Class metadata
+  SAP(action="read", target="CLAS_INCLUDE ZCL_TEST", params={"include_type": "testclasses"})
+      include_type: definitions, implementations, macros, testclasses
+  SAP(action="read", target="CHECK_RUN 0123456789ABCDEF")  - Results of an earlier check run
+
+UI5 (BSP) repository:
+  SAP(action="read", target="UI5_LIST", params={"query": "Z*"})
+  SAP(action="read", target="UI5_APP ZDEMO_APP")
+  SAP(action="read", target="UI5_FILE", params={"app_name": "ZDEMO_APP", "file_path": "/webapp/manifest.json"})
+
+Query data:
+  SAP(action="query", target="TABL_CONTENTS ZTABLE", params={"max_rows": 50})
+  SAP(action="query", target="T000")
+  SAP(action="query", target="SQL", params={"sql_query": "SELECT * FROM T000", "max_rows": 10})

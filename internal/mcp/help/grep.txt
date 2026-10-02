@@ -1,0 +1,16 @@
+SAP(action="grep") - Search in source code
+
+Grep single object:
+  SAP(action="grep", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "pattern": "SELECT.*FROM"})
+  SAP(action="grep", target="CLAS ZCL_TEST", params={"pattern": "SELECT.*FROM"})
+  SAP(action="grep", params={"object_type": "PROG", "object_name": "ZREPORT", "pattern": "WRITE"})
+      by name the type is needed (CLAS, PROG, INTF, FUGR): a bare target="ZREPORT" is refused
+
+Grep package:
+  SAP(action="grep", params={"package_name": "$TMP", "pattern": "WRITE", "max_results": 50})
+
+Grep multiple objects:
+  SAP(action="grep", params={"object_urls": ["/sap/bc/adt/oo/classes/zcl_a", "/sap/bc/adt/oo/classes/zcl_b"], "pattern": "TODO"})
+
+Grep multiple packages:
+  SAP(action="grep", params={"packages": ["$TMP", "$ZADT"], "pattern": "RAISE", "include_subpackages": true})

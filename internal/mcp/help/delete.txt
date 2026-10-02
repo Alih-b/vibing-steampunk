@@ -1,0 +1,20 @@
+SAP(action="delete") - Delete objects
+
+By type and name -- locks, deletes and unlocks in this one call:
+  SAP(action="delete", target="PROG ZDEMO_REPORT")
+  SAP(action="delete", target="CLAS ZCL_DEMO", params={"transport": "A4HK900001"})
+  SAP(action="delete", target="FUNC Z_DEMO_FM", params={"parent": "ZDEMO_FG"})   (the group is looked up when not given)
+  Types: {{deleteNameTypesLine}}
+
+By ADT URL:
+  SAP(action="delete", target="OBJECT", params={"object_url": "/sap/bc/adt/oo/classes/zcl_demo"})
+
+Do not lock first: without lock_handle the call takes its own lock and releases
+it after the DELETE. A handle carried over from an earlier edit target="LOCK"
+is still accepted, but the session it belongs to may be gone by then (#169).
+--read-only refuses every delete; --allowed-packages must allow the object's
+package; a transportable object needs "transport" and --allow-transportable-edits.
+
+UI5 (BSP) repository:
+  SAP(action="delete", target="UI5_FILE", params={"app_name": "ZDEMO_APP", "file_path": "/webapp/demo.js"})
+  SAP(action="delete", target="UI5_APP", params={"app_name": "ZDEMO_APP"})

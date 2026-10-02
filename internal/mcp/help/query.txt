@@ -1,0 +1,20 @@
+SAP(action="query") - Database queries
+
+Table contents:
+  SAP(action="query", target="TABL_CONTENTS ZTABLE", params={"max_rows": 50})
+
+Free SQL (ABAP SQL, read in the logon client):
+  SAP(action="query", target="SQL", params={"sql_query": "SELECT * FROM T000 WHERE MANDT = '001'", "max_rows": 100})
+  SAP(action="query", params={"sql": "SELECT h~trkorr, t~as4text FROM e070 AS h INNER JOIN e07t AS t ON t~trkorr = h~trkorr ORDER BY h~trkorr DESCENDING"})
+  SAP(action="query", target="SELECT * FROM T000")
+      the statement may be the target; one passed in params ("sql_query", "sql", "query"
+      or "statement") wins over it
+  --block-free-sql refuses a statement in every form, a table read that carries one
+  included; a table read without one stays allowed.
+
+The data preview wraps the statement in its own SELECT ... INTO, so it takes
+ABAP SQL only. vsp rewrites the common ANSI spellings before sending -- t.col to
+t~col, DESC/ASC to DESCENDING/ASCENDING, a closing period -- and says so in
+"Notes". A refused query comes back with SAP's message and a hint: the columns
+the table does have, what a name it cannot find is, or that the client field
+of a client-specific table cannot be in the WHERE condition.

@@ -1,0 +1,12 @@
+SAP(action="search") - Search for objects
+
+  SAP(action="search", target="ZCL_*")
+  SAP(action="search", target="ZCL_*", params={"maxResults": 50})
+  SAP(action="search", target="ZCL_*", params={"type": "CLAS", "max": 20})   — type filter, applied before max
+  SAP(action="search", target="ZCL_ORDER", params={"exact": true})            — only objects named exactly ZCL_ORDER (case-insensitive)
+  SAP(action="search", target="ZCL_ORDER", params={"exact": true, "type": "CLAS"})
+
+  exact sends the name without a wildcard and keeps the equal names. If the
+  search returns its full window of 1000 matches, it says so: inconclusive
+  when none was equal, "incomplete" next to the results when some were; add
+  "type" to narrow.

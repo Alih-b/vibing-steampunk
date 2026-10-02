@@ -1,0 +1,50 @@
+SAP(action="create") - Create new objects
+
+Create object:
+  SAP(action="create", target="OBJECT", params={"object_type": "CLAS/OC", "name": "ZCL_NEW", "description": "New class", "package_name": "$TMP"})
+  SAP(action="create", target="OBJECT", params={"object_type": "FUGR/F", "name": "ZVSP_DEMO", "description": "Demo group", "package_name": "$TMP"})
+  SAP(action="create", target="OBJECT", params={"object_type": "FUGR/FF", "name": "ZVSP_DEMO_FM", "parent_name": "ZVSP_DEMO", "description": "RFC demo", "package_name": "$TMP", "rfc_enabled": true, "source": "FUNCTION zvsp_demo_fm\n  IMPORTING VALUE(iv_n) TYPE i\n  EXPORTING VALUE(ev_result) TYPE i.\n  ev_result = iv_n * 2.\nENDFUNCTION."})
+  SAP(action="create", target="DEVC", params={"name": "$ZNEW", "description": "New package"})
+  SAP(action="create", target="OBJECT", params={"object_type": "MSAG/N", "name": "ZDEMO", "description": "Demo messages", "package_name": "$TMP", "language": "DE", "messages": {"001": "Auftrag & nicht gefunden"}})
+  SAP(action="create", target="TABL", params={"name": "ZTABLE", "description": "New table", "package": "$TMP",
+      "fields": "[{\"name\":\"MANDT\",\"type\":\"MANDT\",\"key\":true},{\"name\":\"ID\",\"type\":\"CHAR10\",\"key\":true},{\"name\":\"VAL\",\"type\":\"INT4\",\"notNull\":true}]"})
+      Field attributes: name, type, length, decimals, description, key, notNull (any case; others are refused).
+      Client field: a first key field of type MANDT, CLIENT, CLNT or abap.clnt is the client field.
+      Without one, a "key client : abap.clnt" is added in front. A first key field named MANDT or
+      CLIENT typed with another data element (SYMANDT, ZMANDT) needs "client_dependent": true,
+      which uses it as the client field as is. Named MANDT/CLIENT with a built-in type (CHAR3,
+      INT4) needs "client_dependent": false (SAP never sees it as a client field). "client_dependent": false creates a
+      client-independent table with no client field. Non-key client-typed columns (SRC_CLIENT)
+      are plain data columns; a client-typed key field after the first is refused.
+  SAP(action="create", target="CLONE", params={"object_type": "CLAS", "source_name": "ZCL_OLD", "target_name": "ZCL_NEW", "package": "$TMP"})
+  SAP(action="create", target="STRUCT", params={"description": "Demo", "package": "$TMP",
+      "source": "@AbapCatalog.enhancement.category : #EXTENSIBLE_ANY
+define structure zdemo {
+  matnr : matnr;
+}"})
+  SAP(action="create", target="APPEND", params={"description": "Demo append", "package": "ZPKG", "transport": "A4HK900001",
+      "source": "extend type shp_vl10_item with zappend_demo {
+  zzflag : abap_boolean;
+}"})
+      (name and base come from the DDL; activation is checked against the inactive list)
+  SAP(action="create", target="DOMA ZDEMO", params={"description": "Demo", "package": "$TMP", "data_type": "CHAR", "length": 2,
+      "fixed_values": [{"low": "A", "text": "Alpha"}]})   ("decimals", "output_length", "lowercase", "signed", "conversion_exit", "value_table")
+  SAP(action="create", target="DTEL ZDEMO", params={"description": "Demo", "package": "$TMP", "domain": "ZDEMO",
+      "short_label": "Demo", "medium_label": "Demo field", "long_label": "Demo field", "heading": "Demo"})   (or "data_type" + "length"; "search_help", "parameter_id")
+
+Enhancement implementation (source code plug-in, ENHO): list the options, then create one --
+  SAP(action="read", target="ENHANCEMENT_OPTIONS", params={"function_module": "BAPI_X"})   (or object_url, function_group, program, class; "filter")
+  SAP(action="create", target="ENHO", params={"name": "ZENH_DEMO", "description": "Demo", "package": "ZPKG", "transport": "A4HK900001",
+      "function_module": "BAPI_X", "option": "\\FU:BAPI_X\\SE:BEGIN\\EI", "source": "ENHANCEMENT 1  .\n  ...\nENDENHANCEMENT."})
+  Without "source" it is created inactive with an empty ENHANCEMENT block; with it the code is written and activated.
+
+BAdI implementation (ENHO): the implementing class must exist and implement the BAdI interface --
+  SAP(action="create", target="BADI_IMPL", params={"name": "ZENH_DEMO", "description": "Demo", "package": "ZPKG", "transport": "A4HK900001",
+      "spot": "BADI_X", "class": "ZCL_DEMO_BADI"})   ("badi" if the spot has several; "active": false = switched off; "activate": false)
+
+Class test include:
+  SAP(action="create", target="CLAS_TEST_INCLUDE", params={"class_name": "ZCL_TEST", "lock_handle": "..."})
+
+High-level create (with source):
+  SAP(action="create", target="PROGRAM", params={"program_name": "ZTEST", "description": "Test", "package_name": "$TMP", "source": "REPORT ztest."})
+  SAP(action="create", target="CLASS_WITH_TESTS", params={"class_name": "ZCL_TEST", "description": "Test", "package_name": "$TMP", "class_source": "...", "test_source": "..."})

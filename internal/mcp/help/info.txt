@@ -1,0 +1,20 @@
+SAP(action="info") - What am I talking to?
+
+  SAP()
+  SAP(action="info")
+
+Both answer the same four things, in the order somebody needs them:
+
+  which build is answering — an agent reporting a defect against "vsp"
+    names nothing; against a commit it names something
+  whether the session is alive and authenticated, which decides whether
+    any other call is worth making
+  which system, so nobody acts on production believing it is a sandbox
+  what to call next
+
+The connection check is a CSRF token fetch, not a status code: an expired
+SSO session answers 200 with a logon page, and only the missing token
+gives it away.
+
+The instance number is derived from the port (80NN, 443NN, 5NN00), not
+read from the system, and the card says so.

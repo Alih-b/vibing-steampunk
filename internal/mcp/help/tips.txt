@@ -1,0 +1,46 @@
+SAP Best Practices & Workflows
+
+=== EDITING WORKFLOW (recommended) ===
+1. Read object with context:    SAP(action="read", target="CLAS ZCL_TEST")
+2. Edit (auto lock/activate):   SAP(action="edit", target="CLAS ZCL_TEST", params={"source": "..."})
+   → Handles lock → save → unlock → activate automatically
+
+=== FILE-BASED WORKFLOW (for complex edits) ===
+1. Export to local file:         SAP(action="system", params={"type": "save_to_file", "object_type": "CLAS", "object_name": "ZCL_TEST", "output_dir": "/tmp"})
+2. Edit locally (your editor)
+3. Deploy back:                  SAP(action="system", params={"type": "deploy_from_file", "file_path": "/tmp/zcl_test.clas.abap", "package_name": "$TMP"})
+   → Best for large classes — edit locally, deploy per-file
+
+=== PACKAGE ANALYSIS ===
+1. Check boundaries:             SAP(action="analyze", params={"type": "check_boundaries", "package": "$ZDEV", "whitelist": "$ZCOMMON"})
+2. Offline (no SAP):             SAP(action="analyze", params={"type": "check_boundaries", "source": "...", "package": "$ZDEV"})
+
+=== TESTING ===
+1. Run unit tests:               SAP(action="test", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test"})
+2. ATC check:                    SAP(action="test", target="ATC", params={"object_uri": "/sap/bc/adt/oo/classes/zcl_test"})
+3. Syntax check:                 SAP(action="analyze", params={"type": "syntax_check", "object_url": "/sap/bc/adt/oo/classes/zcl_test"})
+
+=== DEPENDENCY ANALYSIS ===
+1. What this uses (down):        SAP(action="analyze", params={"type": "callees", "object_uri": "..."})
+2. Where-used (up):              SAP(action="analyze", params={"type": "callers", "object_uri": "..."})
+3. CDS dependencies:             SAP(action="read", target="CDS_DEPS ZDDL_VIEW")
+4. CDS impact (consumers):      SAP(action="analyze", params={"type": "cds_impact", "cds_view": "ZDDL_VIEW"})
+5. Boundary check:               SAP(action="analyze", params={"type": "check_boundaries", "package": "$ZDEV"})
+
+=== SEARCH & GREP ===
+1. Find objects:                 SAP(action="search", target="ZCL_*")
+2. Grep in package:              SAP(action="grep", params={"package_name": "$TMP", "pattern": "SELECT"})
+3. Grep specific object:         SAP(action="grep", target="CLAS ZCL_TEST", params={"pattern": "MODIFY"})
+
+=== DEBUGGING ===
+1. Set breakpoint:               SAP(action="debug", target="SET_BREAKPOINT", params={"program": "ZCL_TEST", "line": 10})
+2. Run report:                   SAP(action="debug", target="RUN_REPORT", params={"report": "ZREPORT"})
+3. Call RFC:                     SAP(action="debug", target="CALL_RFC", params={"function": "Z_MY_FM", "params": "{...}"})
+
+=== TIPS ===
+• Use "read" before "edit" — it gives context (deps, structure)
+• Use deploy_from_file for classes with many methods — edit locally, deploy per-file
+• Use save_to_file + export to get objects locally for offline analysis/editing
+• Use check_boundaries with whitelist to enforce package architecture
+• Always test after edit: syntax check → unit tests → ATC
+• For large refactors: export → edit locally → deploy → test

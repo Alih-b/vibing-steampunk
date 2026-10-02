@@ -1,0 +1,49 @@
+SAP(action="debug") - Debugging operations
+
+Breakpoints:
+  SAP(action="debug", target="SET_BREAKPOINT", params={"program": "ZCL_TEST", "line": 10})
+  SAP(action="debug", target="SET_BREAKPOINT", params={"kind": "statement", "statement": "SELECT"})
+  SAP(action="debug", target="SET_BREAKPOINT", params={"kind": "exception", "exception": "CX_SY_ZERODIVIDE"})
+  SAP(action="debug", target="GET_BREAKPOINTS")
+  SAP(action="debug", target="DELETE_BREAKPOINT", params={"breakpoint_id": "123"})
+
+Session:
+  SAP(action="debug", target="LISTEN", params={"timeout": 60})
+  SAP(action="debug", target="ATTACH", params={"debuggee_id": "..."})
+  SAP(action="debug", target="DETACH")
+  SAP(action="debug", target="STEP", params={"step_type": "stepInto"})
+  SAP(action="debug", target="GET_STACK")
+  SAP(action="debug", target="GET_VARIABLES")
+
+RFC:
+  SAP(action="debug", target="CALL_RFC", params={"function": "RFC_READ_TABLE", "params": "{\"QUERY_TABLE\": \"T000\"}"})
+
+Move object:
+  SAP(action="debug", target="MOVE", params={"object_type": "CLAS", "object_name": "ZCL_TEST", "new_package": "$TMP"})
+
+Report execution:
+  SAP(action="debug", target="RUN_REPORT", params={"report": "RSUSR002"})
+  SAP(action="debug", target="RUN_REPORT_ASYNC", params={"report": "RSUSR002"})   - answers a task_id
+  SAP(action="debug", target="GET_ASYNC_RESULT", params={"task_id": "..."})
+  SAP(action="debug", target="GET_VARIANTS", params={"report": "RSUSR002"})
+  SAP(action="debug", target="GET_TEXT_ELEMENTS", params={"program": "ZREPORT"})
+  SAP(action="debug", target="SET_TEXT_ELEMENTS", params={"program": "ZREPORT", "selection_texts": "{\"P_USER\": \"Username\"}"})
+
+AMDP debugging over ADT (nothing installed on the server; breakpoints fire):
+  SAP(action="debug", target="AMDP_ADT_START")
+  SAP(action="debug", target="AMDP_ADT_BREAKPOINT", params={"class": "ZCL_X", "line": 41})
+  SAP(action="debug", target="AMDP_ADT_AWAIT")   # run the AMDP method from elsewhere first
+  SAP(action="debug", target="AMDP_ADT_STOP")
+  Answers arrive as a queue with acknowledgements at its head, so AWAIT keeps
+  asking past them. It also reports whether SAP calls the breakpoint VALID —
+  a refused breakpoint and a method that never ran look identical otherwise.
+
+AMDP debugging over the ZADT_VSP WebSocket (older route; its breakpoints have
+never been observed to fire):
+  SAP(action="debug", target="AMDP_START", params={"cascade_mode": "FULL"})
+  SAP(action="debug", target="AMDP_RESUME")
+  SAP(action="debug", target="AMDP_STEP", params={"step_type": "stepInto"})
+  SAP(action="debug", target="AMDP_STOP")
+  SAP(action="debug", target="AMDP_GET_VARIABLES")
+  SAP(action="debug", target="AMDP_SET_BREAKPOINT", params={"proc_name": "...", "line": 5})
+  SAP(action="debug", target="AMDP_GET_BREAKPOINTS")

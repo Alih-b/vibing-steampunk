@@ -1,0 +1,46 @@
+SAP(action="i18n") - Translation texts and language comparison
+
+Object texts in one language:
+  SAP(action="i18n", params={"op": "texts", "object_url": "/sap/bc/adt/oo/classes/zcl_demo", "language": "DE"})
+
+Data element labels — short, medium, long, heading:
+  SAP(action="i18n", params={"op": "data_element_labels", "name": "ZDE_ORDER_ID", "language": "DE"})
+
+Message class texts:
+  SAP(action="i18n", params={"op": "message_class_texts", "name": "ZVSP_GIT", "language": "EN"})
+
+A report's or a class's text pool — selection texts (S), text symbols (I), headings (H):
+  SAP(action="i18n", params={"op": "texts_get", "program_name": "ZDEMO_REPORT"})
+  SAP(action="i18n", target="CLAS ZCL_DEMO", params={"op": "texts_get"})
+
+What differs between two languages — named separately, not as a list:
+  SAP(action="i18n", params={"op": "compare_languages", "object_url": "/sap/bc/adt/oo/classes/zcl_demo", "source_language": "EN", "target_language": "DE"})
+
+Writing changes the system; without lock_handle the call locks and unlocks itself.
+write_message_texts adds new message numbers and leaves the others as they are:
+  SAP(action="i18n", params={"op": "write_message_texts", "name": "ZVSP_GIT", "language": "DE", "lock_handle": "...", "texts": []})
+  SAP(action="i18n", params={"op": "texts_set", "program_name": "ZDEMO_RUN", "texts": {"P_DEVC": "Package to scan"}})
+  SAP(action="i18n", params={"op": "texts_set", "program_name": "ZDEMO_RUN", "texts": {"selections": {"S_OBJ": "Object names"}, "symbols": {"001": "Nothing found"}}, "dry_run": true})
+      texts_set needs no lock_handle: the text pool is its own resource, locked and released in the call.
+      The answer is a plan — added, changed (from what), unchanged, unknown (not on the screen), refused —
+      and dry_run stops at the plan. "language" names a translation; without it the logon language is written.
+      A null text ({"P_MODE": null}) removes the key — a field gone from the screen leaves its entry behind.
+      After create PROGRAM / write_program the result carries a "hints" line naming screen fields with no
+      selection text and TEXT-xxx the source uses but does not define. create PROGRAM also takes "texts".
+      The written texts are activated in the same call; without that they stay an inactive version.
+
+A write to a transportable object with no "transport" named picks a request the way Eclipse's
+dialog would: the object's own, else your open request that already holds the package's objects,
+else the only one that fits, else the newest; with none and --enable-transports one is created.
+The result says which under "transport" and why under "transportNote". SAP no longer generates a
+"Generated Request for Change Recording" per write. --transport-choice off restores that.
+
+The description — SE38's title — of an existing object, without touching its source:
+  SAP(action="edit", target="PROG ZDEMO_XFER", params={"type": "set_description", "description": "DPL snapshot transfer"})
+      PROG, INCL, CLAS, INTF, FUGR, FUNC (with "parent"), TABL, DDLS; without "description" it reads the current one.
+      deploy_from_file and write_program take "description" too and write it after the source.
+
+write_labels is not implemented and refuses. What it used to send was a
+four-field document to a resource that takes the data element's whole
+representation, so it never worked; it now says so instead of failing
+opaquely. Use SE11.

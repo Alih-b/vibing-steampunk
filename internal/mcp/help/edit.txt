@@ -1,0 +1,46 @@
+SAP(action="edit") - Edit source code
+
+High-level edit (recommended - auto lock/unlock/activate):
+  SAP(action="edit", target="CLAS ZCL_TEST", params={"source": "CLASS zcl_test..."})
+  SAP(action="edit", target="PROG ZREPORT", params={"source": "REPORT zreport..."})
+  SAP(action="edit", target="INTF ZIF_TEST", params={"source": "INTERFACE zif_test..."})
+  SAP(action="edit", target="FUNC ZMY_FM", params={"source": "FUNCTION zmy_fm...ENDFUNCTION."})
+      the function group is resolved from the module name; pass params={"parent": "ZMY_FG"} to name it
+  SAP(action="edit", target="DDLS ZDDL_VIEW", params={"source": "@AbapCatalog..."})
+
+Method-level edit (CLAS only):
+  SAP(action="edit", target="CLAS ZCL_TEST", params={"source": "METHOD get_data...ENDMETHOD.", "method": "GET_DATA"})
+
+Class include edit (CLAS only; the include's own source, main source untouched):
+  SAP(action="edit", target="CLAS ZCL_TEST", params={"include": "testclasses", "source": "CLASS ltcl_test DEFINITION FOR TESTING..."})
+  include: definitions, implementations, macros, testclasses (created if missing). Any other name is refused.
+  Main source and test classes in one call: params={"source": "CLASS zcl_test...", "test_source": "CLASS ltcl_test..."}
+  Without activation: SAP(action="edit", target="CLAS_INCLUDE ZCL_TEST", params={"class_name": "ZCL_TEST", "include_type": "testclasses", "source": "..."})
+
+Surgical edit (find and replace in source):
+  SAP(action="edit", target="EDITSOURCE", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "old_string": "old code", "new_string": "new code"})
+
+Low-level edit (manual lock/unlock):
+  SAP(action="edit", target="LOCK", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test"})
+  SAP(action="edit", target="UPDATE_SOURCE", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "source": "...", "lock_handle": "..."})
+  UPDATE_SOURCE with a class include URL (/sap/bc/adt/oo/classes/zcl_test/includes/testclasses) writes that include; lock the class URL.
+  SAP(action="edit", target="UNLOCK", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "lock_handle": "..."})
+
+Class include (definitions, implementations, macros, testclasses; auto lock):
+  SAP(action="edit", target="CLAS_INCLUDE", params={"class_name": "ZCL_TEST", "include_type": "testclasses", "source": "..."})
+
+Whole source of a program or a class:
+  SAP(action="edit", params={"type": "write_program", "program_name": "ZREPORT", "source": "REPORT zreport."})
+  SAP(action="edit", params={"type": "write_class", "class_name": "ZCL_TEST", "source": "CLASS zcl_test DEFINITION..."})
+
+Compare two sources (read-only):
+  SAP(action="edit", target="COMPARE_SOURCE", params={"type1": "CLAS", "name1": "ZCL_A", "type2": "CLAS", "name2": "ZCL_B"})
+
+Activate:
+  SAP(action="edit", target="ACTIVATE", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "object_name": "ZCL_TEST"})
+  SAP(action="edit", target="ACTIVATE_MULTI", params={"objects": ["PROG ZREPORT", "INCL ZREPORT_F01"]})
+  SAP(action="edit", target="ACTIVATE_PACKAGE", params={"package": "$TMP"})
+
+Service binding:
+  SAP(action="edit", target="PUBLISH_SERVICE", params={"service_name": "ZSB_TEST"})
+  SAP(action="edit", target="UNPUBLISH_SERVICE", params={"service_name": "ZSB_TEST"})

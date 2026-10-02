@@ -1,0 +1,66 @@
+SAP(action="system") - System operations
+
+Info:
+  SAP(action="system", target="INFO")
+  SAP(action="system", target="COMPONENTS")
+  SAP(action="system", target="CONNECTION")
+  SAP(action="system", target="FEATURES")
+  SAP(action="system", params={"type": "system_info"})   (also "components", "connection", "features")
+
+Transports:
+  SAP(action="system", params={"type": "list_transports"})
+      defaults: request_type KWT, request_status DR, source auto (organizer tree → search configuration → E070/E07T)
+  SAP(action="system", params={"type": "list_transports", "request_status": "D"})        - modifiable only
+  SAP(action="system", params={"type": "list_transports", "source": "config"})           - as Eclipse: saved search configuration
+  SAP(action="system", params={"type": "list_transports", "request_status": "R", "released_from": "20260101", "released_to": "20261231"})
+  SAP(action="system", params={"type": "get_transport", "transport": "A4HK900001"})
+  SAP(action="system", params={"type": "create_transport", "description": "...", "package": "$TMP"})
+  SAP(action="system", params={"type": "create_transport", "description": "...", "package": "ZDEMO", "cts_project": "PRJ_DEMO", "target": "/GROUP/"})  - filed under a CTS project (default: --cts-project)
+  SAP(action="system", params={"type": "release_transport", "transport": "A4HK900001"})
+  SAP(action="system", params={"type": "delete_transport", "transport": "A4HK900001"})
+  SAP(action="system", params={"type": "merge_transports", "source": ["A4HK900001", "A4HK900003"], "target": "A4HK900005"})
+  SAP(action="system", params={"type": "move_transport_object", "object": "PROG ZDEMO", "from": "A4HK900001", "to": "A4HK900005"})
+  SAP(action="system", params={"type": "copy_to_toc", "transport": "A4HK900001", "target": "QAS"})  - transport of copies, as SE01 (ZADT_VSP); "release": true releases it
+  SAP(action="system", params={"type": "upload_transport", "cofile_path": "/in/K900001.DEV", "datafile_path": "/in/R900001.DEV"})
+    - expert mode; writes both files into this system's DIR_TRANS, releases the job that adds the request to its import queue, answers "pending" with the job; never imports (STMS does)
+  SAP(action="system", params={"type": "transport_status", "transport": "TR-EXAMPLE", "job": "12345678"})  - the upload's outcome: queued / pending / job_failed / unknown, read-only
+  SAP(action="system", params={"type": "transport_buffer", "transport": "TR-EXAMPLE"})  - this system's import queue, read-only
+  SAP(action="system", params={"type": "add_transport_object", "transport": "A4HK900001", "objects": ["LIMU REPT ZDEMO", "R3TR PROG ZDEMO2"]})
+  SAP(action="system", params={"type": "add_transport_object", "transport": "A4HK900001", "object": "R3TR TABU ZDEMO_CONF", "keys": ["100KEY1", "100KEY2*"]})
+  SAP(action="system", params={"type": "remove_transport_object", "transport": "A4HK900001", "object": "PROG ZDEMO"})
+    (add goes to your task in the request; table keys are TABKEY: key fields end to end at full length, '*' generic)
+      SE09's Merge Requests and a single entry's move, through ZADT_VSP's function bridge (needs ZADT_VSP)
+  SAP(action="system", params={"type": "get_user_transports", "user_name": "DEVELOPER"})
+      same parameters as list_transports (request_type, request_status, released_from/to, targets, source, config_uri)
+  SAP(action="system", params={"type": "get_transport_info", "object_url": "...", "dev_class": "$TMP"})
+
+Git/abapGit:
+  SAP(action="system", params={"type": "git_types"})
+  SAP(action="system", params={"type": "git_export", "packages": "$TMP"})
+  SAP(action="system", params={"type": "git_import_zip", "file_path": "/in/demo.zip", "package": "$ZDEMO", "repo_name": "demo", "overwrite": false})
+    - an abapGit offline zip into a package (or "zip_base64"), by the abapGit on the system, as background job ZVSP_GIT_IMPORT;
+      waits wait_seconds (300; 0 = answer with the job) and answers status (imported / imported_with_errors / refused / failed),
+      the E/W/A log, the TADIR rows created or changed, repoKey. Nothing existing is overwritten without overwrite: true;
+      conflicts, unmet requirements and objects of other packages refuse. Every package the zip maps to must pass
+      --allowed-packages; a transportable package needs --allow-transportable-edits and a transport.
+      overwrite also needs deletes allowed. An existing package without a repository needs no overwrite
+      for its own package entry (left as it is)
+  SAP(action="system", params={"type": "git_import_status", "job": "12345678"})  - the import job's state and result, read-only
+  SAP(action="system", params={"type": "git_delete_objects", "package": "$ZDEMO", "objects": ["PROG ZDEMO_REPORT"], "delete_repo": false})
+    - deletes exactly those TADIR items of the package (each through DeleteObject's gate), then the package if
+      nothing is left in it and no abapGit repository is registered for it; nothing outside the package.
+      The repository row is kept unless delete_repo: true, and then dropped only for an offline repository of
+      a package left empty; an online repository is never unregistered (delete_repo with one is refused)
+
+Install tools:
+  SAP(action="system", params={"type": "install_zadt_vsp"})
+  SAP(action="system", params={"type": "install_abapgit"})
+  SAP(action="system", params={"type": "install_dummy_test"})
+  SAP(action="system", params={"type": "list_dependencies"})
+  SAP(action="system", params={"type": "deploy_zip", "source": "abapgit-standalone", "package": "$ZGIT"})
+      deploy_zip and deploy_from_file take "timeout" (seconds) for the whole call.
+
+File operations:
+  SAP(action="system", params={"type": "deploy_from_file", "file_path": "/path/to/file.prog.abap", "package_name": "$TMP"})
+  SAP(action="system", params={"type": "save_to_file", "object_type": "CLAS", "object_name": "ZCL_TEST", "output_dir": "/tmp"})
+  SAP(action="system", params={"type": "rename", "objType": "CLAS/OC", "oldName": "ZCL_OLD", "newName": "ZCL_NEW", "packageName": "$TMP"})
