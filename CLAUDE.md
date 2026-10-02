@@ -139,6 +139,7 @@ func (s *Server) handleX(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 2. Register in `tools_register.go` with `shouldRegister("X")`
 3. Route in `handlers_analysis.go` (or appropriate router)
 4. Add to `tools_focused.go` if needed in focused mode
+5. Classify it in `internal/mcp/readonly_classes_test.go` (READ, MUTATE or EXECUTE); the read-only invariant test fails with "classify me" otherwise. The harness in `readonly_invariant_test.go` rarely needs reading.
 
 ---
 
