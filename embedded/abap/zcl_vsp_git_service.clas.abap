@@ -44,6 +44,8 @@ CLASS zcl_vsp_git_service DEFINITION
     "! extension is the WebSocket session that started the import.
     CONSTANTS c_amc_app TYPE amc_application_id VALUE 'ZVSP_GIT'.
     CONSTANTS c_amc_channel TYPE string VALUE `/import`.
+    "! The objects one object_versions call may name.
+    CONSTANTS c_max_versions TYPE i VALUE 500.
 
     "! The background step. Checks that it runs as its own job with its own
     "! protected variant, that the zip and the parameters waiting in INDX
@@ -181,6 +183,53 @@ CLASS zcl_vsp_git_service DEFINITION
     METHODS handle_package_objects
       IMPORTING is_message         TYPE zif_vsp_service=>ty_message
       RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
+
+    "! The version of objects of a package. Read-only. For each "TYPE NAME"
+    "! of objects (comma-separated, 1 to c_max_versions): its TADIR package,
+    "! and -- only when that is this package -- its stamp (object_stamp)
+    "! and, with sha256 = "true", the SHA-256 of its abapGit serialisation
+    "! (object_sha256). vsp reads them before it decides, and again under
+    "! the ADT lock it deletes with.
+    METHODS handle_object_versions
+      IMPORTING is_message         TYPE zif_vsp_service=>ty_message
+      RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
+
+    "! v2:<TABLES>:<YYYYMMDDHHMMSS>:<ROWS>:<DIGEST> -- the newest change date
+    "! and time over every dated version row of the object (active and
+    "! inactive) and the number of those rows, and the first 16 hex digits of
+    "! a SHA-256 over the rows of its tables that carry no date. Per type:
+    "! CLAS/INTF REPOSRC (every include of the pool but CS, which is
+    "! regenerated without the source changing) and REPOTEXT of the pool;
+    "! digest SEOCLASSDF, SEOCLASSTX, SEOCOMPOTX. PROG REPOSRC, REPOTEXT,
+    "! D020S (DGEN, TGEN). TABL DD02L, DD09L, DD12L; digest DD02T, DD35L,
+    "! TDDAT. DTEL DD04L; digest DD04T. DOMA DD01L; digest DD01T, DD07L,
+    "! DD07T. TTYP DD40L; digest DD40T. DDLS DDDDLSRC; digest DDDDLSRCT.
+    "! Another type: no stamp, and ev_error says so. No dated row: no stamp.
+    CLASS-METHODS object_stamp
+      IMPORTING iv_type  TYPE trobjtype
+                iv_name  TYPE sobj_name
+      EXPORTING ev_stamp TYPE string
+                ev_error TYPE string.
+
+    "! SHA-256 (lower-case hex) of the object's abapGit serialisation in its
+    "! original language (TADIR-MASTERLANG, E when empty) only: of the
+    "! UTF-8 text of the lines "<file name>=<lower-case hex SHA-256 of the
+    "! file>", one per file, sorted, joined by LF, without a final LF.
+    "! Whether the object, or a part of it, has an inactive version: a row
+    "! of the inactive worklist (DWINACTIV) for it or one of its parts.
+    CLASS-METHODS object_inactive
+      IMPORTING iv_type            TYPE trobjtype
+                iv_name            TYPE sobj_name
+      RETURNING VALUE(rv_inactive) TYPE abap_bool.
+
+    CLASS-METHODS object_sha256
+      IMPORTING iv_type     TYPE trobjtype
+                iv_name     TYPE sobj_name
+                iv_devclass TYPE devclass
+                iv_language TYPE spras
+      EXPORTING ev_sha256   TYPE string
+                ev_files    TYPE i
+                ev_error    TYPE string.
 
     "! The import itself: offline repository, deserialize checks, decisions,
     "! deserialize. Runs in the background job.
@@ -352,6 +401,8 @@ CLASS zcl_vsp_git_service IMPLEMENTATION.
         rs_response = handle_delete_repo( is_message ).
       WHEN 'package_objects'.
         rs_response = handle_package_objects( is_message ).
+      WHEN 'object_versions'.
+        rs_response = handle_object_versions( is_message ).
       WHEN 'import' OR 'validate'.
         rs_response = err( iv_id = is_message-id iv_code = 'UNKNOWN_ACTION'
                            iv_message = |Action '{ is_message-action }' is gone: an abapGit zip is imported with import_zip (vsp git import-zip)| ).
@@ -1672,6 +1723,7 @@ CLASS zcl_vsp_git_service IMPLEMENTATION.
 
     DATA(lv_package) = to_upper( condense( zcl_vsp_utils=>extract_param( iv_params = is_message-params iv_name = 'package' ) ) ).
     DATA(lv_repo_key) = condense( zcl_vsp_utils=>extract_param( iv_params = is_message-params iv_name = 'key' ) ).
+    DATA(lv_expect_name) = zcl_vsp_utils=>extract_param( iv_params = is_message-params iv_name = 'name' ).
     IF valid_package( lv_package ) = abap_false.
       rs_response = err( iv_id = is_message-id iv_code = 'INVALID_PARAM'
                          iv_message = |package '{ lv_package }' is not a package name| ).
@@ -1706,6 +1758,12 @@ CLASS zcl_vsp_git_service IMPLEMENTATION.
           RETURN.
         ENDIF.
         li_repo = zcl_abapgit_repo_srv=>get_instance( )->get( ls_repo-key ).
+        " Only the row the caller saw: with a name, exactly that name too.
+        IF lv_expect_name IS NOT INITIAL AND li_repo->get_name( ) <> lv_expect_name.
+          rs_response = err( iv_id = is_message-id iv_code = 'REPO_NAME_MISMATCH'
+                             iv_message = |The repository of { lv_package } is { ls_repo-key } { li_repo->get_name( ) }, not { lv_expect_name }; nothing was deleted| ).
+          RETURN.
+        ENDIF.
         " An online repository (its URL, branch and settings) is never
         " unregistered here: that is for a person to decide, in abapGit.
         IF li_repo->is_offline( ) = abap_false.
@@ -1826,6 +1884,254 @@ CLASS zcl_vsp_git_service IMPLEMENTATION.
       ( |"subpackages":{ zcl_vsp_utils=>json_arr( zcl_vsp_utils=>json_join( lt_subs ) ) }| )
       ( COND #( WHEN lv_repo IS NOT INITIAL THEN |"repo":{ lv_repo }| ) )
     ) ) ) ).
+  ENDMETHOD.
+
+
+  METHOD handle_object_versions.
+    DATA: lt_items     TYPE string_table,
+          ls_tadir     TYPE tadir,
+          lv_devclass  TYPE devclass,
+          lv_type      TYPE trobjtype,
+          lv_name      TYPE sobj_name,
+          lv_stamp     TYPE string,
+          lv_stamp_err TYPE string,
+          lv_sha       TYPE string,
+          lv_sha_err   TYPE string,
+          lv_inactive  TYPE abap_bool,
+          lv_files     TYPE i.
+
+    DATA(lv_package) = to_upper( condense( zcl_vsp_utils=>extract_param( iv_params = is_message-params iv_name = 'package' ) ) ).
+    DATA(lv_objects) = to_upper( zcl_vsp_utils=>extract_param( iv_params = is_message-params iv_name = 'objects' ) ).
+    DATA(lv_want_sha) = xsdbool( zcl_vsp_utils=>extract_param( iv_params = is_message-params iv_name = 'sha256' ) = `true` ).
+    IF valid_package( lv_package ) = abap_false.
+      rs_response = err( iv_id = is_message-id iv_code = 'INVALID_PARAM'
+                         iv_message = |package '{ lv_package }' is not a package name| ).
+      RETURN.
+    ENDIF.
+    lv_devclass = lv_package.
+    AUTHORITY-CHECK OBJECT 'S_DEVELOP'
+      ID 'DEVCLASS' FIELD lv_devclass
+      ID 'OBJTYPE'  DUMMY
+      ID 'OBJNAME'  DUMMY
+      ID 'P_GROUP'  DUMMY
+      ID 'ACTVT'    FIELD '03'.
+    IF sy-subrc <> 0.
+      rs_response = err( iv_id = is_message-id iv_code = 'NOT_AUTHORIZED'
+                         iv_message = |No authorization to display package { lv_package } (S_DEVELOP, activity 03)| ).
+      RETURN.
+    ENDIF.
+    SPLIT lv_objects AT ',' INTO TABLE DATA(lt_parts).
+    IF lines( lt_parts ) = 0 OR lines( lt_parts ) > c_max_versions.
+      rs_response = err( iv_id = is_message-id iv_code = 'INVALID_PARAM'
+                         iv_message = |objects must name 1 to { c_max_versions } objects, as "TYPE NAME,TYPE NAME"| ).
+      RETURN.
+    ENDIF.
+    LOOP AT lt_parts INTO DATA(lv_part).
+      SPLIT condense( lv_part ) AT space INTO DATA(lv_t) DATA(lv_n) DATA(lv_rest).
+      IF lv_t IS INITIAL OR lv_n IS INITIAL OR lv_rest IS NOT INITIAL OR strlen( lv_t ) > 4 OR strlen( lv_n ) > 40.
+        rs_response = err( iv_id = is_message-id iv_code = 'INVALID_PARAM'
+                           iv_message = |object '{ condense( lv_part ) }' is not "TYPE NAME"| ).
+        RETURN.
+      ENDIF.
+      lv_type = lv_t.
+      lv_name = lv_n.
+      CLEAR: lv_stamp, lv_stamp_err, lv_sha, lv_sha_err, lv_files, lv_inactive.
+      " Only an object of this package gets a version: one that moved, or
+      " is gone, has none to compare.
+      CLEAR ls_tadir.
+      SELECT SINGLE devclass, masterlang FROM tadir
+        WHERE pgmid = 'R3TR' AND object = @lv_type AND obj_name = @lv_name AND delflag = @space
+        INTO CORRESPONDING FIELDS OF @ls_tadir.
+      DATA(lv_in) = xsdbool( sy-subrc = 0 AND ls_tadir-devclass = lv_devclass ).
+      IF lv_in = abap_true.
+        object_stamp( EXPORTING iv_type = lv_type iv_name = lv_name
+                      IMPORTING ev_stamp = lv_stamp ev_error = lv_stamp_err ).
+        lv_inactive = object_inactive( iv_type = lv_type iv_name = lv_name ).
+        IF lv_want_sha = abap_true.
+          object_sha256( EXPORTING iv_type = lv_type iv_name = lv_name iv_devclass = lv_devclass
+                                   iv_language = COND #( WHEN ls_tadir-masterlang IS INITIAL THEN 'E' ELSE ls_tadir-masterlang )
+                         IMPORTING ev_sha256 = lv_sha ev_files = lv_files ev_error = lv_sha_err ).
+        ENDIF.
+      ENDIF.
+      APPEND zcl_vsp_utils=>json_obj( zcl_vsp_utils=>json_join( VALUE #(
+        ( zcl_vsp_utils=>json_str( iv_key = 'type' iv_value = CONV #( lv_type ) ) )
+        ( zcl_vsp_utils=>json_str( iv_key = 'name' iv_value = CONV #( lv_name ) ) )
+        ( zcl_vsp_utils=>json_str( iv_key = 'devclass' iv_value = CONV #( ls_tadir-devclass ) ) )
+        ( zcl_vsp_utils=>json_bool( iv_key = 'in_package' iv_value = lv_in ) )
+        ( zcl_vsp_utils=>json_str( iv_key = 'stamp' iv_value = lv_stamp ) )
+        ( zcl_vsp_utils=>json_str( iv_key = 'stamp_error' iv_value = clean( lv_stamp_err ) ) )
+        ( zcl_vsp_utils=>json_str( iv_key = 'sha256' iv_value = lv_sha ) )
+        ( zcl_vsp_utils=>json_str( iv_key = 'sha256_error' iv_value = clean( lv_sha_err ) ) )
+        ( zcl_vsp_utils=>json_int( iv_key = 'files' iv_value = lv_files ) )
+        ( zcl_vsp_utils=>json_bool( iv_key = 'inactive' iv_value = lv_inactive ) )
+      ) ) ) TO lt_items.
+    ENDLOOP.
+    rs_response = zcl_vsp_utils=>build_success( iv_id = is_message-id iv_data = zcl_vsp_utils=>json_obj( zcl_vsp_utils=>json_join( VALUE #(
+      ( zcl_vsp_utils=>json_str( iv_key = 'package' iv_value = lv_package ) )
+      ( |"objects":{ zcl_vsp_utils=>json_arr( zcl_vsp_utils=>json_join( lt_items ) ) }| )
+    ) ) ) ).
+  ENDMETHOD.
+
+
+  METHOD object_stamp.
+    TYPES: BEGIN OF ty_row,
+             d TYPE d,
+             t TYPE t,
+           END OF ty_row.
+    DATA: lt_rows   TYPE STANDARD TABLE OF ty_row WITH DEFAULT KEY,
+          lt_digest TYPE string_table,
+          lv_xml    TYPE xstring,
+          lv_tables TYPE string,
+          lv_pool   TYPE string,
+          lv_like   TYPE string,
+          lv_text   TYPE progname,
+          lv_digest TYPE string,
+          lv_newest TYPE string.
+
+    CLEAR: ev_stamp, ev_error.
+    CASE iv_type.
+      WHEN 'CLAS' OR 'INTF'.
+        lv_tables = `REPOSRC.REPOTEXT.SEOCLASSDF.SEOCLASSTX.SEOCOMPOTX`.
+        lv_pool = |{ iv_name WIDTH = 30 PAD = '=' }|.
+        lv_like = |{ lv_pool }%|.
+        SELECT progname, udat, utime FROM reposrc WHERE progname LIKE @lv_like INTO TABLE @DATA(lt_pool).
+        LOOP AT lt_pool INTO DATA(ls_pool).
+          " LIKE reads _ as any character: only the pool's own includes. Not
+          " CS: it is regenerated, and moves without the source changing.
+          IF strlen( lv_pool ) = 30 AND ls_pool-progname(30) = lv_pool AND ls_pool-progname+30 <> 'CS'.
+            APPEND VALUE #( d = ls_pool-udat t = ls_pool-utime ) TO lt_rows.
+          ENDIF.
+        ENDLOOP.
+        lv_text = COND #( WHEN iv_type = 'CLAS' THEN |{ lv_pool }CP| ELSE |{ lv_pool }IP| ).
+        SELECT udat AS d, utime AS t FROM repotext WHERE progname = @lv_text APPENDING CORRESPONDING FIELDS OF TABLE @lt_rows.
+        SELECT * FROM seoclassdf WHERE clsname = @iv_name ORDER BY PRIMARY KEY INTO TABLE @DATA(lt_seodf).
+        CALL TRANSFORMATION id SOURCE rows = lt_seodf RESULT XML lv_xml.
+        APPEND sha256( lv_xml ) TO lt_digest.
+        SELECT * FROM seoclasstx WHERE clsname = @iv_name ORDER BY PRIMARY KEY INTO TABLE @DATA(lt_seotx).
+        CALL TRANSFORMATION id SOURCE rows = lt_seotx RESULT XML lv_xml.
+        APPEND sha256( lv_xml ) TO lt_digest.
+        SELECT * FROM seocompotx WHERE clsname = @iv_name ORDER BY PRIMARY KEY INTO TABLE @DATA(lt_seoctx).
+        CALL TRANSFORMATION id SOURCE rows = lt_seoctx RESULT XML lv_xml.
+        APPEND sha256( lv_xml ) TO lt_digest.
+      WHEN 'PROG'.
+        lv_tables = `REPOSRC.REPOTEXT.D020S`.
+        SELECT udat AS d, utime AS t FROM reposrc WHERE progname = @iv_name INTO CORRESPONDING FIELDS OF TABLE @lt_rows.
+        SELECT udat AS d, utime AS t FROM repotext WHERE progname = @iv_name APPENDING CORRESPONDING FIELDS OF TABLE @lt_rows.
+        SELECT dgen AS d, tgen AS t FROM d020s WHERE prog = @iv_name APPENDING CORRESPONDING FIELDS OF TABLE @lt_rows.
+      WHEN 'TABL'.
+        lv_tables = `DD02L.DD09L.DD12L.DD02T.DD35L.TDDAT`.
+        SELECT as4date AS d, as4time AS t FROM dd02l WHERE tabname = @iv_name INTO CORRESPONDING FIELDS OF TABLE @lt_rows.
+        SELECT as4date AS d, as4time AS t FROM dd09l WHERE tabname = @iv_name APPENDING CORRESPONDING FIELDS OF TABLE @lt_rows.
+        SELECT as4date AS d, as4time AS t FROM dd12l WHERE sqltab = @iv_name APPENDING CORRESPONDING FIELDS OF TABLE @lt_rows.
+        SELECT * FROM dd02t WHERE tabname = @iv_name ORDER BY PRIMARY KEY INTO TABLE @DATA(lt_dd02t).
+        CALL TRANSFORMATION id SOURCE rows = lt_dd02t RESULT XML lv_xml.
+        APPEND sha256( lv_xml ) TO lt_digest.
+        SELECT * FROM dd35l WHERE tabname = @iv_name ORDER BY PRIMARY KEY INTO TABLE @DATA(lt_dd35l).
+        CALL TRANSFORMATION id SOURCE rows = lt_dd35l RESULT XML lv_xml.
+        APPEND sha256( lv_xml ) TO lt_digest.
+        SELECT * FROM tddat WHERE tabname = @iv_name ORDER BY PRIMARY KEY INTO TABLE @DATA(lt_tddat).
+        CALL TRANSFORMATION id SOURCE rows = lt_tddat RESULT XML lv_xml.
+        APPEND sha256( lv_xml ) TO lt_digest.
+      WHEN 'DTEL'.
+        lv_tables = `DD04L.DD04T`.
+        SELECT as4date AS d, as4time AS t FROM dd04l WHERE rollname = @iv_name INTO CORRESPONDING FIELDS OF TABLE @lt_rows.
+        SELECT * FROM dd04t WHERE rollname = @iv_name ORDER BY PRIMARY KEY INTO TABLE @DATA(lt_dd04t).
+        CALL TRANSFORMATION id SOURCE rows = lt_dd04t RESULT XML lv_xml.
+        APPEND sha256( lv_xml ) TO lt_digest.
+      WHEN 'DOMA'.
+        lv_tables = `DD01L.DD01T.DD07L.DD07T`.
+        SELECT as4date AS d, as4time AS t FROM dd01l WHERE domname = @iv_name INTO CORRESPONDING FIELDS OF TABLE @lt_rows.
+        SELECT * FROM dd01t WHERE domname = @iv_name ORDER BY PRIMARY KEY INTO TABLE @DATA(lt_dd01t).
+        CALL TRANSFORMATION id SOURCE rows = lt_dd01t RESULT XML lv_xml.
+        APPEND sha256( lv_xml ) TO lt_digest.
+        SELECT * FROM dd07l WHERE domname = @iv_name ORDER BY PRIMARY KEY INTO TABLE @DATA(lt_dd07l).
+        CALL TRANSFORMATION id SOURCE rows = lt_dd07l RESULT XML lv_xml.
+        APPEND sha256( lv_xml ) TO lt_digest.
+        SELECT * FROM dd07t WHERE domname = @iv_name ORDER BY PRIMARY KEY INTO TABLE @DATA(lt_dd07t).
+        CALL TRANSFORMATION id SOURCE rows = lt_dd07t RESULT XML lv_xml.
+        APPEND sha256( lv_xml ) TO lt_digest.
+      WHEN 'TTYP'.
+        lv_tables = `DD40L.DD40T`.
+        SELECT as4date AS d, as4time AS t FROM dd40l WHERE typename = @iv_name INTO CORRESPONDING FIELDS OF TABLE @lt_rows.
+        SELECT * FROM dd40t WHERE typename = @iv_name ORDER BY PRIMARY KEY INTO TABLE @DATA(lt_dd40t).
+        CALL TRANSFORMATION id SOURCE rows = lt_dd40t RESULT XML lv_xml.
+        APPEND sha256( lv_xml ) TO lt_digest.
+      WHEN 'DDLS'.
+        lv_tables = `DDDDLSRC.DDDDLSRCT`.
+        SELECT as4date AS d, as4time AS t FROM ddddlsrc WHERE ddlname = @iv_name INTO CORRESPONDING FIELDS OF TABLE @lt_rows.
+        SELECT * FROM ddddlsrct WHERE ddlname = @iv_name ORDER BY PRIMARY KEY INTO TABLE @DATA(lt_ddlst).
+        CALL TRANSFORMATION id SOURCE rows = lt_ddlst RESULT XML lv_xml.
+        APPEND sha256( lv_xml ) TO lt_digest.
+      WHEN OTHERS.
+        ev_error = |no stamp for type { iv_type }: only CLAS, INTF, PROG, TABL, DTEL, DOMA, TTYP and DDLS have one|.
+        RETURN.
+    ENDCASE.
+    IF lt_rows IS INITIAL.
+      RETURN.
+    ENDIF.
+    LOOP AT lt_rows INTO DATA(ls_row).
+      IF |{ ls_row-d }{ ls_row-t }| > lv_newest.
+        lv_newest = |{ ls_row-d }{ ls_row-t }|.
+      ENDIF.
+    ENDLOOP.
+    lv_digest = to_lower( sha256( cl_abap_codepage=>convert_to( concat_lines_of( table = lt_digest sep = `,` ) ) ) ).
+    IF strlen( lv_digest ) <> 64.
+      ev_error = `the stamp's digest could not be computed`.
+      RETURN.
+    ENDIF.
+    ev_stamp = |v2:{ lv_tables }:{ lv_newest }:{ lines( lt_rows ) }:{ lv_digest(16) }|.
+  ENDMETHOD.
+
+
+  METHOD object_inactive.
+    DATA: lv_like TYPE string,
+          lv_pool TYPE string.
+
+    rv_inactive = abap_false.
+    lv_pool = |{ iv_name WIDTH = 30 PAD = '=' }|.
+    lv_like = |{ iv_name }%|.
+    " The object (R3TR), and its parts (LIMU): a method is the class name
+    " padded to 30 then the method, a class include the pool's include.
+    SELECT object, obj_name FROM dwinactiv WHERE obj_name LIKE @lv_like INTO TABLE @DATA(lt_inactive).
+    LOOP AT lt_inactive INTO DATA(ls_inactive).
+      IF ls_inactive-obj_name = iv_name OR ls_inactive-obj_name(30) = iv_name OR ( ( iv_type = 'CLAS' OR iv_type = 'INTF' ) AND ls_inactive-obj_name(30) = lv_pool ).
+        rv_inactive = abap_true.
+        RETURN.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+
+  METHOD object_sha256.
+    DATA: lt_lines TYPE string_table,
+          ls_files TYPE zif_abapgit_objects=>ty_serialization.
+
+    CLEAR: ev_sha256, ev_files, ev_error.
+    TRY.
+        ls_files = zcl_abapgit_objects=>serialize(
+          is_item        = VALUE #( obj_type = iv_type obj_name = iv_name devclass = iv_devclass )
+          io_i18n_params = zcl_abapgit_i18n_params=>new( iv_main_language      = iv_language
+                                                         iv_main_language_only = abap_true ) ).
+      CATCH cx_root INTO DATA(lx_error).
+        ev_error = |abapGit could not serialise it: { lx_error->get_text( ) }|.
+        RETURN.
+    ENDTRY.
+    LOOP AT ls_files-files INTO DATA(ls_file).
+      APPEND |{ ls_file-filename }={ to_lower( sha256( ls_file-data ) ) }| TO lt_lines.
+    ENDLOOP.
+    IF lt_lines IS INITIAL.
+      ev_error = `abapGit serialised no file of it`.
+      RETURN.
+    ENDIF.
+    SORT lt_lines.
+    DATA(lv_text) = concat_lines_of( table = lt_lines sep = cl_abap_char_utilities=>newline ).
+    ev_sha256 = to_lower( sha256( cl_abap_codepage=>convert_to( lv_text ) ) ).
+    IF strlen( ev_sha256 ) <> 64.
+      CLEAR ev_sha256.
+      ev_error = `the SHA-256 could not be computed`.
+      RETURN.
+    ENDIF.
+    ev_files = lines( lt_lines ).
   ENDMETHOD.
 
 

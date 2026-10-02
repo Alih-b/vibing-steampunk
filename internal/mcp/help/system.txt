@@ -51,6 +51,18 @@ Git/abapGit:
       nothing is left in it and no abapGit repository is registered for it; nothing outside the package.
       The repository row is kept unless delete_repo: true, and then dropped only for an offline repository of
       a package left empty; an online repository is never unregistered (delete_repo with one is refused)
+      Only the version you saw: an object {"type": "CLAS", "name": "ZCL_DEMO", "expect": {"sha256": "..."}}
+      (or "stamp"; with both, sha256 decides) is deleted only while it still is that version -- read again under
+      the ADT lock its DELETE takes; otherwise it is "changed" (with "observed") and kept, and the repository and
+      the package stay. The other objects listed are still deleted (no all-or-nothing). Prefer sha256: the stamp
+      misses documentation, GUI status, SOTR and other parts; an object with an inactive version never matches
+      a sha256. "expect_repo": {"key": ..., "name": ...} (with delete_repo) drops the repository row only when
+      it is exactly that row; otherwise repoNote "kept: registered repository is ..."
+  SAP(action="system", params={"type": "git_object_versions", "package": "$ZDEMO", "objects": ["CLAS ZCL_DEMO"], "sha256": true})
+    - read-only: with sha256: true, the SHA-256 of each object's abapGit serialisation (original language,
+      active version only; sorted "<file>=<sha256>" lines joined by LF) and "inactive"; and its stamp
+      v2:<TABLES>:<YYYYMMDDHHMMSS>:<ROWS>:<DIGEST> (newest change over its main version tables, a digest of some
+      dateless ones; coarser: misses documentation, GUI status, SOTR, ...) -- the values to pass as expect
 
 Install tools:
   SAP(action="system", params={"type": "install_zadt_vsp"})

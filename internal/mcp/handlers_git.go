@@ -33,6 +33,8 @@ func (s *Server) routeGitAction(ctx context.Context, action, objectType, objectN
 		return s.callHandler(ctx, s.handleGitImportStatus, params)
 	case "git_delete_objects":
 		return s.callHandler(ctx, s.handleGitDeleteObjects, params)
+	case "git_object_versions":
+		return s.callHandler(ctx, s.handleGitObjectVersions, params)
 	}
 	return nil, false, nil
 }

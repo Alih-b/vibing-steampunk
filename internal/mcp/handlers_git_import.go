@@ -229,6 +229,13 @@ func (s *Server) handleGitImportStatus(ctx context.Context, request mcp.CallTool
 // Every delete goes through DeleteObject's gate. A repository registration
 // is dropped only on delete_repo, only an offline one; an online one never
 // (delete_repo with one is refused before anything is deleted).
+//
+// An object given as {"type","name","expect":{"stamp"|"sha256"}} (the values
+// git_object_versions reported) is deleted only while it is still that
+// version: checked under the ADT lock its DELETE takes; otherwise it comes
+// back "changed", with what was observed, and is kept, as are the
+// repository and the package. expect_repo {"key","name"} (with delete_repo)
+// drops the repository row only when it is exactly that row.
 func (s *Server) handleGitDeleteObjects(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 	pkg := getStringParam(args, "package")
@@ -244,15 +251,31 @@ func (s *Server) handleGitDeleteObjects(ctx context.Context, request mcp.CallToo
 	if err != nil {
 		return newToolResultError(err.Error()), nil
 	}
+	opts := adt.GitDeleteOptions{Transport: transport}
+	opts.DeleteRepo, _ = getBoolParam(args, "delete_repo")
+	if v := strings.ToLower(getStringParam(args, "delete_repo")); v == "true" {
+		opts.DeleteRepo = true
+	}
+	if rawRepo, ok := args["expect_repo"]; ok && rawRepo != nil {
+		m, ok := rawRepo.(map[string]any)
+		if !ok {
+			return newToolResultError(fmt.Sprintf("expect_repo must be {\"key\", \"name\"}, not %T", rawRepo)), nil
+		}
+		key, _ := m["key"].(string)
+		name, _ := m["name"].(string)
+		if strings.TrimSpace(key) == "" || strings.TrimSpace(name) == "" {
+			return newToolResultError("expect_repo needs key and name, as strings"), nil
+		}
+		if !opts.DeleteRepo {
+			return newToolResultError("expect_repo is only for delete_repo: the repository is kept without it"), nil
+		}
+		opts.ExpectRepo = &adt.GitRepoExpect{Key: key, Name: name}
+	}
 	ws, err := s.gitService(ctx)
 	if err != nil {
 		return newToolResultError(err.Error()), nil
 	}
-	deleteRepo, _ := getBoolParam(args, "delete_repo")
-	if v := strings.ToLower(getStringParam(args, "delete_repo")); v == "true" {
-		deleteRepo = true
-	}
-	res, err := s.adtClient.DeleteGitObjects(ctx, ws, pkg, items, transport, deleteRepo)
+	res, err := s.adtClient.DeleteGitObjectsWith(ctx, ws, pkg, items, opts)
 	if err != nil {
 		if res == nil {
 			return newToolResultError(err.Error()), nil
@@ -262,4 +285,42 @@ func (s *Server) handleGitDeleteObjects(ctx context.Context, request mcp.CallToo
 		return out, nil
 	}
 	return newToolResultJSON(res), nil
+}
+
+// handleGitObjectVersions reads the version of objects of a package -- what
+// git_delete_objects' expect compares under the lock. Read-only:
+//
+//	SAP(action="system", params={"type": "git_object_versions", "package": "$ZDEMO",
+//	    "objects": ["CLAS ZCL_DEMO", "PROG ZDEMO_REPORT"], "sha256": true})
+//
+// stamp is v2:<TABLES>:<YYYYMMDDHHMMSS>:<ROWS>:<DIGEST> (see
+// pkg/adt/git_versions.go); sha256, only when asked, is over the object's
+// abapGit serialisation, and "inactive" says it has an inactive version.
+func (s *Server) handleGitObjectVersions(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	pkg := getStringParam(args, "package")
+	if _, err := adt.NormalizeGitPackage(pkg); err != nil {
+		return newToolResultError(err.Error()), nil
+	}
+	raw, ok := args["objects"]
+	if !ok {
+		raw = args["object"]
+	}
+	items, err := adt.ParseGitDeleteItems(raw)
+	if err != nil {
+		return newToolResultError(err.Error()), nil
+	}
+	withSHA, _ := getBoolParam(args, "sha256")
+	if v := strings.ToLower(getStringParam(args, "sha256")); v == "true" {
+		withSHA = true
+	}
+	ws, err := s.gitService(ctx)
+	if err != nil {
+		return newToolResultError(err.Error()), nil
+	}
+	vs, err := s.adtClient.GitObjectVersions(ctx, ws, pkg, items, withSHA)
+	if err != nil {
+		return newToolResultError(err.Error()), nil
+	}
+	return newToolResultJSON(map[string]any{"package": strings.ToUpper(strings.TrimSpace(pkg)), "objects": vs}), nil
 }

@@ -1013,15 +1013,19 @@ func gitUnknown(last *GitImportStatus, jobCount string) *GitImportStatus {
 
 // --- delete ----------------------------------------------------------------
 
-// GitDeleteItem is one object git_delete_objects is asked to delete.
+// GitDeleteItem is one object git_delete_objects is asked to delete. With
+// Expect, only while it is still that version (see GitExpect).
 type GitDeleteItem struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
+	Type   string     `json:"type"`
+	Name   string     `json:"name"`
+	Expect *GitExpect `json:"expect,omitempty"`
 }
 
 // ParseGitDeleteItems reads the objects to delete: "TYPE NAME" strings
-// ("R3TR TYPE NAME" too), or {"type","name"} objects, as a list or one
-// comma-separated string.
+// ("R3TR TYPE NAME" too), or {"type","name"[,"expect"]} objects, as a list
+// or one comma-separated string. An object map with any other key, or an
+// expect that cannot be checked, is refused: an expectation is never
+// dropped.
 func ParseGitDeleteItems(raw any) ([]GitDeleteItem, error) {
 	var list []any
 	switch v := raw.(type) {
@@ -1043,7 +1047,7 @@ func ParseGitDeleteItems(raw any) ([]GitDeleteItem, error) {
 		return nil, fmt.Errorf("objects must be a list of \"TYPE NAME\" or {\"type\",\"name\"}, not %T", raw)
 	}
 	var out []GitDeleteItem
-	seen := map[string]bool{}
+	seen := map[string]int{}
 	for _, e := range list {
 		var it GitDeleteItem
 		switch v := e.(type) {
@@ -1057,19 +1061,37 @@ func ParseGitDeleteItems(raw any) ([]GitDeleteItem, error) {
 			}
 			it = GitDeleteItem{Type: f[0], Name: f[1]}
 		case map[string]any:
+			for k := range v {
+				if k != "type" && k != "name" && k != "expect" {
+					return nil, fmt.Errorf("object %v: unknown key %q (type, name, expect)", v, k)
+				}
+			}
 			t, _ := v["type"].(string)
 			n, _ := v["name"].(string)
 			it = GitDeleteItem{Type: strings.ToUpper(strings.TrimSpace(t)), Name: strings.ToUpper(strings.TrimSpace(n))}
+			if raw, ok := v["expect"]; ok {
+				exp, err := ParseGitExpect(it.Type, raw)
+				if err != nil {
+					return nil, fmt.Errorf("object %s %s: %w", it.Type, it.Name, err)
+				}
+				it.Expect = exp
+			}
 		default:
 			return nil, fmt.Errorf("object %v is not \"TYPE NAME\" or {\"type\",\"name\"}", e)
 		}
 		if !gitObjTypeRe.MatchString(it.Type) || it.Name == "" || len(it.Name) > 40 {
 			return nil, fmt.Errorf("object %s %s is not a TADIR type and name", it.Type, it.Name)
 		}
-		if k := it.Type + " " + it.Name; !seen[k] {
-			seen[k] = true
-			out = append(out, it)
+		k := it.Type + " " + it.Name
+		if i, dup := seen[k]; dup {
+			// The same object twice: one expectation, or none.
+			if !sameGitExpect(out[i].Expect, it.Expect) {
+				return nil, fmt.Errorf("object %s is listed twice with different expect", k)
+			}
+			continue
 		}
+		seen[k] = len(out)
+		out = append(out, it)
 	}
 	if len(out) == 0 {
 		return nil, errors.New("objects is empty: name the TADIR items to delete")
@@ -1248,8 +1270,11 @@ func (c *Client) GitPackageObjects(ctx context.Context, ws GitService, pkg strin
 type GitDeleteOutcome struct {
 	Type   string `json:"type"`
 	Name   string `json:"name"`
-	Status string `json:"status"` // deleted, skipped, failed
+	Status string `json:"status"` // deleted, skipped, changed, failed
 	Reason string `json:"reason,omitempty"`
+	// Observed is the version read under the lock, for an object with an
+	// expect: what it is now, when it came back changed.
+	Observed *GitExpect `json:"observed,omitempty"`
 }
 
 // GitDeleteResult is what git_delete_objects did.
@@ -1312,6 +1337,14 @@ func (c *Client) CheckGitDelete(pkg, transport string) error {
 // could not. retry is false when a failed DELETE also left its lock behind:
 // the error carries the SM12 advice, and trying again would only hide it.
 func (c *Client) deleteGated(ctx context.Context, objectURL, transport string) (note string, retry bool, err error) {
+	return c.deleteGatedChecked(ctx, objectURL, transport, nil)
+}
+
+// deleteGatedChecked is deleteGated with a check that runs while the lock is
+// held, after LOCK and before DELETE: when it returns an error, the object
+// is unlocked and not deleted, and that error is returned (retry false for
+// a *GitChangedError).
+func (c *Client) deleteGatedChecked(ctx context.Context, objectURL, transport string, check func(context.Context) error) (note string, retry bool, err error) {
 	gctx, err := c.PrepareDelete(ctx, objectURL, transport)
 	if err != nil {
 		return "", true, err
@@ -1319,6 +1352,16 @@ func (c *Client) deleteGated(ctx context.Context, objectURL, transport string) (
 	lock, err := c.LockObject(gctx, objectURL, "MODIFY", transport)
 	if err != nil {
 		return "", true, fmt.Errorf("locking %s: %w", objectURL, err)
+	}
+	if check != nil {
+		if cerr := check(gctx); cerr != nil {
+			var changed *GitChangedError
+			retry = !errors.As(cerr, &changed)
+			if uerr := c.releaseLockAfterFailure(gctx, objectURL, lock.LockHandle); uerr != nil {
+				return "", false, fmt.Errorf("%w -- %s", cerr, strandedLockAdvice(objectURL, uerr))
+			}
+			return "", retry, cerr
+		}
 	}
 	if derr := c.DeleteObject(gctx, objectURL, lock.LockHandle, transport); derr != nil {
 		if uerr := c.releaseLockAfterFailure(gctx, objectURL, lock.LockHandle); uerr != nil {
@@ -1443,7 +1486,18 @@ func (c *Client) gitDeleteURL(ctx context.Context, objType, name, pkg string) (s
 // repository is never unregistered: deleteRepo with one is refused before
 // anything is deleted.
 func (c *Client) DeleteGitObjects(ctx context.Context, ws GitService, pkg string, items []GitDeleteItem, transport string, deleteRepo bool) (*GitDeleteResult, error) {
-	transport = strings.ToUpper(strings.TrimSpace(transport))
+	return c.DeleteGitObjectsWith(ctx, ws, pkg, items, GitDeleteOptions{Transport: transport, DeleteRepo: deleteRepo})
+}
+
+// DeleteGitObjectsWith is DeleteGitObjects with its options, the expected
+// repository among them. An item with an Expect is deleted only when, read
+// under the ADT lock its DELETE uses, it is still that version; otherwise it
+// comes back changed, with what was observed, and is kept, and the
+// repository and the package are left alone. With ExpectRepo the
+// repository row is dropped only when it is exactly that row.
+func (c *Client) DeleteGitObjectsWith(ctx context.Context, ws GitService, pkg string, items []GitDeleteItem, opts GitDeleteOptions) (*GitDeleteResult, error) {
+	transport := strings.ToUpper(strings.TrimSpace(opts.Transport))
+	deleteRepo := opts.DeleteRepo
 	if err := c.CheckGitDelete(pkg, transport); err != nil {
 		return nil, err
 	}
@@ -1451,12 +1505,25 @@ func (c *Client) DeleteGitObjects(ctx context.Context, ws GitService, pkg string
 	if len(items) == 0 {
 		return nil, errors.New("no objects to delete")
 	}
+	expectRepo, err := opts.ExpectRepo.normalized(deleteRepo)
+	if err != nil {
+		return nil, err
+	}
 	// Types and names in upper case, once, here: every check below compares
 	// them exactly (a "devc" item must meet the DEVC exclusion), whatever a
-	// direct caller passed.
+	// direct caller passed. Every expectation is checked here too, before
+	// anything is read: one that cannot be checked refuses the call.
 	norm := make([]GitDeleteItem, 0, len(items))
 	for _, it := range items {
-		norm = append(norm, GitDeleteItem{Type: strings.ToUpper(strings.TrimSpace(it.Type)), Name: strings.ToUpper(strings.TrimSpace(it.Name))})
+		n := GitDeleteItem{Type: strings.ToUpper(strings.TrimSpace(it.Type)), Name: strings.ToUpper(strings.TrimSpace(it.Name))}
+		if it.Expect != nil {
+			exp, err := it.Expect.normalized(n.Type)
+			if err != nil {
+				return nil, fmt.Errorf("object %s %s: %w", n.Type, n.Name, err)
+			}
+			n.Expect = exp
+		}
+		norm = append(norm, n)
 	}
 	items = norm
 	contents, err := c.GitPackageObjects(ctx, ws, p)
@@ -1480,8 +1547,9 @@ func (c *Client) DeleteGitObjects(ctx context.Context, ws GitService, pkg string
 	res := &GitDeleteResult{Package: p, Repo: contents.Repo}
 
 	type todo struct {
-		i   int
-		url string
+		i    int
+		url  string
+		item GitDeleteItem
 	}
 	var queue []todo
 	for _, it := range items {
@@ -1502,7 +1570,7 @@ func (c *Client) DeleteGitObjects(ctx context.Context, ws GitService, pkg string
 				o.Status, o.Reason = "failed", uerr.Error()
 				break
 			}
-			queue = append(queue, todo{len(res.Objects), u})
+			queue = append(queue, todo{len(res.Objects), u, it})
 		}
 		res.Objects = append(res.Objects, o)
 	}
@@ -1510,22 +1578,38 @@ func (c *Client) DeleteGitObjects(ctx context.Context, ws GitService, pkg string
 	for round := 0; round < 2 && len(queue) > 0; round++ {
 		var again []todo
 		for _, q := range queue {
-			note, retry, derr := c.deleteGated(ctx, q.url, transport)
-			if derr != nil {
-				res.Objects[q.i].Status, res.Objects[q.i].Reason = "failed", derr.Error()
+			out := &res.Objects[q.i]
+			var check func(context.Context) error
+			if q.item.Expect != nil {
+				check = func(context.Context) error {
+					obs, cerr := c.checkGitExpect(ctx, ws, p, q.item)
+					out.Observed = obs
+					return cerr
+				}
+			}
+			note, retry, derr := c.deleteGatedChecked(ctx, q.url, transport, check)
+			var changed *GitChangedError
+			switch {
+			case errors.As(derr, &changed):
+				out.Status, out.Reason = "changed", derr.Error()
+			case derr != nil:
+				out.Status, out.Reason = "failed", derr.Error()
 				if retry {
 					again = append(again, q)
 				}
-				continue
+			default:
+				out.Status, out.Reason = "deleted", note
 			}
-			res.Objects[q.i].Status, res.Objects[q.i].Reason = "deleted", note
 		}
 		queue = again
 	}
 	for _, o := range res.Objects {
-		if o.Status == "failed" {
+		if o.Status == "failed" || o.Status == "changed" {
 			res.RepoNote = "kept: not every object could be deleted"
 			res.PackageNote = "kept: not every object could be deleted"
+			if o.Status == "changed" {
+				return res, fmt.Errorf("%s %s was kept: %s", o.Type, o.Name, o.Reason)
+			}
 			return res, fmt.Errorf("%s %s could not be deleted: %s", o.Type, o.Name, o.Reason)
 		}
 	}
@@ -1552,14 +1636,26 @@ func (c *Client) DeleteGitObjects(ctx context.Context, ws GitService, pkg string
 		res.RepoNote = fmt.Sprintf("kept: repository %s stays registered (delete_repo: true, or --delete-repo, unregisters an offline repository once the package is empty)", repo.Key)
 	case !empty:
 		res.RepoNote = fmt.Sprintf("kept: %d object(s) remain in the package; an offline repository is unregistered only from an empty package", len(rest))
+	case expectRepo != nil && !expectRepo.matches(repo):
+		res.RepoNote = fmt.Sprintf("kept: registered repository is %s %s", repo.Key, repo.Name)
 	default:
 		var repoAnswer struct {
 			Key  string `json:"key"`
 			Name string `json:"name"`
 		}
-		err = gitCall(ctx, ws, "delete_repo", map[string]any{"package": p, "key": repo.Key}, time.Minute, &repoAnswer)
+		params := map[string]any{"package": p, "key": repo.Key}
+		if expectRepo != nil {
+			// ZADT_VSP checks the same row again, by key and name, in the
+			// step that deletes it.
+			params["key"], params["name"] = expectRepo.Key, expectRepo.Name
+		}
+		err = gitCall(ctx, ws, "delete_repo", params, time.Minute, &repoAnswer)
 		var se *GitServiceError
 		switch {
+		case err != nil && errors.As(err, &se) && (se.Code == "REPO_KEY_MISMATCH" || se.Code == "REPO_NAME_MISMATCH"):
+			res.RepoNote = "kept: registered repository is not the expected one: " + se.Message
+			res.PackageNote = "kept: an abapGit repository is registered for it"
+			return res, nil
 		case err == nil:
 			res.RepoDeleted = true
 			res.Repo = &GitRepoInfo{Key: strings.TrimSpace(repoAnswer.Key), Name: strings.TrimSpace(repoAnswer.Name), Offline: true}

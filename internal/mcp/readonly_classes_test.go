@@ -406,6 +406,7 @@ var readOnlyClasses = map[string]surfaceClass{
 	"SAP system type=git_import_zip base64":   clsMutate,
 	"SAP system type=git_import_status":       clsRead,   // TBTCO, the job log and the stored result; changes nothing
 	"SAP system type=git_delete_objects":      clsMutate, // deletes TADIR items, the repository row, an empty package
+	"SAP system type=git_object_versions":     clsRead,   // REPOSRC/DD* dates and abapGit's serialisation; changes nothing
 	"SAP system type=install_zadt_vsp":        clsMutate,
 	"SAP system type=install_abapgit":         clsMutate,
 	"SAP system type=install_dummy_test":      clsMutate,
@@ -685,6 +686,8 @@ func actionCases() []actionCase {
 		{Name: "SAP system type=git_import_status", Action: "system", Exact: true, Params: kv("type", "git_import_status", "job", "12345678")},
 		{Name: "SAP system type=git_delete_objects", Action: "system", Exact: true, Params: kv("type", "git_delete_objects", "package", "$TMP",
 			"objects", []any{"PROG ZDEMO_REPORT"})},
+		{Name: "SAP system type=git_object_versions", Action: "system", Exact: true, Params: kv("type", "git_object_versions", "package", "$TMP",
+			"objects", []any{"PROG ZDEMO_REPORT"}, "sha256", true)},
 		sys("install_zadt_vsp", "InstallZADTVSP"), sys("install_abapgit", "InstallAbapGit"),
 		sys("install_dummy_test", "InstallDummyTest"), sys("list_dependencies", "ListDependencies"),
 		sys("deploy_zip", "DeployZip"),

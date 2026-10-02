@@ -541,12 +541,16 @@ vsp -s devsys git import-zip ./demo.zip --package '$ZDEMO' --overwrite   # into 
 vsp -s devsys git import-status 12345678                                 # a job still running, read-only
 vsp -s devsys git delete-objects --package '$ZDEMO' "PROG ZDEMO_REPORT" "CLAS ZCL_DEMO"
 vsp -s devsys git delete-objects --package '$ZDEMO' --delete-repo "PROG ZDEMO_REPORT"   # and unregister its offline repository
+vsp -s devsys git object-versions --package '$ZDEMO' "CLAS ZCL_DEMO" --sha256          # read-only: the versions to expect
+vsp -s devsys git delete-objects --package '$ZDEMO' "CLAS ZCL_DEMO" \
+    --expect "CLAS ZCL_DEMO sha256=<from object-versions --sha256>"                     # only while it is still that version
 ```
 
 MCP: `system` with `git_import_zip` (`file_path` or `zip_base64`, `package`,
 `repo_name`, `overwrite`, `transport`, `wait_seconds`), the read-only
-`git_import_status` (`job`), and `git_delete_objects` (`package`, `objects`,
-`delete_repo`).
+`git_import_status` (`job`), `git_delete_objects` (`package`, `objects`,
+`delete_repo`, `expect_repo`), and the read-only `git_object_versions`
+(`package`, `objects`, `sha256`).
 
 Nothing that exists is overwritten without `overwrite`, and a package that
 already has a repository is refused without it. A package that exists
@@ -578,6 +582,74 @@ before anything is deleted. A repository abapGit cannot open counts as
 online, and the package is never deleted while any repository is registered
 for it. Objects are deleted at their own ADT address (an include, a
 structure), looked up by name.
+
+To delete only what is still the version you decided on, read the versions
+first (`git_object_versions`, `vsp git object-versions --sha256`) and pass
+them back: an object `{"type", "name", "expect": {"sha256": ...}}` (or
+`"stamp"`; with both, sha256 decides). vsp takes the object's ADT lock,
+reads its version again while it holds the lock, and deletes it only on a
+match; otherwise its status is `changed`, with what it is now (`observed`),
+and it is kept. A version that cannot be read never matches. Objects are
+checked and deleted one at a time: when one comes back `changed` (or
+`failed`), **the other objects listed are still deleted**; only the
+repository and the package are kept. There is no all-or-nothing mode yet.
+
+The ADT lock is the workbench enqueue: a second ADT session -- even the same
+user's -- is refused while it is held (checked live: `EU 510`), and abapGit's
+import refuses an object with that lock entry. That editors outside ADT (SE38,
+SE24, SE11, SE51 for dynpros, SE41 for GUI status, SE63/SE61 for texts and
+documentation) take the same enqueue for every part they write is expected
+but has not been verified for each of them; anything that writes the tables
+directly, without the enqueue, is not held off by it.
+`expect_repo: {"key", "name"}` (`--expect-repo-key`, `--expect-repo-name`)
+unregisters the repository only when it is exactly that row; otherwise
+`repoNote` is `kept: registered repository is <key> <name>`.
+
+**Use `sha256` when it matters.** It is the SHA-256 (lower-case hex) of the
+UTF-8 text of the lines `<file name>=<SHA-256 of the file>`, one per file
+of the object's abapGit serialisation in its original language only,
+sorted, joined by LF without a final LF -- so it covers everything abapGit
+serialises for the object. It sees only the active version: an object with
+an inactive version (a row of the inactive worklist DWINACTIV for it or a
+part of it, reported as `inactive`) is never a sha256 match, so
+unactivated work is not deleted unnoticed. Reading it serialises the object
+with abapGit, which only reads.
+
+The stamp is cheaper and coarser:
+`v2:<TABLES>:<YYYYMMDDHHMMSS>:<ROWS>:<DIGEST>`, the newest change date and
+time over the object's dated version rows (active and inactive), the number
+of those rows, and the first 16 hex digits of a SHA-256 over the rows of
+some tables that carry no date:
+
+| Type | Dated rows | Digest |
+|------|------------|--------|
+| CLAS, INTF | REPOSRC (every include of the pool but CS, which is regenerated without the source changing), REPOTEXT (text pool) | SEOCLASSDF, SEOCLASSTX, SEOCOMPOTX |
+| PROG | REPOSRC, REPOTEXT (text pool), D020S (dynpro generation) | |
+| TABL | DD02L, DD09L (technical settings), DD12L (indexes) | DD02T, DD35L (search help assignment), TDDAT |
+| DTEL | DD04L | DD04T |
+| DOMA | DD01L | DD01T, DD07L, DD07T |
+| TTYP | DD40L | DD40T |
+| DDLS | DDDDLSRC | DDDDLSRCT |
+
+**What the stamp does not see**, so that a change there alone leaves it as
+it was: documentation (DOKHL/DOKTL) of every type; a program's GUI status
+and titles (EUDB, RSMPTEXTS) and a dynpro changed without being generated;
+a class's or interface's SOTR texts, sub-component texts (SEOSUBCOTX:
+parameter and exception descriptions), relations and friends (SEOMETAREL,
+SEOFRIENDS) and component properties its source does not carry; a table's
+field texts (DD03T), foreign keys (DD05S, DD08L) and search help field
+mapping (DD36M), unless the change also updated a dated row; and two
+changes within the second the stamp was read in. Other types have no stamp.
+
+The stamp also moves where sha256 does not: on a translation in any
+language (it reads the text tables in every language; sha256 covers the
+original language only), and on a dynpro's regeneration (D020S's
+generation date moves without a change). Both give a `changed` where
+nothing sha256 covers changed -- the safe side. Inactive versions are
+looked up by name, whatever the object type, so an inactive DTEL ZFOO also
+marks DOMA ZFOO inactive -- the safe side too. A ZADT_VSP too old to report
+`inactive` makes a sha256 expectation `failed` ("ZADT_VSP too old"), never a
+match.
 
 A zip is refused above 20 MB, 50,000 entries or 200 MB unpacked (its
 declared sizes, checked by vsp and again by ZADT_VSP before abapGit unpacks
@@ -970,6 +1042,10 @@ The headline changes are in the **"New in the last three releases"** callout at 
 system, as a background job; `git import-status` reports on it and
 `git delete-objects` removes exactly what it brought. Needs ZADT_VSP and
 abapGit. Every package the zip maps to must pass `--allowed-packages`.
+`git delete-objects` deletes only what is still the version you saw:
+per-object `expect` (sha256, or a coarser stamp), checked under the ADT
+lock, `expect_repo` for the repository row, and the read-only
+`git_object_versions` (`vsp git object-versions`) to read them (#320).
 
 **Code, run and checked**
 
@@ -1014,6 +1090,9 @@ parts (#271); a failed transport download is an error (#302).
   left its temporary program behind; `vsp test` exits non-zero when a test
   class was not run.
 - `vsp update` follows the repository the binary was released from (#259).
+- `git_delete_objects` refuses an object given as a map with a key other
+  than `type`, `name` and `expect` (a typo such as `expected` used to be
+  ignored) (#320).
 
 ### Unreleased — behaviour changes since v2.58.0
 

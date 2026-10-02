@@ -406,6 +406,7 @@ var (
 		"IF SY-SUBRC <> 0", "RS_RESPONSE = ERR( IV_ID = IS_MESSAGE-ID IV_CODE = 'REPO_NOT_FOUND' *", "RETURN", "ENDIF",
 		"IF LV_REPO_KEY IS NOT INITIAL AND LV_REPO_KEY <> LS_REPO-KEY", "RS_RESPONSE = ERR( IV_ID = IS_MESSAGE-ID IV_CODE = 'REPO_KEY_MISMATCH' *", "RETURN", "ENDIF",
 		"LI_REPO = ZCL_ABAPGIT_REPO_SRV=>GET_INSTANCE( )->GET( LS_REPO-KEY )",
+		"IF LV_EXPECT_NAME IS NOT INITIAL AND LI_REPO->GET_NAME( ) <> LV_EXPECT_NAME", "RS_RESPONSE = ERR( IV_ID = IS_MESSAGE-ID IV_CODE = 'REPO_NAME_MISMATCH' *", "RETURN", "ENDIF",
 		"IF LI_REPO->IS_OFFLINE( ) = ABAP_FALSE", "RS_RESPONSE = ERR( IV_ID = IS_MESSAGE-ID IV_CODE = 'REPO_ONLINE' *", "RETURN", "ENDIF",
 		"SELECT SINGLE OBJ_NAME FROM TADIR INTO @DATA(LV_LEFT) WHERE DEVCLASS = @LV_DEVCLASS AND DELFLAG = @SPACE AND NOT ( PGMID = 'R3TR' AND OBJECT = 'DEVC' AND OBJ_NAME = @LV_OBJ_NAME )",
 		"IF SY-SUBRC = 0", "RS_RESPONSE = ERR( IV_ID = IS_MESSAGE-ID IV_CODE = 'PACKAGE_NOT_EMPTY' *", "RETURN", "ENDIF",
@@ -480,6 +481,182 @@ var (
 		"LV_KEY = |VSPGITZ{ LV_JOBCOUNT }|",
 		"DELETE FROM DATABASE INDX(ZV) ID LV_KEY",
 		"COMMIT WORK",
+	}
+
+	// delete_repo's expected name is the caller's "name", nothing else.
+	gitDeleteRepoExpectName = "DATA(LV_EXPECT_NAME) = ZCL_VSP_UTILS=>EXTRACT_PARAM( IV_PARAMS = IS_MESSAGE-PARAMS IV_NAME = 'NAME' )"
+
+	// object_versions: a package name, S_DEVELOP display on it, 1 to
+	// c_max_versions well-formed "TYPE NAME" items -- each refusing -- and
+	// a version only for an object whose TADIR package is this package.
+	gitObjectVersions = []string{
+		"IF VALID_PACKAGE( LV_PACKAGE ) = ABAP_FALSE", "RS_RESPONSE = ERR( IV_ID = IS_MESSAGE-ID IV_CODE = 'INVALID_PARAM' *", "RETURN", "ENDIF",
+		"LV_DEVCLASS = LV_PACKAGE",
+		"AUTHORITY-CHECK OBJECT 'S_DEVELOP' ID 'DEVCLASS' FIELD LV_DEVCLASS ID 'OBJTYPE' DUMMY ID 'OBJNAME' DUMMY ID 'P_GROUP' DUMMY ID 'ACTVT' FIELD '03'",
+		"IF SY-SUBRC <> 0", "RS_RESPONSE = ERR( IV_ID = IS_MESSAGE-ID IV_CODE = 'NOT_AUTHORIZED' *", "RETURN", "ENDIF",
+		"SPLIT LV_OBJECTS AT ',' INTO TABLE DATA(LT_PARTS)",
+		"IF LINES( LT_PARTS ) = 0 OR LINES( LT_PARTS ) > C_MAX_VERSIONS", "RS_RESPONSE = ERR( IV_ID = IS_MESSAGE-ID IV_CODE = 'INVALID_PARAM' *", "RETURN", "ENDIF",
+		"LOOP AT LT_PARTS INTO DATA(LV_PART)",
+		"SPLIT CONDENSE( LV_PART ) AT SPACE INTO DATA(LV_T) DATA(LV_N) DATA(LV_REST)",
+		"IF LV_T IS INITIAL OR LV_N IS INITIAL OR LV_REST IS NOT INITIAL OR STRLEN( LV_T ) > 4 OR STRLEN( LV_N ) > 40",
+		"RS_RESPONSE = ERR( IV_ID = IS_MESSAGE-ID IV_CODE = 'INVALID_PARAM' *", "RETURN", "ENDIF",
+		"LV_TYPE = LV_T", "LV_NAME = LV_N",
+		"CLEAR: LV_STAMP, LV_STAMP_ERR, LV_SHA, LV_SHA_ERR, LV_FILES, LV_INACTIVE",
+		"CLEAR LS_TADIR",
+		"SELECT SINGLE DEVCLASS, MASTERLANG FROM TADIR WHERE PGMID = 'R3TR' AND OBJECT = @LV_TYPE AND OBJ_NAME = @LV_NAME AND DELFLAG = @SPACE INTO CORRESPONDING FIELDS OF @LS_TADIR",
+		"DATA(LV_IN) = XSDBOOL( SY-SUBRC = 0 AND LS_TADIR-DEVCLASS = LV_DEVCLASS )",
+		"IF LV_IN = ABAP_TRUE",
+		"OBJECT_STAMP( EXPORTING IV_TYPE = LV_TYPE IV_NAME = LV_NAME IMPORTING EV_STAMP = LV_STAMP EV_ERROR = LV_STAMP_ERR )",
+		"LV_INACTIVE = OBJECT_INACTIVE( IV_TYPE = LV_TYPE IV_NAME = LV_NAME )",
+		"IF LV_WANT_SHA = ABAP_TRUE",
+		"OBJECT_SHA256( *",
+		"ENDIF",
+		"ENDIF",
+	}
+
+	// object_stamp, whole: the documented v2 stamp -- every dated version
+	// row, active and inactive, of exactly the object's own rows (CS
+	// excluded), their number, and the digest of its dateless tables;
+	// another type has none, and says so.
+	gitObjectStamp = []string{
+		"TYPES: BEGIN OF TY_ROW, D TYPE D, T TYPE T, END OF TY_ROW",
+		"DATA: LT_ROWS TYPE STANDARD TABLE OF TY_ROW WITH DEFAULT KEY, LT_DIGEST TYPE STRING_TABLE, LV_XML TYPE XSTRING, LV_TABLES TYPE STRING, LV_POOL TYPE STRING, LV_LIKE TYPE STRING, LV_TEXT TYPE PROGNAME, LV_DIGEST TYPE STRING, LV_NEWEST TYPE STRING",
+		"CLEAR: EV_STAMP, EV_ERROR",
+		"CASE IV_TYPE",
+		"WHEN 'CLAS' OR 'INTF'",
+		"LV_TABLES = `REPOSRC.REPOTEXT.SEOCLASSDF.SEOCLASSTX.SEOCOMPOTX`",
+		"LV_POOL = |{ IV_NAME WIDTH = 30 PAD = '=' }|",
+		"LV_LIKE = |{ LV_POOL }%|",
+		"SELECT PROGNAME, UDAT, UTIME FROM REPOSRC WHERE PROGNAME LIKE @LV_LIKE INTO TABLE @DATA(LT_POOL)",
+		"LOOP AT LT_POOL INTO DATA(LS_POOL)",
+		"IF STRLEN( LV_POOL ) = 30 AND LS_POOL-PROGNAME(30) = LV_POOL AND LS_POOL-PROGNAME+30 <> 'CS'",
+		"APPEND VALUE #( D = LS_POOL-UDAT T = LS_POOL-UTIME ) TO LT_ROWS",
+		"ENDIF",
+		"ENDLOOP",
+		"LV_TEXT = COND #( WHEN IV_TYPE = 'CLAS' THEN |{ LV_POOL }CP| ELSE |{ LV_POOL }IP| )",
+		"SELECT UDAT AS D, UTIME AS T FROM REPOTEXT WHERE PROGNAME = @LV_TEXT APPENDING CORRESPONDING FIELDS OF TABLE @LT_ROWS",
+		"SELECT * FROM SEOCLASSDF WHERE CLSNAME = @IV_NAME ORDER BY PRIMARY KEY INTO TABLE @DATA(LT_SEODF)",
+		"CALL TRANSFORMATION ID SOURCE ROWS = LT_SEODF RESULT XML LV_XML",
+		"APPEND SHA256( LV_XML ) TO LT_DIGEST",
+		"SELECT * FROM SEOCLASSTX WHERE CLSNAME = @IV_NAME ORDER BY PRIMARY KEY INTO TABLE @DATA(LT_SEOTX)",
+		"CALL TRANSFORMATION ID SOURCE ROWS = LT_SEOTX RESULT XML LV_XML",
+		"APPEND SHA256( LV_XML ) TO LT_DIGEST",
+		"SELECT * FROM SEOCOMPOTX WHERE CLSNAME = @IV_NAME ORDER BY PRIMARY KEY INTO TABLE @DATA(LT_SEOCTX)",
+		"CALL TRANSFORMATION ID SOURCE ROWS = LT_SEOCTX RESULT XML LV_XML",
+		"APPEND SHA256( LV_XML ) TO LT_DIGEST",
+		"WHEN 'PROG'",
+		"LV_TABLES = `REPOSRC.REPOTEXT.D020S`",
+		"SELECT UDAT AS D, UTIME AS T FROM REPOSRC WHERE PROGNAME = @IV_NAME INTO CORRESPONDING FIELDS OF TABLE @LT_ROWS",
+		"SELECT UDAT AS D, UTIME AS T FROM REPOTEXT WHERE PROGNAME = @IV_NAME APPENDING CORRESPONDING FIELDS OF TABLE @LT_ROWS",
+		"SELECT DGEN AS D, TGEN AS T FROM D020S WHERE PROG = @IV_NAME APPENDING CORRESPONDING FIELDS OF TABLE @LT_ROWS",
+		"WHEN 'TABL'",
+		"LV_TABLES = `DD02L.DD09L.DD12L.DD02T.DD35L.TDDAT`",
+		"SELECT AS4DATE AS D, AS4TIME AS T FROM DD02L WHERE TABNAME = @IV_NAME INTO CORRESPONDING FIELDS OF TABLE @LT_ROWS",
+		"SELECT AS4DATE AS D, AS4TIME AS T FROM DD09L WHERE TABNAME = @IV_NAME APPENDING CORRESPONDING FIELDS OF TABLE @LT_ROWS",
+		"SELECT AS4DATE AS D, AS4TIME AS T FROM DD12L WHERE SQLTAB = @IV_NAME APPENDING CORRESPONDING FIELDS OF TABLE @LT_ROWS",
+		"SELECT * FROM DD02T WHERE TABNAME = @IV_NAME ORDER BY PRIMARY KEY INTO TABLE @DATA(LT_DD02T)",
+		"CALL TRANSFORMATION ID SOURCE ROWS = LT_DD02T RESULT XML LV_XML",
+		"APPEND SHA256( LV_XML ) TO LT_DIGEST",
+		"SELECT * FROM DD35L WHERE TABNAME = @IV_NAME ORDER BY PRIMARY KEY INTO TABLE @DATA(LT_DD35L)",
+		"CALL TRANSFORMATION ID SOURCE ROWS = LT_DD35L RESULT XML LV_XML",
+		"APPEND SHA256( LV_XML ) TO LT_DIGEST",
+		"SELECT * FROM TDDAT WHERE TABNAME = @IV_NAME ORDER BY PRIMARY KEY INTO TABLE @DATA(LT_TDDAT)",
+		"CALL TRANSFORMATION ID SOURCE ROWS = LT_TDDAT RESULT XML LV_XML",
+		"APPEND SHA256( LV_XML ) TO LT_DIGEST",
+		"WHEN 'DTEL'",
+		"LV_TABLES = `DD04L.DD04T`",
+		"SELECT AS4DATE AS D, AS4TIME AS T FROM DD04L WHERE ROLLNAME = @IV_NAME INTO CORRESPONDING FIELDS OF TABLE @LT_ROWS",
+		"SELECT * FROM DD04T WHERE ROLLNAME = @IV_NAME ORDER BY PRIMARY KEY INTO TABLE @DATA(LT_DD04T)",
+		"CALL TRANSFORMATION ID SOURCE ROWS = LT_DD04T RESULT XML LV_XML",
+		"APPEND SHA256( LV_XML ) TO LT_DIGEST",
+		"WHEN 'DOMA'",
+		"LV_TABLES = `DD01L.DD01T.DD07L.DD07T`",
+		"SELECT AS4DATE AS D, AS4TIME AS T FROM DD01L WHERE DOMNAME = @IV_NAME INTO CORRESPONDING FIELDS OF TABLE @LT_ROWS",
+		"SELECT * FROM DD01T WHERE DOMNAME = @IV_NAME ORDER BY PRIMARY KEY INTO TABLE @DATA(LT_DD01T)",
+		"CALL TRANSFORMATION ID SOURCE ROWS = LT_DD01T RESULT XML LV_XML",
+		"APPEND SHA256( LV_XML ) TO LT_DIGEST",
+		"SELECT * FROM DD07L WHERE DOMNAME = @IV_NAME ORDER BY PRIMARY KEY INTO TABLE @DATA(LT_DD07L)",
+		"CALL TRANSFORMATION ID SOURCE ROWS = LT_DD07L RESULT XML LV_XML",
+		"APPEND SHA256( LV_XML ) TO LT_DIGEST",
+		"SELECT * FROM DD07T WHERE DOMNAME = @IV_NAME ORDER BY PRIMARY KEY INTO TABLE @DATA(LT_DD07T)",
+		"CALL TRANSFORMATION ID SOURCE ROWS = LT_DD07T RESULT XML LV_XML",
+		"APPEND SHA256( LV_XML ) TO LT_DIGEST",
+		"WHEN 'TTYP'",
+		"LV_TABLES = `DD40L.DD40T`",
+		"SELECT AS4DATE AS D, AS4TIME AS T FROM DD40L WHERE TYPENAME = @IV_NAME INTO CORRESPONDING FIELDS OF TABLE @LT_ROWS",
+		"SELECT * FROM DD40T WHERE TYPENAME = @IV_NAME ORDER BY PRIMARY KEY INTO TABLE @DATA(LT_DD40T)",
+		"CALL TRANSFORMATION ID SOURCE ROWS = LT_DD40T RESULT XML LV_XML",
+		"APPEND SHA256( LV_XML ) TO LT_DIGEST",
+		"WHEN 'DDLS'",
+		"LV_TABLES = `DDDDLSRC.DDDDLSRCT`",
+		"SELECT AS4DATE AS D, AS4TIME AS T FROM DDDDLSRC WHERE DDLNAME = @IV_NAME INTO CORRESPONDING FIELDS OF TABLE @LT_ROWS",
+		"SELECT * FROM DDDDLSRCT WHERE DDLNAME = @IV_NAME ORDER BY PRIMARY KEY INTO TABLE @DATA(LT_DDLST)",
+		"CALL TRANSFORMATION ID SOURCE ROWS = LT_DDLST RESULT XML LV_XML",
+		"APPEND SHA256( LV_XML ) TO LT_DIGEST",
+		"WHEN OTHERS",
+		"EV_ERROR = |NO STAMP FOR TYPE { IV_TYPE }: ONLY CLAS, INTF, PROG, TABL, DTEL, DOMA, TTYP AND DDLS HAVE ONE|",
+		"RETURN",
+		"ENDCASE",
+		"IF LT_ROWS IS INITIAL",
+		"RETURN",
+		"ENDIF",
+		"LOOP AT LT_ROWS INTO DATA(LS_ROW)",
+		"IF |{ LS_ROW-D }{ LS_ROW-T }| > LV_NEWEST",
+		"LV_NEWEST = |{ LS_ROW-D }{ LS_ROW-T }|",
+		"ENDIF",
+		"ENDLOOP",
+		"LV_DIGEST = TO_LOWER( SHA256( CL_ABAP_CODEPAGE=>CONVERT_TO( CONCAT_LINES_OF( TABLE = LT_DIGEST SEP = `,` ) ) ) )",
+		"IF STRLEN( LV_DIGEST ) <> 64",
+		"EV_ERROR = `THE STAMP'S DIGEST COULD NOT BE COMPUTED`",
+		"RETURN",
+		"ENDIF",
+		"EV_STAMP = |V2:{ LV_TABLES }:{ LV_NEWEST }:{ LINES( LT_ROWS ) }:{ LV_DIGEST(16) }|",
+	}
+
+	// object_inactive, whole: the inactive worklist, for the object and
+	// its parts.
+	gitObjectInactive = []string{
+		"DATA: LV_LIKE TYPE STRING, LV_POOL TYPE STRING",
+		"RV_INACTIVE = ABAP_FALSE",
+		"LV_POOL = |{ IV_NAME WIDTH = 30 PAD = '=' }|",
+		"LV_LIKE = |{ IV_NAME }%|",
+		"SELECT OBJECT, OBJ_NAME FROM DWINACTIV WHERE OBJ_NAME LIKE @LV_LIKE INTO TABLE @DATA(LT_INACTIVE)",
+		"LOOP AT LT_INACTIVE INTO DATA(LS_INACTIVE)",
+		"IF LS_INACTIVE-OBJ_NAME = IV_NAME OR LS_INACTIVE-OBJ_NAME(30) = IV_NAME OR ( ( IV_TYPE = 'CLAS' OR IV_TYPE = 'INTF' ) AND LS_INACTIVE-OBJ_NAME(30) = LV_POOL )",
+		"RV_INACTIVE = ABAP_TRUE",
+		"RETURN",
+		"ENDIF",
+		"ENDLOOP",
+	}
+
+	// object_sha256, whole: abapGit's serialisation in the main language
+	// only; a failure, no file, or a hash that is not 64 digits is an
+	// error and no hash.
+	gitObjectSHA256 = []string{
+		"DATA: LT_LINES TYPE STRING_TABLE, LS_FILES TYPE ZIF_ABAPGIT_OBJECTS=>TY_SERIALIZATION",
+		"CLEAR: EV_SHA256, EV_FILES, EV_ERROR",
+		"TRY",
+		"LS_FILES = ZCL_ABAPGIT_OBJECTS=>SERIALIZE( IS_ITEM = VALUE #( OBJ_TYPE = IV_TYPE OBJ_NAME = IV_NAME DEVCLASS = IV_DEVCLASS ) IO_I18N_PARAMS = ZCL_ABAPGIT_I18N_PARAMS=>NEW( IV_MAIN_LANGUAGE = IV_LANGUAGE IV_MAIN_LANGUAGE_ONLY = ABAP_TRUE ) )",
+		"CATCH CX_ROOT INTO DATA(LX_ERROR)",
+		"EV_ERROR = |ABAPGIT COULD NOT SERIALISE IT: { LX_ERROR->GET_TEXT( ) }|",
+		"RETURN",
+		"ENDTRY",
+		"LOOP AT LS_FILES-FILES INTO DATA(LS_FILE)",
+		"APPEND |{ LS_FILE-FILENAME }={ TO_LOWER( SHA256( LS_FILE-DATA ) ) }| TO LT_LINES",
+		"ENDLOOP",
+		"IF LT_LINES IS INITIAL",
+		"EV_ERROR = `ABAPGIT SERIALISED NO FILE OF IT`",
+		"RETURN",
+		"ENDIF",
+		"SORT LT_LINES",
+		"DATA(LV_TEXT) = CONCAT_LINES_OF( TABLE = LT_LINES SEP = CL_ABAP_CHAR_UTILITIES=>NEWLINE )",
+		"EV_SHA256 = TO_LOWER( SHA256( CL_ABAP_CODEPAGE=>CONVERT_TO( LV_TEXT ) ) )",
+		"IF STRLEN( EV_SHA256 ) <> 64",
+		"CLEAR EV_SHA256",
+		"EV_ERROR = `THE SHA-256 COULD NOT BE COMPUTED`",
+		"RETURN",
+		"ENDIF",
+		"EV_FILES = LINES( LT_LINES )",
 	}
 
 	gitPackageObjectsAuth = []string{
@@ -629,7 +806,44 @@ func checkGitPolicy(stmts []string) []string {
 	if strings.Contains(strings.ToUpper(strings.Join(del, "\n")), "PURGE(") {
 		bad = append(bad, "delete_repo must not purge (delete objects)")
 	}
+	if countExact(del, gitDeleteRepoExpectName) != 1 {
+		bad = append(bad, "delete_repo must take the expected repository name from its \"name\" parameter")
+	}
 	need("HANDLE_PACKAGE_OBJECTS", gitPackageObjectsAuth, "package_objects must check S_DEVELOP display on the package")
+
+	// object_versions: read-only, refusing what it cannot read, and a
+	// version only for an object of this package; its stamp and hash as
+	// documented.
+	need("HANDLE_OBJECT_VERSIONS", gitObjectVersions, "object_versions must refuse a bad package, a package without S_DEVELOP display, too many or malformed objects, and read a version only for an object of this package")
+	// Every answer says whether the object is inactive: Go treats a missing
+	// "inactive" as unknown and refuses a sha256 match on it.
+	if ov := methodStatements(stmts, "HANDLE_OBJECT_VERSIONS"); !strings.Contains(normStmt(strings.Join(ov, " ")), "( ZCL_VSP_UTILS=>JSON_BOOL( IV_KEY = 'INACTIVE' IV_VALUE = LV_INACTIVE ) )") {
+		bad = append(bad, "object_versions must answer inactive for every object")
+	}
+	if !strings.Contains(up, "\nCONSTANTS C_MAX_VERSIONS TYPE I VALUE 500\n") {
+		bad = append(bad, "object_versions' limit must be CONSTANTS c_max_versions TYPE i VALUE 500")
+	}
+	if !strings.Contains(up, "\nWHEN 'OBJECT_VERSIONS'\nRS_RESPONSE = HANDLE_OBJECT_VERSIONS( IS_MESSAGE )\n") {
+		bad = append(bad, "action object_versions must be handle_object_versions")
+	}
+	for _, w := range []struct {
+		method string
+		want   []string
+	}{{"OBJECT_STAMP", gitObjectStamp}, {"OBJECT_SHA256", gitObjectSHA256}, {"OBJECT_INACTIVE", gitObjectInactive}} {
+		if m := methodStatements(stmts, w.method); len(m) != len(w.want) || seqAt(m, w.want...) != 0 {
+			bad = append(bad, strings.ToLower(w.method)+" must compute the documented version, and nothing else (as pinned)")
+		}
+	}
+	for _, m := range []string{"HANDLE_OBJECT_VERSIONS", "OBJECT_STAMP", "OBJECT_SHA256", "OBJECT_INACTIVE"} {
+		for _, st := range methodStatements(stmts, m) {
+			u := normStmt(st)
+			for _, kw := range []string{"COMMIT", "ROLLBACK", "CALL FUNCTION", "->DESERIALIZE(", "->DELETE(", "ENQUEUE", "DEQUEUE", "CALL METHOD"} {
+				if strings.HasPrefix(u, kw) || strings.Contains(u, kw) {
+					bad = append(bad, strings.ToLower(m)+" must be read-only: "+st)
+				}
+			}
+		}
+	}
 	po := methodStatements(stmts, "HANDLE_PACKAGE_OBJECTS")
 	if i := seqAt(po, gitPackageObjectsRepo...); i < 0 || !strings.Contains(normStmt(po[len(po)-1]), `( COND #( WHEN LV_REPO IS NOT INITIAL THEN |"REPO":{ LV_REPO }| ) )`) {
 		bad = append(bad, "package_objects must report every registered repository (state unknown when abapGit cannot open it) and fail when the list cannot be read")
@@ -807,6 +1021,60 @@ func TestGitServiceGuardBites(t *testing.T) {
 			""},
 		"delete_repo: own entry check widened": {"AND NOT ( pgmid = 'R3TR' AND object = 'DEVC' AND obj_name = @lv_obj_name ).",
 			"AND NOT ( pgmid = 'R3TR' )."},
+		// #409: object_versions and delete_repo's expected name.
+		"delete_repo: expected name ignored": {"        IF lv_expect_name IS NOT INITIAL AND li_repo->get_name( ) <> lv_expect_name.\n          rs_response = err( iv_id = is_message-id iv_code = 'REPO_NAME_MISMATCH'\n                             iv_message = |The repository of { lv_package } is { ls_repo-key } { li_repo->get_name( ) }, not { lv_expect_name }; nothing was deleted| ).\n          RETURN.\n        ENDIF.\n",
+			""},
+		"delete_repo: expected name weakened": {"        IF lv_expect_name IS NOT INITIAL AND li_repo->get_name( ) <> lv_expect_name.",
+			"        IF lv_expect_name IS NOT INITIAL AND 1 = 2."},
+		"delete_repo: expected name from another param": {"DATA(lv_expect_name) = zcl_vsp_utils=>extract_param( iv_params = is_message-params iv_name = 'name' ).",
+			"DATA(lv_expect_name) = zcl_vsp_utils=>extract_param( iv_params = is_message-params iv_name = 'repo_name' )."},
+		"object_versions: no authority check": {"      rs_response = err( iv_id = is_message-id iv_code = 'NOT_AUTHORIZED'\n                         iv_message = |No authorization to display package { lv_package } (S_DEVELOP, activity 03)| ).\n      RETURN.\n    ENDIF.\n    SPLIT lv_objects",
+			"      CLEAR rs_response.\n    ENDIF.\n    SPLIT lv_objects"},
+		"object_versions: bad package accepted": {"iv_name = 'sha256' ) = `true` ).\n    IF valid_package( lv_package ) = abap_false.\n      rs_response = err( iv_id = is_message-id iv_code = 'INVALID_PARAM'\n                         iv_message = |package '{ lv_package }' is not a package name| ).\n      RETURN.\n    ENDIF.\n    lv_devclass = lv_package.\n    AUTHORITY-CHECK OBJECT 'S_DEVELOP'\n      ID 'DEVCLASS' FIELD lv_devclass\n      ID 'OBJTYPE'  DUMMY",
+			"iv_name = 'sha256' ) = `true` ).\n    lv_devclass = lv_package.\n    AUTHORITY-CHECK OBJECT 'S_DEVELOP'\n      ID 'DEVCLASS' FIELD lv_devclass\n      ID 'OBJTYPE'  DUMMY"},
+		"object_versions: no object limit": {"    IF lines( lt_parts ) = 0 OR lines( lt_parts ) > c_max_versions.",
+			"    IF lines( lt_parts ) = 0."},
+		"object_versions: limit raised": {"CONSTANTS c_max_versions TYPE i VALUE 500.", "CONSTANTS c_max_versions TYPE i VALUE 500000."},
+		"object_versions: malformed object accepted": {"        rs_response = err( iv_id = is_message-id iv_code = 'INVALID_PARAM'\n                           iv_message = |object '{ condense( lv_part ) }' is not \"TYPE NAME\"| ).\n        RETURN.",
+			"        CONTINUE."},
+		"object_versions: another package's object versioned": {"      DATA(lv_in) = xsdbool( sy-subrc = 0 AND ls_tadir-devclass = lv_devclass ).",
+			"      DATA(lv_in) = xsdbool( sy-subrc = 0 )."},
+		"object_versions: version without TADIR entry": {"      DATA(lv_in) = xsdbool( sy-subrc = 0 AND ls_tadir-devclass = lv_devclass ).",
+			"      DATA(lv_in) = abap_true."},
+		"object_versions: deleted TADIR rows count": {"AND obj_name = @lv_name AND delflag = @space\n", "AND obj_name = @lv_name\n"},
+		"object_versions: commits": {"    ENDLOOP.\n    rs_response = zcl_vsp_utils=>build_success( iv_id = is_message-id iv_data = zcl_vsp_utils=>json_obj( zcl_vsp_utils=>json_join( VALUE #(\n      ( zcl_vsp_utils=>json_str( iv_key = 'package' iv_value = lv_package ) )\n      ( |\"objects\"",
+			"    ENDLOOP.\n    COMMIT WORK.\n    rs_response = zcl_vsp_utils=>build_success( iv_id = is_message-id iv_data = zcl_vsp_utils=>json_obj( zcl_vsp_utils=>json_join( VALUE #(\n      ( zcl_vsp_utils=>json_str( iv_key = 'package' iv_value = lv_package ) )\n      ( |\"objects\""},
+		"object_versions: action rerouted": {"      WHEN 'object_versions'.\n        rs_response = handle_object_versions( is_message ).",
+			"      WHEN 'object_versions'.\n        rs_response = handle_package_objects( is_message )."},
+		"object_stamp: active rows only": {"        SELECT udat AS d, utime AS t FROM reposrc WHERE progname = @iv_name INTO",
+			"        SELECT udat AS d, utime AS t FROM reposrc WHERE progname = @iv_name AND r3state = 'A' INTO"},
+		"object_stamp: row count dropped": {"    ev_stamp = |v2:{ lv_tables }:{ lv_newest }:{ lines( lt_rows ) }:{ lv_digest(16) }|.",
+			"    ev_stamp = |v2:{ lv_tables }:{ lv_newest }:0:{ lv_digest(16) }|."},
+		"object_stamp: digest dropped": {"    ev_stamp = |v2:{ lv_tables }:{ lv_newest }:{ lines( lt_rows ) }:{ lv_digest(16) }|.",
+			"    ev_stamp = |v2:{ lv_tables }:{ lv_newest }:{ lines( lt_rows ) }:0000000000000000|."},
+		"object_stamp: any include matches": {"          IF strlen( lv_pool ) = 30 AND ls_pool-progname(30) = lv_pool AND ls_pool-progname+30 <> 'CS'.",
+			"          IF strlen( lv_pool ) = 30."},
+		"object_stamp: CS counted": {"          IF strlen( lv_pool ) = 30 AND ls_pool-progname(30) = lv_pool AND ls_pool-progname+30 <> 'CS'.",
+			"          IF strlen( lv_pool ) = 30 AND ls_pool-progname(30) = lv_pool."},
+		"object_stamp: class text pool dropped":    {"        SELECT udat AS d, utime AS t FROM repotext WHERE progname = @lv_text APPENDING CORRESPONDING FIELDS OF TABLE @lt_rows.\n", ""},
+		"object_stamp: dynpros dropped":            {"        SELECT dgen AS d, tgen AS t FROM d020s WHERE prog = @iv_name APPENDING CORRESPONDING FIELDS OF TABLE @lt_rows.\n", ""},
+		"object_stamp: technical settings dropped": {"        SELECT as4date AS d, as4time AS t FROM dd09l WHERE tabname = @iv_name APPENDING CORRESPONDING FIELDS OF TABLE @lt_rows.\n", ""},
+		"object_stamp: class descriptions dropped": {"        CALL TRANSFORMATION id SOURCE rows = lt_seotx RESULT XML lv_xml.\n        APPEND sha256( lv_xml ) TO lt_digest.\n", ""},
+		"object_inactive: parts ignored": {"      IF ls_inactive-obj_name = iv_name OR ls_inactive-obj_name(30) = iv_name OR",
+			"      IF ls_inactive-obj_name = iv_name OR"},
+		"object_inactive: never inactive":        {"        rv_inactive = abap_true.\n        RETURN.", "        RETURN."},
+		"object_versions: inactive key dropped":  {"        ( zcl_vsp_utils=>json_bool( iv_key = 'inactive' iv_value = lv_inactive ) )\n", ""},
+		"object_versions: inactive key renamed":  {"json_bool( iv_key = 'inactive' iv_value = lv_inactive )", "json_bool( iv_key = 'is_inactive' iv_value = lv_inactive )"},
+		"object_versions: inactive not reported": {"        lv_inactive = object_inactive( iv_type = lv_type iv_name = lv_name ).\n", ""},
+		"object_stamp: unsupported type stamped": {"        ev_error = |no stamp for type { iv_type }: only CLAS, INTF, PROG, TABL, DTEL, DOMA, TTYP and DDLS have one|.\n        RETURN.",
+			"        ev_stamp = `v1:NONE:00000000000000:0`.\n        RETURN."},
+		"object_stamp: no rows stamped": {"    IF lt_rows IS INITIAL.\n      RETURN.\n    ENDIF.\n    LOOP AT lt_rows",
+			"    LOOP AT lt_rows"},
+		"object_sha256: translations included": {"                                                         iv_main_language_only = abap_true ) ).",
+			"                                                         iv_main_language_only = abap_false ) )."},
+		"object_sha256: failure hashed": {"        ev_error = |abapGit could not serialise it: { lx_error->get_text( ) }|.\n        RETURN.",
+			"        ev_error = |abapGit could not serialise it: { lx_error->get_text( ) }|."},
+		"object_sha256: lines unsorted": {"    SORT lt_lines.\n", ""},
 		"package_objects: no authority check": {"    IF sy-subrc <> 0.\n      rs_response = err( iv_id = is_message-id iv_code = 'NOT_AUTHORIZED'\n                         iv_message = |No authorization to display package { lv_package } (S_DEVELOP, activity 03)| ).\n      RETURN.\n    ENDIF.\n",
 			""},
 		// Review round 3: user scoping of the cleanup, VSPGIT keys only in the

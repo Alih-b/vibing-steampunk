@@ -599,7 +599,7 @@ func TestParseGitDeleteItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 3 || items[0] != (GitDeleteItem{"PROG", "ZDEMO_REPORT"}) || items[1] != (GitDeleteItem{"CLAS", "ZCL_DEMO"}) || items[2] != (GitDeleteItem{"INTF", "ZIF_DEMO"}) {
+	if len(items) != 3 || items[0] != (GitDeleteItem{Type: "PROG", Name: "ZDEMO_REPORT"}) || items[1] != (GitDeleteItem{Type: "CLAS", Name: "ZCL_DEMO"}) || items[2] != (GitDeleteItem{Type: "INTF", Name: "ZIF_DEMO"}) {
 		t.Errorf("items %+v", items)
 	}
 	if items, err := ParseGitDeleteItems("PROG A, PROG B"); err != nil || len(items) != 2 {
@@ -737,7 +737,7 @@ func TestDeleteGitObjectsScope(t *testing.T) {
 		pkgContents("$ZDEMO", [][2]string{{"PROG", "ZDEMO_KEEP"}}, nil, true),
 	}}
 	res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{
-		{"PROG", "ZDEMO_REPORT"}, {"PROG", "ZDEMO_ELSE"}, {"DEVC", "$ZDEMO"}, {"PROG", "ZDEMO_ABSENT"},
+		{Type: "PROG", Name: "ZDEMO_REPORT"}, {Type: "PROG", Name: "ZDEMO_ELSE"}, {Type: "DEVC", Name: "$ZDEMO"}, {Type: "PROG", Name: "ZDEMO_ABSENT"},
 	}, "", true)
 	if err != nil {
 		t.Fatal(err)
@@ -811,7 +811,7 @@ func TestDeleteGitObjectsRepositoryRules(t *testing.T) {
 		rec := &adtRecorder{}
 		cl := newStubbedClient(t, rec, gitDeleteRoute(pkgOf, uris, nil), WithAllowedPackages("$ZDEMO"))
 		ws := &fakeGitWS{contents: c.contents}
-		res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{"PROG", "ZDEMO_REPORT"}}, "", c.deleteRepo)
+		res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{Type: "PROG", Name: "ZDEMO_REPORT"}}, "", c.deleteRepo)
 		switch {
 		case c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)):
 			t.Errorf("%s: error %v, want %q", c.name, err, c.wantErr)
@@ -846,7 +846,7 @@ func TestDeleteGitObjectsRemovesTheEmptyPackageLast(t *testing.T) {
 		pkgContents("$ZDEMO", nil, nil, true),
 		pkgContents("$ZDEMO", nil, nil, false),
 	}}
-	res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{"PROG", "ZDEMO_REPORT"}}, "", true)
+	res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{Type: "PROG", Name: "ZDEMO_REPORT"}}, "", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -877,7 +877,7 @@ func TestDeleteGitObjectsRemovesTheEmptyPackageLast(t *testing.T) {
 		pkgContents("$ZDEMO", [][2]string{{"PROG", "ZDEMO_REPORT"}}, nil, true),
 		pkgContents("$ZDEMO", nil, []string{"$ZDEMO_SUB"}, true),
 	}}
-	res, err = cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{"PROG", "ZDEMO_REPORT"}}, "", true)
+	res, err = cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{Type: "PROG", Name: "ZDEMO_REPORT"}}, "", true)
 	if err != nil || res.PackageDeleted || res.RepoDeleted || len(deletedPaths(rec.snapshot())) != 1 || ws.params("delete_repo") != nil {
 		t.Errorf("a package with a subpackage was deleted: %+v %v", res, err)
 	}
@@ -890,7 +890,7 @@ func TestDeleteGitObjectsStopsOnFailure(t *testing.T) {
 	rec := &adtRecorder{}
 	cl := newStubbedClient(t, rec, gitDeleteRoute(pkgOf, uris, map[string]bool{"ZDEMO_REPORT": true}), WithAllowedPackages("$ZDEMO"))
 	ws := &fakeGitWS{contents: []map[string]any{pkgContents("$ZDEMO", [][2]string{{"PROG", "ZDEMO_REPORT"}}, nil, true)}}
-	res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{"PROG", "ZDEMO_REPORT"}}, "", true)
+	res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{Type: "PROG", Name: "ZDEMO_REPORT"}}, "", true)
 	if err == nil || res == nil || res.RepoDeleted || res.PackageDeleted {
 		t.Fatalf("a failed delete went on: %+v %v", res, err)
 	}
@@ -905,7 +905,7 @@ func TestDeleteGitObjectsStopsOnFailure(t *testing.T) {
 func TestDeleteGitObjectsGatesAndForeignObjects(t *testing.T) {
 	ws := &fakeGitWS{}
 	cl := NewClient("http://sap.invalid", "TESTUSER", "pw", WithReadOnly())
-	if _, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{"PROG", "ZDEMO_REPORT"}}, "", true); err == nil || len(ws.actions()) != 0 {
+	if _, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{Type: "PROG", Name: "ZDEMO_REPORT"}}, "", true); err == nil || len(ws.actions()) != 0 {
 		t.Errorf("read-only: %v, %v", err, ws.actions())
 	}
 
@@ -913,7 +913,7 @@ func TestDeleteGitObjectsGatesAndForeignObjects(t *testing.T) {
 	rec := &adtRecorder{}
 	cl = newStubbedClient(t, rec, gitDeleteRoute(map[string]string{"ZDEMO_ELSE": "$ZOTHER"}, uris, nil)) // no whitelist at all
 	ws = &fakeGitWS{contents: []map[string]any{pkgContents("$ZDEMO", [][2]string{{"PROG", "@ZDEMO_ELSE"}}, nil, false)}}
-	res, _ := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{"PROG", "ZDEMO_ELSE"}}, "", false)
+	res, _ := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{Type: "PROG", Name: "ZDEMO_ELSE"}}, "", false)
 	if d := deletedPaths(rec.snapshot()); len(d) != 0 {
 		t.Errorf("an object of another package was deleted: %v (%+v)", d, res)
 	}
@@ -963,7 +963,7 @@ func TestDeleteGitObjectsKeepsAStrandedLock(t *testing.T) {
 	rec := &adtRecorder{}
 	cl := newStubbedClient(t, rec, route, WithAllowedPackages("$ZDEMO"))
 	ws := &fakeGitWS{contents: []map[string]any{pkgContents("$ZDEMO", [][2]string{{"PROG", "ZDEMO_REPORT"}}, nil, false)}}
-	res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{"PROG", "ZDEMO_REPORT"}}, "", false)
+	res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{Type: "PROG", Name: "ZDEMO_REPORT"}}, "", false)
 	if err == nil || res == nil || !strings.Contains(err.Error(), "LOCKED") || !strings.Contains(res.Objects[0].Reason, "LOCKED") {
 		t.Fatalf("got %+v, %v", res, err)
 	}
@@ -1005,7 +1005,7 @@ func TestDeleteGitObjectsResolvesTheADTAddress(t *testing.T) {
 		pkgContents("$ZDEMO", [][2]string{{"PROG", "ZDEMO_INCL"}, {"TABL", "ZDEMO_STRUCT"}}, nil, false),
 		pkgContents("$ZDEMO", [][2]string{{"PROG", "ZDEMO_KEEP"}}, nil, false),
 	}}
-	if _, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{"PROG", "ZDEMO_INCL"}, {"TABL", "ZDEMO_STRUCT"}}, "", false); err != nil {
+	if _, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{Type: "PROG", Name: "ZDEMO_INCL"}, {Type: "TABL", Name: "ZDEMO_STRUCT"}}, "", false); err != nil {
 		t.Fatal(err)
 	}
 	got := strings.Join(deletedPaths(rec.snapshot()), ",")
@@ -1115,7 +1115,7 @@ func TestDeleteGitObjectsRefusesAMovedObject(t *testing.T) {
 		rec := &adtRecorder{}
 		cl := newStubbedClient(t, rec, route) // no whitelist: the gate would allow any package
 		ws := &fakeGitWS{contents: []map[string]any{pkgContents("$ZDEMO", [][2]string{{"PROG", "ZDEMO_MOVED"}}, nil, false)}}
-		res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{"PROG", "ZDEMO_MOVED"}}, "", false)
+		res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{Type: "PROG", Name: "ZDEMO_MOVED"}}, "", false)
 		if err == nil || res == nil || res.Objects[0].Status != "failed" || res.PackageDeleted {
 			t.Fatalf("%s: got %+v, %v", name, res, err)
 		}
@@ -1150,7 +1150,7 @@ func TestDeleteGitObjectsNormalizesTypes(t *testing.T) {
 		pkgContents("$ZDEMO", [][2]string{{"DEVC", "$ZDEMO"}, {"PROG", "ZDEMO_REPORT"}, {"PROG", "ZDEMO_KEEP"}}, nil, false),
 		pkgContents("$ZDEMO", [][2]string{{"DEVC", "$ZDEMO"}, {"PROG", "ZDEMO_KEEP"}}, nil, false),
 	}}
-	res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{"devc", "$zdemo"}, {"prog", "zdemo_report"}}, "", false)
+	res, err := cl.DeleteGitObjects(context.Background(), ws, "$ZDEMO", []GitDeleteItem{{Type: "devc", Name: "$zdemo"}, {Type: "prog", Name: "zdemo_report"}}, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}

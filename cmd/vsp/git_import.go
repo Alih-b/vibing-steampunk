@@ -265,12 +265,28 @@ then it is unregistered only when it is an offline repository and the
 package is empty after the deletes. An online repository is never
 unregistered: --delete-repo with one is refused before anything is deleted.
 
+Only the version you saw: --expect "TYPE NAME sha256=<h>" (or stamp=<v>),
+with the values "vsp git object-versions" reported, deletes that object
+only while it is still that version. vsp takes the ADT lock, reads the
+version again while it holds it, and deletes only on a match; otherwise
+the object comes back "changed" with what it is now and is kept. With both,
+sha256 decides. Prefer sha256 when it matters: the stamp does not cover
+every part of an object (documentation, GUI status, SOTR, ...; see the
+README). An object with an inactive version is never a sha256 match.
+
+Objects are checked and deleted one by one: when one comes back "changed"
+(or "failed"), the others listed are still deleted; only the repository
+and the package are kept. --expect-repo-key and --expect-repo-name (with
+--delete-repo) drop the repository row only when it is exactly that row.
+
 Refused under read_only/SAP_READ_ONLY; the package must pass
 allowed_packages; a transportable package needs --allow-transportable-edits
 and --transport.
 
   vsp -s devsys git delete-objects --package '$ZDEMO' "PROG ZDEMO_REPORT" "CLAS ZCL_DEMO"
-  vsp -s devsys git delete-objects --package '$ZDEMO' --delete-repo "PROG ZDEMO_REPORT"`,
+  vsp -s devsys git delete-objects --package '$ZDEMO' --delete-repo "PROG ZDEMO_REPORT"
+  vsp -s devsys git delete-objects --package '$ZDEMO' "CLAS ZCL_DEMO" \
+      --expect "CLAS ZCL_DEMO sha256=<sha256 from object-versions --sha256>"`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pkg, _ := cmd.Flags().GetString("package")
@@ -293,6 +309,20 @@ and --transport.
 		if err != nil {
 			return err
 		}
+		expects, _ := cmd.Flags().GetStringArray("expect")
+		if err = adt.ApplyGitExpectFlags(items, expects); err != nil {
+			return err
+		}
+		opts := adt.GitDeleteOptions{Transport: transport}
+		opts.DeleteRepo, _ = cmd.Flags().GetBool("delete-repo")
+		repoKey, _ := cmd.Flags().GetString("expect-repo-key")
+		repoName, _ := cmd.Flags().GetString("expect-repo-name")
+		if repoKey != "" || repoName != "" {
+			opts.ExpectRepo = &adt.GitRepoExpect{Key: repoKey, Name: repoName}
+			if !opts.DeleteRepo {
+				return fmt.Errorf("--expect-repo-key/--expect-repo-name are only for --delete-repo")
+			}
+		}
 		ws, closeWS, err := gitServiceWS(client)
 		if err != nil {
 			return err
@@ -300,8 +330,7 @@ and --transport.
 		defer closeWS()
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		deleteRepo, _ := cmd.Flags().GetBool("delete-repo")
-		res, derr := client.DeleteGitObjects(ctx, ws, pkg, items, transport, deleteRepo)
+		res, derr := client.DeleteGitObjectsWith(ctx, ws, pkg, items, opts)
 		if res != nil {
 			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 				if err := printJSON(res); err != nil {
@@ -331,6 +360,80 @@ and --transport.
 	},
 }
 
+var gitObjectVersionsCmd = &cobra.Command{
+	Use:   `object-versions --package <PACKAGE> "TYPE NAME" ...`,
+	Short: "Read objects' version stamps (and sha256) to pass to delete-objects --expect (read-only; needs ZADT_VSP)",
+	Long: `Read the version of objects of a package -- what delete-objects --expect
+compares, under the ADT lock, before it deletes. Changes nothing.
+
+--sha256 reads the SHA-256 over the object's abapGit serialisation in its
+original language only (sorted lines "<file>=<sha256 of the file>", joined
+by LF): everything abapGit serialises, active version only. Use it when it
+matters. "inactive" says the object has an inactive version.
+
+stamp: v2:<TABLES>:<YYYYMMDDHHMMSS>:<ROWS>:<DIGEST>, cheaper and coarser: the
+newest change over the dated version rows of the object's main tables, and
+a digest of some dateless ones. It misses documentation, GUI status, SOTR
+and other parts (the README lists them). Its resolution is a second.
+
+  vsp -s devsys git object-versions --package '$ZDEMO' "CLAS ZCL_DEMO" "PROG ZDEMO_REPORT" --sha256`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pkg, _ := cmd.Flags().GetString("package")
+		withSHA, _ := cmd.Flags().GetBool("sha256")
+		if _, err := adt.NormalizeGitPackage(pkg); err != nil {
+			return err
+		}
+		items, err := adt.ParseGitDeleteItems(args)
+		if err != nil {
+			return err
+		}
+		client, err := createADTClientFor(cmd)
+		if err != nil {
+			return err
+		}
+		ws, closeWS, err := gitServiceWS(client)
+		if err != nil {
+			return err
+		}
+		defer closeWS()
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		vs, err := client.GitObjectVersions(ctx, ws, pkg, items, withSHA)
+		if err != nil {
+			return err
+		}
+		if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+			return printJSON(vs)
+		}
+		for _, v := range vs {
+			switch {
+			case !v.InPackage && v.Package == "":
+				fmt.Printf("%s %s\tnot in TADIR\n", v.Type, v.Name)
+			case !v.InPackage:
+				fmt.Printf("%s %s\tin package %s, not %s\n", v.Type, v.Name, v.Package, strings.ToUpper(pkg))
+			default:
+				fmt.Printf("%s %s\tstamp=%s%s", v.Type, v.Name, orDash(v.Stamp), errNote(v.StampError))
+				if v.Inactive != nil && *v.Inactive {
+					fmt.Print("\tinactive")
+				}
+				if withSHA {
+					fmt.Printf("\tsha256=%s%s", orDash(v.SHA256), errNote(v.SHA256Error))
+				}
+				fmt.Println()
+			}
+		}
+		return nil
+	},
+}
+
+func errNote(e string) string {
+	if e == "" {
+		return ""
+	}
+	return " (" + e + ")"
+}
+
 // gitServiceWS is a WebSocket to ZADT_VSP, opened only after every gate has
 // passed, authenticated as the profile's HTTP client is.
 func gitServiceWS(client *adt.Client) (*adt.DebugWebSocketClient, func(), error) {
@@ -353,6 +456,12 @@ func init() {
 	gitDeleteObjectsCmd.Flags().String("transport", "", "Transport request, for a transportable package")
 	gitDeleteObjectsCmd.Flags().Bool("delete-repo", false, "Also unregister the package's abapGit repository: only an offline one, only once the package is empty")
 	gitDeleteObjectsCmd.Flags().Bool("json", false, "Emit JSON")
-	gitCmd.AddCommand(gitImportZipCmd, gitImportStatusCmd, gitDeleteObjectsCmd)
+	gitDeleteObjectsCmd.Flags().StringArray("expect", nil, `Delete "TYPE NAME" only while it is still this version: "TYPE NAME sha256=<h>" and/or "stamp=<v>"; with both, sha256 decides (repeatable)`)
+	gitDeleteObjectsCmd.Flags().String("expect-repo-key", "", "With --delete-repo: drop the repository row only when its key is this")
+	gitDeleteObjectsCmd.Flags().String("expect-repo-name", "", "With --delete-repo: drop the repository row only when its name is this")
+	gitObjectVersionsCmd.Flags().String("package", "", "The package (required)")
+	gitObjectVersionsCmd.Flags().Bool("sha256", false, "Also read the SHA-256 of each object's abapGit serialisation (slower)")
+	gitObjectVersionsCmd.Flags().Bool("json", false, "Emit JSON")
+	gitCmd.AddCommand(gitImportZipCmd, gitImportStatusCmd, gitDeleteObjectsCmd, gitObjectVersionsCmd)
 	rootCmd.AddCommand(gitCmd)
 }
