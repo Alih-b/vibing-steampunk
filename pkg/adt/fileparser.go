@@ -77,66 +77,111 @@ func extractClassNameFromFilename(filePath string) string {
 }
 
 // ParseABAPFile analyzes an ABAP source file and extracts metadata.
-// It detects the object type from file extension and parses the content
-// to extract the object name and other metadata.
 //
 // Suffixes are matched without regard to case: ZCL_FOO.CLAS.ABAP is read the
 // same as zcl_foo.clas.abap. Only the suffix is case-blind; object names are
 // uppercased as ABAP has them.
 //
-// A file named with its type (.prog.abap, .clas.abap, ...) is that type. A
-// plain {name}.abap file is typed from its first statement, and only when
-// the statement names the object the file is named after: a TOP include that
-// opens with its main program's PROGRAM statement must not be deployed over
-// that program.
+// A file named with its type ({name}.prog.abap, {name}.clas.abap, ...) is
+// that type, and its object is the one in its file name, with abapGit's #
+// standing for the namespace slash. The content is never the source of the
+// name: an abapGit TOP include zrep_top.prog.abap opens with PROGRAM zrep,
+// and taking the name from there deployed the include over its main program.
+// The content is checked instead, and a file whose main statement names
+// another object is refused.
+//
+// A {name}.prog.abap whose sibling {name}.prog.xml says SUBC I (abapGit's mark
+// for an include) is the include {name}. Without that mark a .prog.abap must
+// open with REPORT or PROGRAM naming {name}.
+//
+// A plain {name}.abap file is typed from its first statement, and only when
+// the statement names the object the file is named after.
 func ParseABAPFile(filePath string) (*ABAPFileInfo, error) {
 	info := &ABAPFileInfo{FilePath: filePath}
 	baseName := filepath.Base(filePath)
 	lower := strings.ToLower(baseName)
 	hasSuffix := func(suffix string) bool { return strings.HasSuffix(lower, suffix) }
+	// typed names the object after the file, without its suffix.
+	typed := func(kind CreatableObjectType, suffix string) error {
+		name, err := typedStemName(baseName, suffix)
+		if err != nil {
+			return err
+		}
+		info.ObjectType = kind
+		info.ObjectName = name
+		return nil
+	}
 
+	var err error
 	switch {
-	// Class includes (must be before .clas.abap)
-	// For class includes, extract the class name from the filename, not content
+	// Class includes (must be before .clas.abap). Their content is local
+	// classes and test classes, named anything; the file names the class.
 	case hasSuffix(".clas.testclasses.abap"):
-		info.ObjectType = ObjectTypeClass
+		err = typed(ObjectTypeClass, ".clas.testclasses.abap")
 		info.ClassIncludeType = ClassIncludeTestClasses
-		info.ObjectName = extractClassNameFromFilename(filePath)
 	case hasSuffix(".clas.locals_def.abap"):
-		info.ObjectType = ObjectTypeClass
+		err = typed(ObjectTypeClass, ".clas.locals_def.abap")
 		info.ClassIncludeType = ClassIncludeDefinitions
-		info.ObjectName = extractClassNameFromFilename(filePath)
 	case hasSuffix(".clas.locals_imp.abap"):
-		info.ObjectType = ObjectTypeClass
+		err = typed(ObjectTypeClass, ".clas.locals_imp.abap")
 		info.ClassIncludeType = ClassIncludeImplementations
-		info.ObjectName = extractClassNameFromFilename(filePath)
 	case hasSuffix(".clas.macros.abap"):
-		info.ObjectType = ObjectTypeClass
+		err = typed(ObjectTypeClass, ".clas.macros.abap")
 		info.ClassIncludeType = ClassIncludeMacros
-		info.ObjectName = extractClassNameFromFilename(filePath)
 	// Main class
 	case hasSuffix(".clas.abap"):
-		info.ObjectType = ObjectTypeClass
 		info.ClassIncludeType = ClassIncludeMain
+		if err = typed(ObjectTypeClass, ".clas.abap"); err == nil {
+			err = checkGlobalDeclaration(filePath, "CLASS", info.ObjectName)
+		}
 	case hasSuffix(".prog.abap"):
-		info.ObjectType = ObjectTypeProgram
+		if err = typed(ObjectTypeProgram, ".prog.abap"); err != nil {
+			break
+		}
+		var subc string
+		var found bool
+		subc, found, err = progXMLSubc(filePath, info.ObjectName)
+		if err != nil {
+			break
+		}
+		if found && subc == "I" {
+			// abapGit keeps an include as a .prog.abap and marks it in the
+			// .prog.xml beside it. What it opens with does not matter: a TOP
+			// include opens with its main program's PROGRAM statement.
+			info.ObjectType = ObjectTypeInclude
+			break
+		}
+		err = checkProgramStatement(filePath, info.ObjectName, found)
 	case hasSuffix(".incl.abap"):
-		info.ObjectType = ObjectTypeInclude
-		info.ObjectName = nameFromFileStem(baseName[:len(baseName)-len(".incl.abap")])
+		// An include has no statement of its own to check; the file names it.
+		err = typed(ObjectTypeInclude, ".incl.abap")
 	case hasSuffix(".intf.abap"):
-		info.ObjectType = ObjectTypeInterface
+		if err = typed(ObjectTypeInterface, ".intf.abap"); err == nil {
+			err = checkGlobalDeclaration(filePath, "INTERFACE", info.ObjectName)
+		}
 	case hasSuffix(".fugr.abap"):
-		info.ObjectType = ObjectTypeFunctionGroup
+		if err = typed(ObjectTypeFunctionGroup, ".fugr.abap"); err == nil {
+			err = checkFunctionPoolStatement(filePath, info.ObjectName)
+		}
 	case hasSuffix(".func.abap"):
 		info.ObjectType = ObjectTypeFunctionMod
 		info.ParentName = extractFunctionGroupFromFilename(filePath)
+		if info.ObjectName, err = funcFileModuleName(baseName); err == nil {
+			err = checkFunctionStatement(filePath, info.ObjectName)
+		}
 	// RAP object types (ABAPGit-compatible extensions)
 	case hasSuffix(".ddls.asddls"):
-		info.ObjectType = ObjectTypeDDLS
+		if err = typed(ObjectTypeDDLS, ".ddls.asddls"); err == nil {
+			err = checkSourceDefinition(filePath, ObjectTypeDDLS, info.ObjectName)
+		}
 	case hasSuffix(".bdef.asbdef"):
-		info.ObjectType = ObjectTypeBDEF
+		if err = typed(ObjectTypeBDEF, ".bdef.asbdef"); err == nil {
+			err = checkSourceDefinition(filePath, ObjectTypeBDEF, info.ObjectName)
+		}
 	case hasSuffix(".srvd.srvdsrv"):
-		info.ObjectType = ObjectTypeSRVD
+		if err = typed(ObjectTypeSRVD, ".srvd.srvdsrv"); err == nil {
+			err = checkSourceDefinition(filePath, ObjectTypeSRVD, info.ObjectName)
+		}
 	default:
 		if group, member, ok := fugrMember(baseName); ok {
 			// abapGit's own name for a function module:
@@ -189,8 +234,12 @@ func ParseABAPFile(filePath string) (*ABAPFileInfo, error) {
 		info.ObjectType = kind
 		info.ObjectName = name
 	}
+	if err != nil {
+		return nil, err
+	}
 
-	// 2. Parse file content to extract name and metadata
+	// The name is settled. What the content still gives is a description and,
+	// for a class, which sections it has.
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("opening file: %w", err)
@@ -198,6 +247,7 @@ func ParseABAPFile(filePath string) (*ABAPFileInfo, error) {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	lineNum := 0
 	inComment := false
 
@@ -205,29 +255,6 @@ func ParseABAPFile(filePath string) (*ABAPFileInfo, error) {
 		line := scanner.Text()
 		lineNum++
 
-		// The name is taken from the first statement that gives it; a later
-		// match (a second REPORT in a comment block, say) does not replace it.
-		if info.ObjectName == "" {
-			switch info.ObjectType {
-			case ObjectTypeClass:
-				info.ObjectName = parseClassName(line)
-			case ObjectTypeProgram:
-				info.ObjectName = parseProgramName(line)
-			case ObjectTypeInterface:
-				info.ObjectName = parseInterfaceName(line)
-			case ObjectTypeFunctionGroup:
-				info.ObjectName = parseFunctionGroupName(line)
-			case ObjectTypeFunctionMod:
-				info.ObjectName = parseFunctionModuleName(line)
-			// RAP object types
-			case ObjectTypeDDLS:
-				info.ObjectName = parseDDLSName(line)
-			case ObjectTypeBDEF:
-				info.ObjectName = parseBDEFName(line)
-			case ObjectTypeSRVD:
-				info.ObjectName = parseSRVDName(line)
-			}
-		}
 		if info.ObjectType == ObjectTypeClass {
 			if strings.Contains(strings.ToUpper(line), "DEFINITION") {
 				info.HasDefinition = true
@@ -267,25 +294,13 @@ func ParseABAPFile(filePath string) (*ABAPFileInfo, error) {
 		}
 
 		// Early exit if we have all required info
-		if info.ObjectName != "" && info.Description != "" {
+		if info.ObjectType != ObjectTypeClass && info.Description != "" {
 			break
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("reading file: %w", err)
-	}
-
-	if info.ObjectName == "" {
-		// The line scan reads one line at a time, so a statement split
-		// across lines (CLASS zcl_x<newline>DEFINITION PUBLIC) escapes it.
-		// The file's first statement, read whole, still names the object.
-		if stmt, err := firstABAPStatement(filePath); err == nil {
-			info.ObjectName = nameFromStatement(info.ObjectType, stmt)
-		}
-	}
-	if info.ObjectName == "" {
-		return nil, fmt.Errorf("could not parse the object name from %s: expected %s as its first statement (it may span several lines, up to the period) or on a line of its own within the first 200 lines", baseName, expectedStatement(info.ObjectType))
 	}
 
 	// Provide default description if none found
@@ -421,48 +436,6 @@ func detectTypeFromContent(filePath string) (CreatableObjectType, string, error)
 	return ObjectTypeInterface, name, nil
 }
 
-// nameFromStatement takes the object name from a whole statement, for the
-// type the file name already gave. It returns "" if the statement is not the
-// one that type opens with.
-func nameFromStatement(kind CreatableObjectType, stmt string) string {
-	tokens := strings.Fields(strings.ToUpper(stmt))
-	if len(tokens) < 2 {
-		return ""
-	}
-	switch {
-	case kind == ObjectTypeClass && tokens[0] == "CLASS" && len(tokens) >= 3 && tokens[2] == "DEFINITION",
-		kind == ObjectTypeInterface && tokens[0] == "INTERFACE",
-		kind == ObjectTypeProgram && (tokens[0] == "REPORT" || tokens[0] == "PROGRAM"),
-		kind == ObjectTypeFunctionGroup && tokens[0] == "FUNCTION-POOL",
-		kind == ObjectTypeFunctionMod && tokens[0] == "FUNCTION":
-		return tokens[1]
-	}
-	return ""
-}
-
-// expectedStatement names the statement that gives a type's object name.
-func expectedStatement(kind CreatableObjectType) string {
-	switch kind {
-	case ObjectTypeClass:
-		return "CLASS <name> DEFINITION"
-	case ObjectTypeInterface:
-		return "INTERFACE <name>"
-	case ObjectTypeProgram:
-		return "REPORT <name> or PROGRAM <name>"
-	case ObjectTypeFunctionGroup:
-		return "FUNCTION-POOL <name>"
-	case ObjectTypeFunctionMod:
-		return "FUNCTION <name>"
-	case ObjectTypeDDLS:
-		return "define view [entity] <name>"
-	case ObjectTypeBDEF:
-		return "define behavior for <name>"
-	case ObjectTypeSRVD:
-		return "define service <name>"
-	}
-	return "a statement naming the object"
-}
-
 // firstABAPStatement returns the text of the first statement in the file, up
 // to its period, with comments removed and lines joined. It reads at most the
 // first 200 lines. A UTF-8 byte order mark, which Windows editors write, is
@@ -499,89 +472,6 @@ func firstABAPStatement(filePath string) (string, error) {
 		return "", fmt.Errorf("reading file: %w", err)
 	}
 	return strings.TrimSpace(stmt.String()), nil
-}
-
-// parseClassName extracts class name from CLASS <name> DEFINITION
-func parseClassName(line string) string {
-	re := regexp.MustCompile(`(?i)^\s*CLASS\s+([a-z0-9_/]+)\s+DEFINITION`)
-	matches := re.FindStringSubmatch(line)
-	if len(matches) > 1 {
-		return strings.ToUpper(matches[1])
-	}
-	return ""
-}
-
-// parseProgramName extracts program name from REPORT/PROGRAM statement
-func parseProgramName(line string) string {
-	re := regexp.MustCompile(`(?i)^\s*(REPORT|PROGRAM)\s+([a-z0-9_/]+)`)
-	matches := re.FindStringSubmatch(line)
-	if len(matches) > 2 {
-		return strings.ToUpper(matches[2])
-	}
-	return ""
-}
-
-// parseInterfaceName extracts interface name from INTERFACE <name> DEFINITION
-func parseInterfaceName(line string) string {
-	re := regexp.MustCompile(`(?i)^\s*INTERFACE\s+([a-z0-9_/]+)`)
-	matches := re.FindStringSubmatch(line)
-	if len(matches) > 1 {
-		return strings.ToUpper(matches[1])
-	}
-	return ""
-}
-
-// parseFunctionGroupName extracts function group name from FUNCTION-POOL statement
-func parseFunctionGroupName(line string) string {
-	re := regexp.MustCompile(`(?i)^\s*FUNCTION-POOL\s+([a-z0-9_/]+)`)
-	matches := re.FindStringSubmatch(line)
-	if len(matches) > 1 {
-		return strings.ToUpper(matches[1])
-	}
-	return ""
-}
-
-// parseFunctionModuleName extracts function module name from FUNCTION statement
-func parseFunctionModuleName(line string) string {
-	re := regexp.MustCompile(`(?i)^\s*FUNCTION\s+([a-z0-9_/]+)`)
-	matches := re.FindStringSubmatch(line)
-	if len(matches) > 1 {
-		return strings.ToUpper(matches[1])
-	}
-	return ""
-}
-
-// parseDDLSName extracts CDS view name from "define view [entity] <name>" or "@AbapCatalog.viewEnhancementCategory"
-func parseDDLSName(line string) string {
-	// Pattern: define view [entity] NAME
-	re := regexp.MustCompile(`(?i)^\s*define\s+view\s+(?:entity\s+)?([a-z0-9_/]+)`)
-	matches := re.FindStringSubmatch(line)
-	if len(matches) > 1 {
-		return strings.ToUpper(matches[1])
-	}
-	return ""
-}
-
-// parseBDEFName extracts behavior definition name from "define behavior for <name>"
-func parseBDEFName(line string) string {
-	// Pattern: define behavior for NAME
-	re := regexp.MustCompile(`(?i)^\s*define\s+behavior\s+for\s+([a-z0-9_/]+)`)
-	matches := re.FindStringSubmatch(line)
-	if len(matches) > 1 {
-		return strings.ToUpper(matches[1])
-	}
-	return ""
-}
-
-// parseSRVDName extracts service definition name from "define service <name>"
-func parseSRVDName(line string) string {
-	// Pattern: define service NAME
-	re := regexp.MustCompile(`(?i)^\s*define\s+service\s+([a-z0-9_/]+)`)
-	matches := re.FindStringSubmatch(line)
-	if len(matches) > 1 {
-		return strings.ToUpper(matches[1])
-	}
-	return ""
 }
 
 // headerTitleLine is the line SE38's header template puts first: the

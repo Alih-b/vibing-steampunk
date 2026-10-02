@@ -3,6 +3,7 @@ package dsl
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,29 +14,40 @@ import (
 
 // ImportFile represents a file to import with its detected type.
 type ImportFile struct {
-	Path        string               `json:"path"`
+	Path        string                  `json:"path"`
 	ObjectType  adt.CreatableObjectType `json:"objectType"`
-	ObjectName  string               `json:"objectName"`
-	IncludeType adt.ClassIncludeType `json:"includeType,omitempty"` // For class includes
-	Priority    int                  `json:"priority"`              // Lower = import first
+	ObjectName  string                  `json:"objectName"`
+	IncludeType adt.ClassIncludeType    `json:"includeType,omitempty"` // For class includes
+	Priority    int                     `json:"priority"`              // Lower = import first
 }
 
 // ImportResult represents the result of importing a single file.
 type ImportResult struct {
-	File       ImportFile `json:"file"`
-	Success    bool       `json:"success"`
-	Created    bool       `json:"created"`
-	Message    string     `json:"message"`
-	ObjectURL  string     `json:"objectUrl,omitempty"`
+	File      ImportFile `json:"file"`
+	Success   bool       `json:"success"`
+	Created   bool       `json:"created"`
+	Message   string     `json:"message"`
+	ObjectURL string     `json:"objectUrl,omitempty"`
+}
+
+// SkippedFile is an ABAP source file an import found but will not deploy,
+// and why. A file is never dropped without one.
+type SkippedFile struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
 }
 
 // BatchImportResult represents the result of a batch import.
+//
+// TotalFiles counts every source file found, skipped ones included;
+// Skipped says which were not deployed and why.
 type BatchImportResult struct {
-	TotalFiles    int            `json:"totalFiles"`
-	SuccessCount  int            `json:"successCount"`
-	FailureCount  int            `json:"failureCount"`
-	SkippedCount  int            `json:"skippedCount"`
-	Results       []ImportResult `json:"results"`
+	TotalFiles   int            `json:"totalFiles"`
+	SuccessCount int            `json:"successCount"`
+	FailureCount int            `json:"failureCount"`
+	SkippedCount int            `json:"skippedCount"`
+	Results      []ImportResult `json:"results"`
+	Skipped      []SkippedFile  `json:"skipped,omitempty"`
 }
 
 // ExportResult represents the result of exporting a single object.
@@ -61,6 +73,8 @@ type BatchExportResult struct {
 type ImportBuilder struct {
 	client      *adt.Client
 	files       []ImportFile
+	skipped     []SkippedFile
+	out         io.Writer // where skipped files are reported; nil means os.Stderr
 	packageName string
 	transport   string
 	dryRun      bool
@@ -83,11 +97,12 @@ func Import(client *adt.Client) *ImportBuilder {
 
 // FromDirectory scans a directory for ABAP source files.
 func (b *ImportBuilder) FromDirectory(dir string) (*ImportBuilder, error) {
-	files, err := ScanDirectory(dir)
+	files, skipped, err := ScanDirectory(dir)
 	if err != nil {
 		return nil, err
 	}
 	b.files = append(b.files, files...)
+	b.skipped = append(b.skipped, skipped...)
 	return b, nil
 }
 
@@ -205,6 +220,18 @@ func (b *ImportBuilder) Verbose() *ImportBuilder {
 	return b
 }
 
+// Output sets where Execute reports the files it skips (default os.Stderr).
+func (b *ImportBuilder) Output(w io.Writer) *ImportBuilder {
+	b.out = w
+	return b
+}
+
+// Skipped returns the files found so far that will not be imported, with
+// the reason for each. Execute adds any it refuses itself.
+func (b *ImportBuilder) Skipped() []SkippedFile {
+	return b.skipped
+}
+
 // OnStart sets a callback for when import starts.
 func (b *ImportBuilder) OnStart(fn func(file ImportFile)) *ImportBuilder {
 	b.onStart = fn
@@ -225,15 +252,28 @@ func (b *ImportBuilder) OnError(fn func(file ImportFile, err error)) *ImportBuil
 
 // Execute runs the batch import.
 func (b *ImportBuilder) Execute(ctx context.Context) (*BatchImportResult, error) {
+	unique := dedupePaths(b.files)
+	files, clashes := refuseClashes(unique)
+	skipped := append(append([]SkippedFile{}, b.skipped...), clashes...)
 	result := &BatchImportResult{
-		TotalFiles: len(b.files),
-		Results:    make([]ImportResult, 0, len(b.files)),
+		TotalFiles:   len(unique) + len(b.skipped),
+		SkippedCount: len(skipped),
+		Skipped:      skipped,
+		Results:      make([]ImportResult, 0, len(files)),
+	}
+	if len(skipped) > 0 {
+		out := b.out
+		if out == nil {
+			out = os.Stderr
+		}
+		fmt.Fprint(out, FormatSkipped(skipped))
 	}
 
-	// Sort files by priority (classes before includes, etc.)
-	sortedFiles := make([]ImportFile, len(b.files))
-	copy(sortedFiles, b.files)
-	sort.Slice(sortedFiles, func(i, j int) bool {
+	// Sort files by priority (classes before includes, etc.); files of equal
+	// priority keep the order they were given in.
+	sortedFiles := make([]ImportFile, len(files))
+	copy(sortedFiles, files)
+	sort.SliceStable(sortedFiles, func(i, j int) bool {
 		return sortedFiles[i].Priority < sortedFiles[j].Priority
 	})
 
@@ -337,8 +377,8 @@ func (b *ExportBuilder) Classes(names ...string) *ExportBuilder {
 	for _, name := range names {
 		// Add main class
 		b.objects = append(b.objects, ExportObject{
-			Type: adt.ObjectTypeClass,
-			Name: name,
+			Type:        adt.ObjectTypeClass,
+			Name:        name,
 			IncludeType: adt.ClassIncludeMain,
 		})
 		// Add all includes
@@ -517,11 +557,14 @@ func (b *ExportBuilder) exportObject(ctx context.Context, obj ExportObject) Expo
 
 // --- Helper Functions ---
 
-// ScanDirectory scans a directory for ABAP source files.
-func ScanDirectory(dir string) ([]ImportFile, error) {
-	var files []ImportFile
-
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+// ScanDirectory scans a directory for ABAP source files. Every source file
+// it cannot import is returned in skipped with the reason: one that cannot be
+// parsed, or whose content names another object than its file name, is
+// reported, never silently dropped (a dropped TOP include looks exactly like
+// a successful import). Files that are not ABAP sources (.xml and the like)
+// are not sources and are not listed.
+func ScanDirectory(dir string) (files []ImportFile, skipped []SkippedFile, err error) {
+	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -534,9 +577,9 @@ func ScanDirectory(dir string) ([]ImportFile, error) {
 			return nil
 		}
 
-		file, err := ParseImportFile(path)
-		if err != nil {
-			// Skip files we can't parse
+		file, perr := ParseImportFile(path)
+		if perr != nil {
+			skipped = append(skipped, SkippedFile{Path: path, Reason: perr.Error()})
 			return nil
 		}
 
@@ -545,10 +588,86 @@ func ScanDirectory(dir string) ([]ImportFile, error) {
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return files, nil
+	return files, skipped, nil
+}
+
+// objectKey identifies the SAP object a file deploys to. A program and an
+// include share one namespace (both are TRDIR entries), so they share a key.
+func objectKey(f ImportFile) string {
+	t := string(f.ObjectType)
+	if f.ObjectType == adt.ObjectTypeInclude {
+		t = string(adt.ObjectTypeProgram)
+	}
+	inc := f.IncludeType
+	if f.ObjectType == adt.ObjectTypeClass && inc == "" {
+		// A plain zcl_a.abap has no include type, and deploys to the same
+		// main source as zcl_a.clas.abap.
+		inc = adt.ClassIncludeMain
+	}
+	return t + "|" + f.ObjectName + "|" + string(inc)
+}
+
+// dedupePaths drops a file given more than once (the same path, however it
+// was spelled), keeping its first occurrence. It is one file, not a clash.
+func dedupePaths(files []ImportFile) []ImportFile {
+	seen := map[string]bool{}
+	var out []ImportFile
+	for _, f := range files {
+		key := filepath.Clean(f.Path)
+		if abs, err := filepath.Abs(key); err == nil {
+			key = abs
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, f)
+	}
+	return out
+}
+
+// refuseClashes takes out every file that deploys to the same object as
+// another one: whichever went last would silently overwrite the others.
+func refuseClashes(files []ImportFile) (kept []ImportFile, refused []SkippedFile) {
+	byKey := map[string][]string{}
+	for _, f := range files {
+		k := objectKey(f)
+		byKey[k] = append(byKey[k], f.Path)
+	}
+	for _, f := range files {
+		paths := byKey[objectKey(f)]
+		if len(paths) == 1 {
+			kept = append(kept, f)
+			continue
+		}
+		var others []string
+		for _, p := range paths {
+			if p != f.Path {
+				others = append(others, filepath.Base(p))
+			}
+		}
+		refused = append(refused, SkippedFile{
+			Path:   f.Path,
+			Reason: fmt.Sprintf("%s %s is also the target of %s; none of them was imported", f.ObjectType, f.ObjectName, strings.Join(others, ", ")),
+		})
+	}
+	return kept, refused
+}
+
+// FormatSkipped renders skipped files one per line, for printing.
+func FormatSkipped(skipped []SkippedFile) string {
+	if len(skipped) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Skipped %d file(s), not imported:\n", len(skipped))
+	for _, s := range skipped {
+		fmt.Fprintf(&sb, "  %s: %s\n", s.Path, s.Reason)
+	}
+	return sb.String()
 }
 
 // ParseImportFile parses a file path and returns import metadata.
@@ -587,7 +706,10 @@ func isABAPSourceFile(path string) bool {
 }
 
 // getPriority returns import priority (lower = first).
-// Order: Interfaces → Classes (main) → Programs → Class includes → DDLS → BDEF → SRVD
+// Order: Interfaces → Classes (main) → Class includes → Program includes →
+// Programs → Function groups → DDLS → BDEF → SRVD. Program includes go
+// before programs: a new program's INCLUDE statements fail its syntax check
+// until the includes exist.
 func getPriority(objType adt.CreatableObjectType, includeType adt.ClassIncludeType) int {
 	switch objType {
 	case adt.ObjectTypeInterface:
@@ -597,6 +719,8 @@ func getPriority(objType adt.CreatableObjectType, includeType adt.ClassIncludeTy
 			return 20 // Main class first
 		}
 		return 25 // Includes after main class
+	case adt.ObjectTypeInclude:
+		return 28
 	case adt.ObjectTypeProgram:
 		return 30
 	case adt.ObjectTypeFunctionGroup:

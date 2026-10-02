@@ -196,7 +196,7 @@ Solves token limit problem for large files:
 
 **Supported Extensions** (matched without regard to case):
 - `.clas.abap` - Classes (plus `.clas.testclasses.abap`, `.clas.locals_def.abap`, `.clas.locals_imp.abap`, `.clas.macros.abap`)
-- `.prog.abap` - Programs
+- `.prog.abap` - Programs. When the `.prog.xml` abapGit writes beside it says `<SUBC>I</SUBC>`, it is the include named for the file (abapGit keeps includes this way); otherwise it must open with `REPORT`/`PROGRAM` naming the file's program.
 - `.incl.abap` - Includes (ExportToFile writes includes with this suffix)
 - `.intf.abap` - Interfaces
 - `.fugr.abap` - Function Groups
@@ -204,6 +204,7 @@ Solves token limit problem for large files:
 - `.ddls.asddls` - CDS DDL Sources (ABAPGit format)
 - `.bdef.asbdef` - Behavior Definitions (ABAPGit format)
 - `.srvd.srvdsrv` - Service Definitions (ABAPGit format)
+- A typed file's object is always the one in its file name (`#` stands for `/`), never the one in its content. A file whose main statement names another object is refused rather than deployed under either name: `zrep_top.prog.abap` holding `PROGRAM zrep.` does not overwrite `ZREP`. In a `.clas.abap`/`.intf.abap`, `DEFERRED`, `LOAD` and local (non-`PUBLIC`) declarations before the global one are passed over.
 - Plain `{name}.abap` - typed from its first statement, only when that statement names `{name}` itself (`REPORT zfoo.` in `zfoo.abap`). A class or interface must be declared `PUBLIC`. A file with no such statement is read as include `{name}`, which is how older exports wrote includes. Anything else, such as a TOP include that opens with its main program's `PROGRAM` statement, is refused with a message saying how to rename it.
 
 ---
