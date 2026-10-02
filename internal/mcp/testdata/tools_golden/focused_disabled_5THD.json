@@ -1,0 +1,2729 @@
+[
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Activate an ABAP object",
+      "inputSchema": {
+        "properties": {
+          "object_name": {
+            "description": "Technical name of the object (e.g., ZTEST)",
+            "type": "string"
+          },
+          "object_url": {
+            "description": "ADT URL of the object (e.g., /sap/bc/adt/programs/programs/ZTEST)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_url",
+          "object_name"
+        ],
+        "type": "object"
+      },
+      "name": "Activate"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleActivate-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Activate all inactive objects. Objects are sorted by dependency order (interfaces before classes). If no package specified, activates ALL inactive objects for current user.",
+      "inputSchema": {
+        "properties": {
+          "max_objects": {
+            "description": "Maximum number of objects to activate (default: 100)",
+            "type": "number"
+          },
+          "package": {
+            "description": "Package name to filter (optional, empty = all packages)",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "ActivatePackage"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleActivatePackage-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Analyze ABAP source code for quality, performance, security, and robustness issues using the native Go abaplint engine. Provide source directly or specify object_type + object_name to fetch from SAP. Returns findings with severity, category, line numbers, and fix suggestions.",
+      "inputSchema": {
+        "properties": {
+          "object_name": {
+            "description": "ABAP object name (e.g., ZTEST, ZCL_MY_CLASS) — fetches source from SAP",
+            "type": "string"
+          },
+          "object_type": {
+            "description": "ADT object type (e.g., PROG, CLAS, FUGR) — required when using object_name",
+            "type": "string"
+          },
+          "source": {
+            "description": "ABAP source code to analyze directly (alternative to object_name)",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "AnalyzeABAPCode"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleAnalyzeABAPCode-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Counts over one object's references: how many, of what kind, in which direction. Same two sources as GetCallGraph, so the same caveats apply — and the depth is always 1, because neither source is recursive.",
+      "inputSchema": {
+        "properties": {
+          "direction": {
+            "description": "Direction: 'callers' or 'callees' (default: callees)",
+            "type": "string"
+          },
+          "object_name": {
+            "description": "Object name, e.g. ZCL_ORDER_PROCESSING",
+            "type": "string"
+          },
+          "object_type": {
+            "description": "CLAS, INTF, PROG, FUGR or FUNC — with object_name, instead of object_uri",
+            "type": "string"
+          },
+          "object_uri": {
+            "description": "ADT URI of the object to analyze. Or give object_type and object_name.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "AnalyzeCallGraph"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleAnalyzeCallGraph-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Call a function module via WebSocket (ZADT_VSP). Useful for triggering ABAP code execution to hit breakpoints. Parameters are passed as key-value pairs.",
+      "inputSchema": {
+        "properties": {
+          "function": {
+            "description": "Function module name (e.g., 'RFC_PING', 'BAPI_USER_GET_DETAIL')",
+            "type": "string"
+          },
+          "params": {
+            "description": "JSON object with function parameters (e.g., '{\"IV_PARAM\":\"value\"}')",
+            "type": "string"
+          }
+        },
+        "required": [
+          "function"
+        ],
+        "type": "object"
+      },
+      "name": "CallRFC"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleCallRFC-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Analyze package boundary violations. Checks if a package/object's dependencies cross package boundaries. Detects: same-package deps, SAP standard deps, whitelisted Z-package deps, violations (cross-package Z* deps), and dynamic calls. Uses embedded ABAP parser (offline) + TADIR resolution (online).",
+      "inputSchema": {
+        "properties": {
+          "depth": {
+            "description": "Analysis depth (default: 1). Higher values follow transitive deps.",
+            "type": "number"
+          },
+          "format": {
+            "description": "Output format: 'text' (default), 'json', 'full' (includes standard deps)",
+            "type": "string"
+          },
+          "object": {
+            "description": "Single object to analyze (e.g., ZCL_TEST). Source is read from SAP.",
+            "type": "string"
+          },
+          "package": {
+            "description": "Package to analyze (e.g., $ZDEV). All objects in package are checked.",
+            "type": "string"
+          },
+          "source": {
+            "description": "ABAP source code to analyze offline (no SAP connection needed).",
+            "type": "string"
+          },
+          "whitelist": {
+            "description": "Comma-separated list of allowed Z-packages (supports glob: '$ZCOMMON,$ZUTIL*'). Dependencies on these packages are OK.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "CheckBoundaries"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleCheckBoundaries-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Copy an ABAP object to a new name. Replaces object name in source. Supports PROG, CLAS, INTF.",
+      "inputSchema": {
+        "properties": {
+          "object_type": {
+            "description": "Object type: PROG, CLAS, INTF",
+            "type": "string"
+          },
+          "package": {
+            "description": "Target package (e.g., $TMP)",
+            "type": "string"
+          },
+          "source_name": {
+            "description": "Name of object to copy",
+            "type": "string"
+          },
+          "target_name": {
+            "description": "Name for the new object",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_type",
+          "source_name",
+          "target_name",
+          "package"
+        ],
+        "type": "object"
+      },
+      "name": "CloneObject"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleCloneObject-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Compare an object's recorded references with an actual execution trace: what ran, what did not, and what ran without being recorded. The static side comes from the cross-reference tables, so a 'static only' edge may be a type the code names and never calls rather than an untested path.",
+      "inputSchema": {
+        "properties": {
+          "object_uri": {
+            "description": "ADT URI of the root object",
+            "type": "string"
+          },
+          "trace_data": {
+            "description": "JSON array of trace edges from execution (format: [{caller_name, callee_name}, ...])",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_uri",
+          "trace_data"
+        ],
+        "type": "object"
+      },
+      "name": "CompareCallGraphs"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleCompareCallGraphs-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Compare the text content of an ABAP object in two languages. Shows which lines differ or are missing in the target language. Useful for identifying untranslated or outdated translations.",
+      "inputSchema": {
+        "properties": {
+          "object_url": {
+            "description": "ADT source URL (e.g., /sap/bc/adt/programs/programs/ZTEST/source/main)",
+            "type": "string"
+          },
+          "source_language": {
+            "description": "Source language code (e.g., EN)",
+            "type": "string"
+          },
+          "target_language": {
+            "description": "Target language code (e.g., DE, FR)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_url",
+          "source_language",
+          "target_language"
+        ],
+        "type": "object"
+      },
+      "name": "CompareLanguages"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleCompareObjectLanguages-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Compare source code of two objects and return unified diff. Supports all object types from GetSource.",
+      "inputSchema": {
+        "properties": {
+          "include1": {
+            "description": "Class include type for first object if CLAS: definitions, implementations, macros, testclasses",
+            "type": "string"
+          },
+          "include2": {
+            "description": "Class include type for second object if CLAS",
+            "type": "string"
+          },
+          "name1": {
+            "description": "Name of first object",
+            "type": "string"
+          },
+          "name2": {
+            "description": "Name of second object",
+            "type": "string"
+          },
+          "parent1": {
+            "description": "Function group for first object if FUNC",
+            "type": "string"
+          },
+          "parent2": {
+            "description": "Function group for second object if FUNC",
+            "type": "string"
+          },
+          "type1": {
+            "description": "Object type of first object: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, BDEF, SRVD",
+            "type": "string"
+          },
+          "type2": {
+            "description": "Object type of second object (can be same or different)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type1",
+          "name1",
+          "type2",
+          "name2"
+        ],
+        "type": "object"
+      },
+      "name": "CompareSource"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleCompareSource-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Compare two versions of an ABAP object with unified diff. Use version URIs from GetRevisions. Use 'current' as version2_uri to compare against the active version.",
+      "inputSchema": {
+        "properties": {
+          "include": {
+            "description": "Class include type for CLAS: main, definitions, implementations, macros, testclasses",
+            "type": "string"
+          },
+          "name": {
+            "description": "Object name",
+            "type": "string"
+          },
+          "parent": {
+            "description": "Function group name (required for FUNC type)",
+            "type": "string"
+          },
+          "type": {
+            "description": "Object type: PROG, CLAS, INTF, FUNC, INCL, DDLS, BDEF, SRVD",
+            "type": "string"
+          },
+          "version1_uri": {
+            "description": "Version URI for first (older) version, from GetRevisions",
+            "type": "string"
+          },
+          "version2_uri": {
+            "description": "Version URI for second (newer) version, from GetRevisions. Default: 'current' (compare against active version)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "version1_uri"
+        ],
+        "type": "object"
+      },
+      "name": "CompareVersions"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleCompareVersions-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Create a new ABAP package. Local packages ($*) work by default. Transportable packages require --enable-transports flag and transport parameter.",
+      "inputSchema": {
+        "properties": {
+          "description": {
+            "description": "Package description",
+            "type": "string"
+          },
+          "name": {
+            "description": "Package name (e.g., $ZTEST for local, ZPRODUCTION for transportable)",
+            "type": "string"
+          },
+          "parent": {
+            "description": "Parent package name (optional, e.g., $TMP, ZPROD). If not specified, creates a root-level package.",
+            "type": "string"
+          },
+          "software_component": {
+            "description": "Software component name (required for transportable packages, e.g., 'HOME', 'ZLOCAL'). Use GetInstalledComponents to list available components.",
+            "type": "string"
+          },
+          "transport": {
+            "description": "Transport request number (required for transportable packages, e.g., 'A4HK900114')",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "type": "object"
+      },
+      "name": "CreatePackage"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleCreatePackage-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Create a DDIC transparent table from a simple JSON definition. Handles full workflow: create → set source → activate. Supports common ABAP types: CHAR, NUMC, INT4, DEC, STRING, TIMESTAMPL, UUID, etc.",
+      "inputSchema": {
+        "properties": {
+          "client_dependent": {
+            "description": "Left out: add a key field CLIENT (abap.clnt) in front, unless the first key field has client type MANDT/CLIENT/CLNT/abap.clnt. A first key field NAMED MANDT or CLIENT typed with another data element (e.g. SYMANDT, ZMANDT) is refused unless this is true, which uses that field as the client field as is (false is refused: SAP may see a client field there). Named MANDT/CLIENT with a built-in type (CHAR3, INT4) is refused unless this is false, since SAP would make the table client-independent. true: client-dependent, same rules. false: client-independent table, no client field is added.",
+            "type": "boolean"
+          },
+          "delivery_class": {
+            "description": "Delivery class: A=Application (default), C=Customizing, L=Temporary",
+            "type": "string"
+          },
+          "description": {
+            "description": "Short description of the table",
+            "type": "string"
+          },
+          "fields": {
+            "description": "JSON array of fields: [{\"name\":\"ID\",\"type\":\"CHAR32\",\"key\":true},{\"name\":\"VALUE\",\"type\":\"STRING\",\"notNull\":true}]. Attributes: name, type, length, decimals, description, key, notNull; any other attribute is refused. Attribute names are case-insensitive. Types: CHAR/CHARnn, NUMC/NUMCnn, INT4, DEC, STRING, TIMESTAMPL, UUID, DATS, TIMS, MANDT/CLIENT/CLNT/abap.clnt (client types), or data element name. Client field: a first key field of client type (MANDT, CLIENT, CLNT or abap.clnt) is the client field; without one, a 'key client : abap.clnt' field is put in front (see client_dependent). Non-key client-typed data columns (e.g. SRC_CLIENT) are allowed; a client-typed key field after the first is refused.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Table name (uppercase, max 30 chars, must start with Z/Y)",
+            "type": "string"
+          },
+          "package": {
+            "description": "Target package (default: $TMP)",
+            "type": "string"
+          },
+          "transport": {
+            "description": "Transport request number (optional for $TMP)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "name": "CreateTable"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleCreateTable-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Delete a breakpoint by ID, or pass 'all' to remove every breakpoint this session registered.",
+      "inputSchema": {
+        "properties": {
+          "breakpoint_id": {
+            "description": "ID of the breakpoint to delete, from SetBreakpoint or GetBreakpoints — or 'all'",
+            "type": "string"
+          }
+        },
+        "required": [
+          "breakpoint_id"
+        ],
+        "type": "object"
+      },
+      "name": "DeleteBreakpoint"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleDeleteBreakpoint-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Deploy objects from an embedded abapGit-format ZIP to a SAP package. Uses ADT native deployment (PROG, CLAS, INTF, DDLS, BDEF, SRVD). For full 158 object type support, install ZADT_VSP first.",
+      "inputSchema": {
+        "properties": {
+          "dry_run": {
+            "description": "Show deployment plan without deploying (default: false)",
+            "type": "boolean"
+          },
+          "name_filter": {
+            "description": "Deploy only objects matching this name pattern (e.g., 'ZCL_ABAPGIT_*')",
+            "type": "string"
+          },
+          "package": {
+            "description": "Target SAP package name (e.g., '$ZGIT'). Package will be created if it doesn't exist.",
+            "type": "string"
+          },
+          "source": {
+            "description": "Embedded dependency name: 'abapgit-standalone' (single ZABAPGIT program) or 'abapgit-full' (564 objects - full developer edition)",
+            "type": "string"
+          },
+          "timeout": {
+            "description": "Seconds this call may take in all (default: the server's --call-timeout; without one, each request to SAP is limited to 60s). When it runs out the call returns a timeout message; the work may still be running on SAP.",
+            "type": "number"
+          },
+          "type_filter": {
+            "description": "Deploy only objects of this type (e.g., 'PROG', 'CLAS', 'INTF')",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "package"
+        ],
+        "type": "object"
+      },
+      "name": "DeployZip"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleDeployZip-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Surgical string replacement on ABAP source code. Matches the Edit tool pattern for local files. Workflow: GetSource → FindReplace → SyntaxCheck → Lock → Update → Unlock → Activate. Example: EditSource(object_url=\"/sap/bc/adt/programs/programs/ZTEST\", old_string=\"METHOD foo.\\n  ENDMETHOD.\", new_string=\"METHOD foo.\\n  rv_result = 42.\\n  ENDMETHOD.\", replace_all=false, syntax_check=true). Requires unique match if replace_all=false. Use this for incremental edits between syntax checks - no need to download/upload full source!",
+      "inputSchema": {
+        "properties": {
+          "case_insensitive": {
+            "description": "If true, ignore case when matching old_string. Useful for renaming variables regardless of case. Default: false",
+            "type": "boolean"
+          },
+          "expected_source_hash": {
+            "description": "Optional sourceHash returned by GetSource(include_hash=true). After locking, refuse the edit if SAP source has changed.",
+            "type": "string"
+          },
+          "method": {
+            "description": "For CLAS only: constrain search/replace to this method only. Prevents accidental edits in other methods. (optional)",
+            "type": "string"
+          },
+          "new_string": {
+            "description": "Replacement string. Can be multiline (use \\n). Length can differ from old_string.",
+            "type": "string"
+          },
+          "object_url": {
+            "description": "ADT URL of object (e.g., /sap/bc/adt/programs/programs/ZTEST, /sap/bc/adt/oo/classes/zcl_test)",
+            "type": "string"
+          },
+          "old_string": {
+            "description": "Exact string to find and replace. Must be unique in source if replace_all=false. Include enough context (surrounding lines) to ensure uniqueness.",
+            "type": "string"
+          },
+          "replace_all": {
+            "description": "If true, replace all occurrences. If false (default), require unique match. Default: false",
+            "type": "boolean"
+          },
+          "syntax_check": {
+            "description": "If true (default), validate syntax before saving. If syntax errors found, changes are NOT saved. Default: true",
+            "type": "boolean"
+          },
+          "transport": {
+            "description": "Transport request number (required for objects not in $TMP package)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_url",
+          "old_string",
+          "new_string"
+        ],
+        "type": "object"
+      },
+      "name": "EditSource"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleEditSource-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Export ABAP object from SAP system to local file. Saves source code with appropriate file extension. Supports: programs, includes, classes (with includes), interfaces, function groups/modules, CDS views (DDLS), behavior definitions (BDEF), service definitions (SRVD). For classes, use 'include' parameter to export specific includes (testclasses, definitions, implementations, macros).",
+      "inputSchema": {
+        "properties": {
+          "include": {
+            "description": "For CLAS only: include type to export. Values: main (default), testclasses, definitions, implementations, macros. Creates abapGit-compatible files (.clas.testclasses.abap, .clas.locals_def.abap, etc.)",
+            "type": "string"
+          },
+          "object_name": {
+            "description": "Object name",
+            "type": "string"
+          },
+          "object_type": {
+            "description": "Object type: PROG, INCL, CLAS, INTF, FUGR, FUNC, DDLS, BDEF, SRVD",
+            "type": "string"
+          },
+          "output_dir": {
+            "description": "Output directory path (must exist)",
+            "type": "string"
+          },
+          "parent": {
+            "description": "Function group name (required for FUNC type)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_type",
+          "object_name",
+          "output_dir"
+        ],
+        "type": "object"
+      },
+      "name": "ExportToFile"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleSaveToFile-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Navigate to the definition of a symbol at a given position in source code",
+      "inputSchema": {
+        "properties": {
+          "end_column": {
+            "description": "End column of the symbol (1-based)",
+            "type": "number"
+          },
+          "implementation": {
+            "description": "Navigate to implementation instead of definition (default: false)",
+            "type": "boolean"
+          },
+          "line": {
+            "description": "Line number (1-based)",
+            "type": "number"
+          },
+          "main_program": {
+            "description": "Main program for includes (optional)",
+            "type": "string"
+          },
+          "source": {
+            "description": "Full source code of the file",
+            "type": "string"
+          },
+          "source_url": {
+            "description": "ADT URL of the source file (e.g., /sap/bc/adt/programs/programs/ZTEST/source/main)",
+            "type": "string"
+          },
+          "start_column": {
+            "description": "Start column of the symbol (1-based)",
+            "type": "number"
+          }
+        },
+        "required": [
+          "source_url",
+          "source",
+          "line",
+          "start_column",
+          "end_column"
+        ],
+        "type": "object"
+      },
+      "name": "FindDefinition"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleFindDefinition-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Find all references to an ABAP object or symbol",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "Column number for position-based reference search (1-based, optional)",
+            "type": "number"
+          },
+          "line": {
+            "description": "Line number for position-based reference search (1-based, optional)",
+            "type": "number"
+          },
+          "object_url": {
+            "description": "ADT URL of the object (e.g., /sap/bc/adt/oo/classes/ZCL_TEST)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_url"
+        ],
+        "type": "object"
+      },
+      "name": "FindReferences"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleFindReferences-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Check API release state for S/4HANA Clean Core / ABAP Cloud compatibility. Returns whether an object is released for cloud development and key user apps. Use SearchObject first to get the object URI.",
+      "inputSchema": {
+        "properties": {
+          "object_uri": {
+            "description": "ADT URI of the object (e.g., /sap/bc/adt/oo/classes/cl_abap_typedescr). Get this from SearchObject results.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_uri"
+        ],
+        "type": "object"
+      },
+      "name": "GetAPIReleaseState"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetAPIReleaseState-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get ABAP keyword documentation. Returns URL to SAP Help Portal and search query. If ZADT_VSP is installed, also returns real documentation from SAP system.",
+      "inputSchema": {
+        "properties": {
+          "keyword": {
+            "description": "ABAP keyword (e.g., SELECT, LOOP, DATA, METHOD, READ TABLE)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keyword"
+        ],
+        "type": "object"
+      },
+      "name": "GetAbapHelp"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetAbapHelp-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get result of an async task by ID. Returns status (running/completed/error) and result when done.",
+      "inputSchema": {
+        "properties": {
+          "task_id": {
+            "description": "Task ID from RunReportAsync",
+            "type": "string"
+          },
+          "wait": {
+            "description": "If true, block until task completes (max 60s). Default: false (poll)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "GetAsyncResult"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetAsyncResult-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "List the breakpoints this session registered. ADT does not report breakpoints belonging to other clients, so this is not a system-wide list.",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "GetBreakpoints"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetBreakpoints-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Retrieve CDS view FORWARD dependencies (tables/views this CDS reads FROM). Returns tree of base objects. Does NOT return reverse dependencies (where-used). Use with GetSource(DDLS) to read CDS source code.",
+      "inputSchema": {
+        "properties": {
+          "context_package": {
+            "description": "Filter dependencies to specific package context",
+            "type": "string"
+          },
+          "ddls_name": {
+            "description": "CDS DDL source name (e.g., 'ZRAY_00_I_DOC_NODE_00'). Use SearchObject to find CDS views first.",
+            "type": "string"
+          },
+          "dependency_level": {
+            "description": "Level of dependency resolution: 'unit' (direct only) or 'hierarchy' (recursive). Default: 'hierarchy'",
+            "type": "string"
+          },
+          "with_associations": {
+            "description": "Include modeled associations in dependency tree. Default: false",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ddls_name"
+        ],
+        "type": "object"
+      },
+      "name": "GetCDSDependencies"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetCDSDependencies-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Retrieve metadata for all elements (fields) of a CDS view. Returns field names, types, annotations, and semantic information from the DDL source.",
+      "inputSchema": {
+        "properties": {
+          "view_name": {
+            "description": "CDS view name (e.g., 'ZTRAVEL'). Use SearchObject to find CDS views first.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "view_name"
+        ],
+        "type": "object"
+      },
+      "name": "GetCDSElementInfo"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetCDSElementInfo-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Retrieve CDS view REVERSE dependencies (where-used / downstream consumers). Returns all objects that consume/reference the given CDS view. Complement of GetCDSDependencies which shows forward dependencies.",
+      "inputSchema": {
+        "properties": {
+          "view_name": {
+            "description": "CDS view name (e.g., 'ZTRAVEL'). Use SearchObject to find CDS views first.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "view_name"
+        ],
+        "type": "object"
+      },
+      "name": "GetCDSImpactAnalysis"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetCDSImpactAnalysis-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Who calls this ABAP object, and what it calls. 'callers' reads the where-used list behind SE84; 'callees' reads the CROSS and WBCROSSGT cross-reference tables, which record references made at activation rather than observed calls. One hop in either direction.",
+      "inputSchema": {
+        "properties": {
+          "direction": {
+            "description": "'callers' (who uses this), 'callees' (what this uses), or 'both'. Default: callers",
+            "type": "string"
+          },
+          "max_results": {
+            "description": "Maximum number of results (default: 200)",
+            "type": "number"
+          },
+          "object_name": {
+            "description": "Object name, e.g. ZCL_ORDER_PROCESSING",
+            "type": "string"
+          },
+          "object_type": {
+            "description": "CLAS, INTF, PROG, FUGR or FUNC — with object_name, instead of object_uri",
+            "type": "string"
+          },
+          "object_uri": {
+            "description": "ADT URI of the object (e.g., /sap/bc/adt/oo/classes/zcl_test). Or give object_type and object_name.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "GetCallGraph"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetCallGraph-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "What this ABAP object's code reaches, from the CROSS and WBCROSSGT cross-reference tables. These are references recorded when the object was activated, not observed calls: a dynamic CALL METHOD (name) is in no row. Rows marked calls:true are invocations; the rest are type and data references. Needs free SQL.",
+      "inputSchema": {
+        "properties": {
+          "max_results": {
+            "description": "Maximum number of results (default: 200)",
+            "type": "number"
+          },
+          "object_name": {
+            "description": "Object name, e.g. ZCL_ORDER_PROCESSING",
+            "type": "string"
+          },
+          "object_type": {
+            "description": "CLAS, INTF, PROG, FUGR or FUNC — with object_name, instead of object_uri",
+            "type": "string"
+          },
+          "object_uri": {
+            "description": "ADT URI of the object (e.g., /sap/bc/adt/oo/classes/zcl_test). Or give object_type and object_name.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "GetCalleesOf"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetCalleesOf-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Who references this ABAP object, from the where-used list behind SE84. Reports each caller's package, type and the method the reference sits in. One hop: the list is not recursive. An empty answer and a misspelt name look identical here, so the answer says so.",
+      "inputSchema": {
+        "properties": {
+          "max_results": {
+            "description": "Maximum number of results (default: 200)",
+            "type": "number"
+          },
+          "object_name": {
+            "description": "Object name, e.g. ZCL_ORDER_PROCESSING",
+            "type": "string"
+          },
+          "object_type": {
+            "description": "CLAS, INTF, PROG, FUGR or FUNC — with object_name, instead of object_uri",
+            "type": "string"
+          },
+          "object_uri": {
+            "description": "ADT URI of the object (e.g., /sap/bc/adt/oo/classes/zcl_test). Or give object_type and object_name.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "GetCallersOf"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetCallersOf-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get detailed results for a specific check run. Returns all messages with line numbers, severity (E=Error, W=Warning, I=Info), and summary counts. Use after SyntaxCheck or other check operations to get comprehensive error details.",
+      "inputSchema": {
+        "properties": {
+          "check_run_id": {
+            "description": "Check run ID (from SyntaxCheck or other check operation)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check_run_id"
+        ],
+        "type": "object"
+      },
+      "name": "GetCheckRunResults"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetCheckRunResults-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get class metadata without full source: methods, attributes, interfaces, superclass, abstract/final status.",
+      "inputSchema": {
+        "properties": {
+          "class_name": {
+            "description": "Name of the ABAP class",
+            "type": "string"
+          }
+        },
+        "required": [
+          "class_name"
+        ],
+        "type": "object"
+      },
+      "name": "GetClassInfo"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetClassInfo-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run ABAP Unit tests with code coverage enabled. Returns line-level statement, branch, and procedure coverage data per source file. Uses the same test runner as RunUnitTests but with coverage capture active.",
+      "inputSchema": {
+        "properties": {
+          "include_dangerous": {
+            "description": "Include tests with risk level 'dangerous' (default: false)",
+            "type": "boolean"
+          },
+          "include_long": {
+            "description": "Include tests with duration 'long' (default: false)",
+            "type": "boolean"
+          },
+          "object_url": {
+            "description": "ADT URL of object to test (e.g., /sap/bc/adt/oo/classes/ZCL_TEST)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_url"
+        ],
+        "type": "object"
+      },
+      "name": "GetCodeCoverage"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetCodeCoverage-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get current MCP connection info: user, URL, client. Useful for debugging and understanding current session context.",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "GetConnectionInfo"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetConnectionInfo-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Analyze ABAP source dependencies and return compressed public API contracts (prologue). Produces a compact summary of all referenced classes, interfaces, and function modules — showing only their public signatures. Use this to understand the surrounding codebase context before editing.",
+      "inputSchema": {
+        "properties": {
+          "max_deps": {
+            "description": "Maximum dependencies to resolve (default: 20)",
+            "type": "number"
+          },
+          "name": {
+            "description": "Object name (e.g., ZCL_ORDER_PROCESSOR)",
+            "type": "string"
+          },
+          "object_type": {
+            "description": "ABAP object type: PROG, CLAS, INTF, FUNC, FUGR",
+            "type": "string"
+          },
+          "source": {
+            "description": "Source code to analyze (if omitted, fetched from SAP)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_type",
+          "name"
+        ],
+        "type": "object"
+      },
+      "name": "GetContext"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetContext-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get the text labels (short/medium/long/heading) of a data element in a specific language. Useful for checking translations of DDIC texts.",
+      "inputSchema": {
+        "properties": {
+          "language": {
+            "description": "ISO language code (e.g., EN, DE, FR)",
+            "type": "string"
+          },
+          "name": {
+            "description": "Data element name (e.g., MATNR, ZTEST_DTEL)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "language"
+        ],
+        "type": "object"
+      },
+      "name": "GetDataElementLabels"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetDataElementLabels-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get one runtime error in detail: header, termination point, application component and call stack. A release that serves the dump feed without the detail resource says so in notes rather than failing.",
+      "inputSchema": {
+        "properties": {
+          "dump_id": {
+            "description": "Dump ID from ListDumps, part of one, or \"latest\"",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dump_id"
+        ],
+        "type": "object"
+      },
+      "name": "GetDump"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetDump-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Probe SAP system for available features. Returns status of optional capabilities like abapGit, RAP/OData, AMDP debugging, UI5/BSP, and CTS transports. Use this to understand what features are available before attempting to use them.",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "GetFeatures"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetFeatures-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Retrieve ABAP Function Group source code",
+      "inputSchema": {
+        "properties": {
+          "function_group": {
+            "description": "Name of the function group",
+            "type": "string"
+          }
+        },
+        "required": [
+          "function_group"
+        ],
+        "type": "object"
+      },
+      "name": "GetFunctionGroup"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetFunctionGroup-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get all inactive objects for the current user - objects that have been modified but not yet activated",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "GetInactiveObjects"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetInactiveObjects-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "List installed software components with version information",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "GetInstalledComponents"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetInstalledComponents-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get all messages of a message class in a specific language. Returns message number and text for each entry.",
+      "inputSchema": {
+        "properties": {
+          "language": {
+            "description": "ISO language code (e.g., EN, DE, FR)",
+            "type": "string"
+          },
+          "name": {
+            "description": "Message class name (e.g., ZTEST_MC)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "language"
+        ],
+        "type": "object"
+      },
+      "name": "GetMessageClassTexts"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetMessageClassTexts-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get all messages from an ABAP message class (SE91). Returns message number, text for all messages in the class. Use SearchObject to find message classes first.",
+      "inputSchema": {
+        "properties": {
+          "message_class": {
+            "description": "Name of the message class (e.g., 'ZRAY_00', 'SY')",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_class"
+        ],
+        "type": "object"
+      },
+      "name": "GetMessages"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetMessages-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get object explorer tree structure. Returns hierarchical view of object components.",
+      "inputSchema": {
+        "properties": {
+          "max_results": {
+            "description": "Maximum number of results (default: 100)",
+            "type": "number"
+          },
+          "object_name": {
+            "description": "Object name (e.g., ZCL_TEST, ZPROGRAM)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_name"
+        ],
+        "type": "object"
+      },
+      "name": "GetObjectStructure"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetObjectStructure-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get the source/content of an ABAP object in a specific language. The language parameter overrides the session language for this request only, allowing you to read texts in any installed language.",
+      "inputSchema": {
+        "properties": {
+          "language": {
+            "description": "ISO language code (e.g., EN, DE, FR, ES, JA)",
+            "type": "string"
+          },
+          "object_url": {
+            "description": "ADT source URL (e.g., /sap/bc/adt/programs/programs/ZTEST/source/main)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_url",
+          "language"
+        ],
+        "type": "object"
+      },
+      "name": "GetObjectTextsInLanguage"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetObjectTextsInLanguage-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Retrieve ABAP package details. With inventory=true: every TADIR object (type, name, author, created on), the subpackages (TDEVC) and any abapGit repository registered for the package, in one read-only call.",
+      "inputSchema": {
+        "properties": {
+          "inventory": {
+            "description": "Return the package inventory: TADIR objects with author and created on, subpackages, abapGit repository. Reads TADIR/TDEVC/ZABAPGIT through the data preview; with --block-free-sql only the ADT package contents, and the result names what was skipped.",
+            "type": "boolean"
+          },
+          "package_name": {
+            "description": "Name of the ABAP package",
+            "type": "string"
+          }
+        },
+        "required": [
+          "package_name"
+        ],
+        "type": "object"
+      },
+      "name": "GetPackage"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetPackage-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get source code of a specific version of an ABAP object. Use version_uri from GetRevisions output.",
+      "inputSchema": {
+        "properties": {
+          "version_uri": {
+            "description": "Version URI from GetRevisions result (the 'uri' field of a revision entry)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_uri"
+        ],
+        "type": "object"
+      },
+      "name": "GetRevisionSource"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetRevisionSource-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "List version history (revisions) of an ABAP object. Returns versions with dates, authors, and transport requests. Use version URIs with GetRevisionSource or CompareVersions.",
+      "inputSchema": {
+        "properties": {
+          "include": {
+            "description": "Class include type for CLAS: main, definitions, implementations, macros, testclasses (default: main)",
+            "type": "string"
+          },
+          "name": {
+            "description": "Object name",
+            "type": "string"
+          },
+          "parent": {
+            "description": "Function group name (required for FUNC type)",
+            "type": "string"
+          },
+          "type": {
+            "description": "Object type: PROG, CLAS, INTF, FUNC, INCL, DDLS, BDEF, SRVD",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ],
+        "type": "object"
+      },
+      "name": "GetRevisions"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetRevisions-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Check if SQL trace (ST05) is currently active.",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "GetSQLTraceState"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetSQLTraceState-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Unified tool for reading ABAP source code across different object types. Replaces GetProgram, GetClass, GetInterface, GetFunction, GetInclude, GetFunctionGroup, GetClassInclude.",
+      "inputSchema": {
+        "properties": {
+          "include": {
+            "description": "Class include type for CLAS: definitions, implementations, macros, testclasses (optional)",
+            "type": "string"
+          },
+          "include_context": {
+            "description": "Append compressed dependency context showing public API contracts of referenced classes/interfaces/FMs (default: true). Set to false to get raw source only.",
+            "type": "boolean"
+          },
+          "include_hash": {
+            "description": "Return JSON with the raw source and its sourceHash for a guarded later write. Default false preserves the text response.",
+            "type": "boolean"
+          },
+          "max_deps": {
+            "description": "Maximum dependencies to resolve when include_context=true (default: 20)",
+            "type": "number"
+          },
+          "method": {
+            "description": "Method name for CLAS only: returns only the METHOD...ENDMETHOD block for the specified method (optional)",
+            "type": "string"
+          },
+          "name": {
+            "description": "Object name (e.g., program name, class name, function module name)",
+            "type": "string"
+          },
+          "object_type": {
+            "description": "Object type: PROG (program), CLAS (class), INTF (interface), FUNC (function module), FUGR (function group), INCL (include), DDLS (CDS DDL source), VIEW (DDIC view), BDEF (behavior definition), SRVD (service definition), SRVB (service binding), MSAG (message class)",
+            "type": "string"
+          },
+          "parent": {
+            "description": "Function group name (required only for FUNC type)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_type",
+          "name"
+        ],
+        "type": "object"
+      },
+      "name": "GetSource"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetSource-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get SAP system information (system ID, release, kernel, database)",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "GetSystemInfo"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetSystemInfo-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Retrieve ABAP table structure",
+      "inputSchema": {
+        "properties": {
+          "table_name": {
+            "description": "Name of the ABAP table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_name"
+        ],
+        "type": "object"
+      },
+      "name": "GetTable"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetTable-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Retrieve contents of an ABAP table. For simple queries use table_name + max_rows. For filtered queries use sql_query parameter with ABAP SQL syntax (use ASCENDING/DESCENDING, not ASC/DESC).",
+      "inputSchema": {
+        "properties": {
+          "all_rows": {
+            "description": "Set true to retrieve every matching row, ignoring max_rows and the 100-row default. Prefer this over max_rows: 0 for \"all rows\" — MCP clients may not transmit 0 or negative numbers reliably; a boolean has no such ambiguity.",
+            "type": "boolean"
+          },
+          "columns_only": {
+            "description": "Return only column metadata (names, types, lengths) without data rows",
+            "type": "boolean"
+          },
+          "max_rows": {
+            "description": "Maximum number of rows to retrieve (default 100). Ignored if all_rows is true. Use this instead of SQL LIMIT clause",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Skip first N rows (client-side pagination). Use with max_rows for paging through results",
+            "type": "number"
+          },
+          "sql_query": {
+            "description": "Optional ABAP SQL SELECT statement. Uses ABAP syntax: ASCENDING/DESCENDING work, ASC/DESC fail. Example: SELECT * FROM T000 WHERE MANDT = '001' ORDER BY MANDT DESCENDING",
+            "type": "string"
+          },
+          "table_name": {
+            "description": "Name of the ABAP table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_name"
+        ],
+        "type": "object"
+      },
+      "name": "GetTableContents"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetTableContents-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get program text elements (selection texts and text symbols). Selection texts describe parameters (P_BUKRS='Company Code'), text symbols are TEXT-001 etc.",
+      "inputSchema": {
+        "properties": {
+          "language": {
+            "description": "Language key (e.g., 'E' for English, 'D' for German). Default: system language.",
+            "type": "string"
+          },
+          "program": {
+            "description": "Program name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "program"
+        ],
+        "type": "object"
+      },
+      "name": "GetTextElements"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetTextElements-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get the text pool (text elements/symbols) of a program in a specific language. Returns ID, key, and text for each entry.",
+      "inputSchema": {
+        "properties": {
+          "language": {
+            "description": "ISO language code (e.g., EN, DE, FR)",
+            "type": "string"
+          },
+          "program_name": {
+            "description": "Program name (e.g., ZTEST)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "program_name",
+          "language"
+        ],
+        "type": "object"
+      },
+      "name": "GetTextPool"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetTextPoolInLanguage-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get trace analysis (hitlist, statements, or database accesses) for a specific trace.",
+      "inputSchema": {
+        "properties": {
+          "tool_type": {
+            "description": "Analysis type: 'hitlist' (default), 'statements', 'dbAccesses'",
+            "type": "string"
+          },
+          "trace_id": {
+            "description": "Trace ID from ListTraces result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id"
+        ],
+        "type": "object"
+      },
+      "name": "GetTrace"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetTrace-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get detailed transport information including objects and tasks. Requires --enable-transports OR --allow-transportable-edits flag.",
+      "inputSchema": {
+        "properties": {
+          "transport": {
+            "description": "Transport request number (e.g., 'A4HK900094')",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transport"
+        ],
+        "type": "object"
+      },
+      "name": "GetTransport"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetTransport-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get list of available variants for a report program. Returns variant names and whether they are protected.",
+      "inputSchema": {
+        "properties": {
+          "report": {
+            "description": "Report program name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "report"
+        ],
+        "type": "object"
+      },
+      "name": "GetVariants"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGetVariants-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Export ABAP objects as abapGit-compatible ZIP. Supports 158 object types. Saves ZIP file to output_dir (default: current directory). Use packages OR objects parameter.",
+      "inputSchema": {
+        "properties": {
+          "include_subpackages": {
+            "description": "Include subpackages when exporting by package (default: true)",
+            "type": "boolean"
+          },
+          "objects": {
+            "description": "JSON array of objects: [{\"type\":\"CLAS\",\"name\":\"ZCL_TEST\"}]",
+            "type": "string"
+          },
+          "output_dir": {
+            "description": "Output directory for ZIP file (default: current directory)",
+            "type": "string"
+          },
+          "packages": {
+            "description": "Comma-separated package names to export (e.g., '$ZRAY,$TMP'). Supports wildcards.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "GitExport"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGitExport-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get list of supported abapGit object types. Returns 158 object types that can be exported/imported via abapGit. Requires abapGit to be installed on SAP system.",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "GitTypes"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGitTypes-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Unified tool for searching regex patterns in single or multiple ABAP objects. Replaces GrepObject.",
+      "inputSchema": {
+        "properties": {
+          "case_insensitive": {
+            "description": "If true, perform case-insensitive matching (default: false)",
+            "type": "boolean"
+          },
+          "context_lines": {
+            "description": "Number of context lines before/after each match (default: 0)",
+            "type": "number"
+          },
+          "object_urls": {
+            "description": "Array of ADT object URLs to search (e.g., [\"/sap/bc/adt/programs/programs/ZTEST\"])",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pattern": {
+            "description": "Regular expression pattern (Go regexp syntax)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_urls",
+          "pattern"
+        ],
+        "type": "object"
+      },
+      "name": "GrepObjects"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGrepObjects-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Unified tool for searching regex patterns across single or multiple packages with optional recursive subpackage search. Replaces GrepPackage.",
+      "inputSchema": {
+        "properties": {
+          "case_insensitive": {
+            "description": "If true, perform case-insensitive matching (default: false)",
+            "type": "boolean"
+          },
+          "include_subpackages": {
+            "description": "If true, recursively search all subpackages (default: false). Enables namespace-wide searches.",
+            "type": "boolean"
+          },
+          "max_results": {
+            "description": "Maximum number of matching objects to return (0 = unlimited, default: 0)",
+            "type": "number"
+          },
+          "object_types": {
+            "description": "Filter by object types (e.g., [\"CLAS/OC\", \"PROG/P\"]). Empty = search all types.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "packages": {
+            "description": "Array of package names to search (e.g., [\"$TMP\"], [\"Z\"] for namespace search)",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pattern": {
+            "description": "Regular expression pattern (Go regexp syntax)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "packages",
+          "pattern"
+        ],
+        "type": "object"
+      },
+      "name": "GrepPackages"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleGrepPackages-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Import ABAP object from local file into SAP system. Auto-detects object type from file extension, creates or updates, activates. Supports: programs, includes, classes (with includes), interfaces, function groups/modules, CDS views (DDLS), behavior definitions (BDEF), service definitions (SRVD). For class includes (.clas.testclasses.abap, .clas.locals_def.abap, etc.), the parent class must exist.",
+      "inputSchema": {
+        "properties": {
+          "expected_source_hash": {
+            "description": "Optional sourceHash returned by GetSource(include_hash=true). Refuse an existing-object import if SAP source has changed.",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "Absolute path to ABAP source file. Supported extensions: .prog.abap, .incl.abap, .clas.abap, .clas.testclasses.abap, .clas.locals_def.abap, .clas.locals_imp.abap, .intf.abap, .fugr.abap, .func.abap, .ddls.asddls, .bdef.asbdef, .srvd.srvdsrv",
+            "type": "string"
+          },
+          "package_name": {
+            "description": "Target package name (required for new objects, not needed for class includes)",
+            "type": "string"
+          },
+          "timeout": {
+            "description": "Seconds this call may take in all (default: the server's --call-timeout; without one, each request to SAP is limited to 60s). When it runs out the call returns a timeout message; the work may still be running on SAP.",
+            "type": "number"
+          },
+          "transport": {
+            "description": "Transport request number",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path"
+        ],
+        "type": "object"
+      },
+      "name": "ImportFromFile"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleDeployFromFile-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Deploy abapGit to SAP system from embedded ZIP. Supports standalone (single program) or developer edition (full package structure). Parses abapGit-format ZIP and deploys via WriteSource.",
+      "inputSchema": {
+        "properties": {
+          "check_only": {
+            "description": "Only check prerequisites and show deployment plan without deploying (default: false)",
+            "type": "boolean"
+          },
+          "edition": {
+            "description": "Edition to install: 'standalone' (single program ZABAPGIT) or 'dev' (full $ZGIT_DEV packages). Default: standalone",
+            "type": "string"
+          },
+          "package": {
+            "description": "Target package name. Default: $ABAPGIT for standalone, $ZGIT_DEV for dev edition",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "InstallAbapGit"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleInstallAbapGit-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Test tool that creates a simple interface and class to verify the Install* workflow (create, lock, update, unlock, activate, verify). Uses package $ZADT_INSTALL_TEST.",
+      "inputSchema": {
+        "properties": {
+          "check_only": {
+            "description": "Only check prerequisites without deploying (default: false)",
+            "type": "boolean"
+          },
+          "cleanup": {
+            "description": "Delete test objects after verification (default: false)",
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "InstallDummyTest"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleInstallDummyTest-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Deploy ZADT_VSP WebSocket handler to SAP system. Creates package and deploys 6 ABAP objects (interface + 5 classes) that enable WebSocket debugging, RFC calls, and abapGit export. After deployment, manual SAPC and SICF setup is required.",
+      "inputSchema": {
+        "properties": {
+          "check_only": {
+            "description": "Only check prerequisites without deploying (default: false)",
+            "type": "boolean"
+          },
+          "package": {
+            "description": "Target package name (default: $ZADT_VSP). Must be local package starting with $.",
+            "type": "string"
+          },
+          "skip_git_service": {
+            "description": "Skip ZCL_VSP_GIT_SERVICE deployment if abapGit is not installed (default: false, auto-detected)",
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "InstallZADTVSP"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleInstallZADTVSP-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "List available dependency packages that can be installed via InstallAbapGit. Shows abapGit editions and other optional dependencies.",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "ListDependencies"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleListDependencies-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "List runtime errors (short dumps) from the SAP system, newest first. Filter by error type, program, user, date range. Grouping, correlation with the application log, similarity and blast radius are reachable through SAP(action=\"analyze\") in hyperfocused mode.",
+      "inputSchema": {
+        "properties": {
+          "error_type": {
+            "description": "Filter by runtime error, e.g. CALL_FUNCTION_NOT_REMOTE or CX_SY_ZERODIVIDE (alias: exception_type)",
+            "type": "string"
+          },
+          "max_results": {
+            "description": "Maximum number of results (default: 100)",
+            "type": "number"
+          },
+          "program": {
+            "description": "Filter by terminated program",
+            "type": "string"
+          },
+          "since": {
+            "description": "Earliest date, YYYY-MM-DD or YYYYMMDD (alias: date_from)",
+            "type": "string"
+          },
+          "until": {
+            "description": "Latest date, YYYY-MM-DD or YYYYMMDD (alias: date_to)",
+            "type": "string"
+          },
+          "user": {
+            "description": "Filter by username",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "ListDumps"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleListDumps-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "List SQL trace files from ST05.",
+      "inputSchema": {
+        "properties": {
+          "max_results": {
+            "description": "Maximum number of results (default: 100)",
+            "type": "number"
+          },
+          "user": {
+            "description": "Filter by username",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "ListSQLTraces"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleListSQLTraces-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "List ABAP runtime traces (profiler results) from the SAP system.",
+      "inputSchema": {
+        "properties": {
+          "max_results": {
+            "description": "Maximum number of results (default: 100)",
+            "type": "number"
+          },
+          "object_type": {
+            "description": "Filter by object type",
+            "type": "string"
+          },
+          "process_type": {
+            "description": "Filter by process type",
+            "type": "string"
+          },
+          "user": {
+            "description": "Filter by username",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "ListTraces"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleListTraces-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "List transport requests of a user as flat rows: workbench and customizing, modifiable and released by default (request_status D limits it to modifiable). Requires --enable-transports OR --allow-transportable-edits. Reads GET /sap/bc/adt/cts/transportrequests with explicit requestType/requestStatus, falls back to the saved search configuration and then to E070/E07T; the answer names the source used.",
+      "inputSchema": {
+        "properties": {
+          "config_uri": {
+            "description": "Search configuration to use with source config, e.g. /sap/bc/adt/cts/transportrequests/searchconfiguration/configurations/\u003cid\u003e; default: the one saved for the user, else the first one (noted in the answer)",
+            "type": "string"
+          },
+          "released_from": {
+            "description": "YYYYMMDD; with released_to bounds the released requests (default: last 14 days)",
+            "type": "string"
+          },
+          "released_to": {
+            "description": "YYYYMMDD; see released_from",
+            "type": "string"
+          },
+          "request_status": {
+            "description": "Letters of D (modifiable), R (released); default DR. Without it the organizer would return released requests only",
+            "type": "string"
+          },
+          "request_type": {
+            "description": "Letters of K (workbench), W (customizing), T (transport of copies); default KWT",
+            "type": "string"
+          },
+          "source": {
+            "description": "Where to read from: auto (default: params, then config, then sql — first source with requests wins), params (organizer tree with explicit parameters), config (organizer tree through the saved search configuration, as Eclipse does; the configuration decides the filters and the user), sql (E070/E07T)",
+            "type": "string"
+          },
+          "targets": {
+            "description": "Group by transport target and CTS project (default true)",
+            "type": "boolean"
+          },
+          "user": {
+            "description": "Username to list transports for (default: the connection user, '*' for all users — source sql only)",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "ListTransports"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleListTransports-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Move an ABAP object to a different package. Uses ZADT_VSP WebSocket to call TR_TADIR_INTERFACE. Requires ZADT_VSP deployed.",
+      "inputSchema": {
+        "properties": {
+          "new_package": {
+            "description": "Target package (e.g., '$ZRAY', 'ZPACKAGE')",
+            "type": "string"
+          },
+          "object_name": {
+            "description": "Name of the object to move (e.g., 'ZCL_TEST')",
+            "type": "string"
+          },
+          "object_type": {
+            "description": "Object type: CLAS, PROG, INTF, FUGR, TABL, etc.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_type",
+          "object_name",
+          "new_package"
+        ],
+        "type": "object"
+      },
+      "name": "MoveObject"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleMoveObject-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Format ABAP source code using the pretty printer",
+      "inputSchema": {
+        "properties": {
+          "source": {
+            "description": "ABAP source code to format",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "name": "PrettyPrint"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handlePrettyPrint-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Execute a freestyle SQL query against the SAP database. Uses ABAP SQL syntax, not standard SQL; common ANSI spellings are rewritten and noted (t.col to t~col, ASC/DESC to ASCENDING/DESCENDING, a closing period or semicolon dropped). Use max_rows instead of LIMIT. GROUP BY and WHERE work normally.",
+      "inputSchema": {
+        "properties": {
+          "all_rows": {
+            "description": "Set true to retrieve every matching row, ignoring max_rows and the 100-row default. Prefer this over max_rows: 0 for \"all rows\" — MCP clients may not transmit 0 or negative numbers reliably; a boolean has no such ambiguity.",
+            "type": "boolean"
+          },
+          "max_rows": {
+            "description": "Maximum number of rows to retrieve (default 100). Ignored if all_rows is true. Use this instead of SQL LIMIT clause",
+            "type": "number"
+          },
+          "sql_query": {
+            "description": "ABAP SQL query. Example: SELECT carrid, COUNT(*) as cnt FROM sflight GROUP BY carrid ORDER BY cnt DESCENDING. ASC/DESC after a sort column are rewritten to ASCENDING/DESCENDING",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql_query"
+        ],
+        "type": "object"
+      },
+      "name": "RunQuery"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleRunQuery-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Execute an ABAP selection-screen report with parameters or variant. Runs as background job and returns spool output. Requires ZADT_VSP WebSocket handler deployed.",
+      "inputSchema": {
+        "properties": {
+          "params": {
+            "description": "JSON object with selection screen parameters (e.g., '{\"P_BUKRS\":\"1000\",\"S_KUNNR\":{\"SIGN\":\"I\",\"OPTION\":\"EQ\",\"LOW\":\"0000001000\"}}'). Keys are parameter names.",
+            "type": "string"
+          },
+          "report": {
+            "description": "Report program name (e.g., 'RFITEMGL', 'ZREPORT_TEST')",
+            "type": "string"
+          },
+          "variant": {
+            "description": "Variant name to use for selection screen (optional)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "report"
+        ],
+        "type": "object"
+      },
+      "name": "RunReport"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleRunReport-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Start report execution in background. Returns task_id immediately. Use GetAsyncResult to poll for completion. Useful for long-running reports that would timeout.",
+      "inputSchema": {
+        "properties": {
+          "params": {
+            "description": "JSON object with selection screen parameters",
+            "type": "string"
+          },
+          "report": {
+            "description": "Report program name",
+            "type": "string"
+          },
+          "variant": {
+            "description": "Variant name (optional)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "report"
+        ],
+        "type": "object"
+      },
+      "name": "RunReportAsync"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleRunReportAsync-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "SAP ABAP development: read/edit/create/test/analyze/debug objects on a live SAP system.\n\ncommon target types: CLAS, PROG, INTF, FUNC, FUGR, DDLS, TABL, DEVC, BDEF, SRVD\nactions: read, edit, create, delete, search, query, grep, test, analyze, debug, system, rfc, i18n, revisions, lint, info, help\nSAP() with no arguments — which build, whether the session is authenticated, which system, and what to call next\nsome actions (analyze, test, debug, system, help) use params only — no target needed.\n\nSAP(action=\"read\", target=\"CLAS ZCL_TEST\")  — source + dependency context\nSAP(action=\"read\", target=\"CLAS ZCL_TEST\", params={\"method\": \"GET_DATA\"})  — one method + context\nSAP(action=\"edit\", target=\"CLAS ZCL_TEST\", params={\"source\": \"...\"})  — auto lock/activate\nSAP(action=\"edit\", target=\"CLAS ZCL_TEST\", params={\"method\": \"X\", \"source\": \"METHOD x.\\nENDMETHOD.\"})\nSAP(action=\"search\", target=\"ZCL_*\")\nSAP(action=\"analyze\", params={\"type\": \"check_boundaries\", \"package\": \"$ZDEV\"})\nSAP(action=\"rfc\", params={\"op\":\"info\"}) — classic RFC to the same system (gateway, not ADT)\nSAP(action=\"rfc\", target=\"Z_DOUBLE\", params={\"op\":\"call\",\"args\":{\"N\":21}}) — call any RFC-enabled FM\nSAP(action=\"rfc\", target=\"STFC_CONNECTION\") — describe an FM interface (JSON Schema)\n  rfc ops: info, ping, describe, call, search, read_table, run (report as background job: spool, job log), job; the server's own gateway only (param user picks the logon)\nSAP(action=\"help\") — full docs; SAP(action=\"help\", target=\"tips\") — best practices",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "description": "Action to perform: read, edit, create, delete, search, query, grep, test, analyze, debug, system, rfc, i18n, revisions, lint, info, help. Call SAP() with no arguments for build, connection and system, plus what to call next.",
+            "type": "string"
+          },
+          "params": {
+            "description": "Action-specific parameters as a JSON object",
+            "properties": {},
+            "type": "object"
+          },
+          "target": {
+            "description": "Target object as 'TYPE NAME' (e.g. 'CLAS ZCL_TEST', 'PROG ZREPORT'). Some actions don't need a target.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "name": "SAP"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleUniversalTool-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Search for ABAP objects using quick search",
+      "inputSchema": {
+        "properties": {
+          "exact": {
+            "description": "Only objects whose name equals query, ignoring case (no wildcards). Combines with objectType and maxResults. The name is searched without a wildcard. If the search returns its full window of 1000 matches, the answer says so (inconclusive without an equal name, an incomplete note next to the results with one) — pass objectType to narrow.",
+            "type": "boolean"
+          },
+          "maxResults": {
+            "description": "Maximum number of results to return (default 100)",
+            "type": "number"
+          },
+          "objectType": {
+            "description": "Only objects of this type (CLAS, PROG, INTF, FUGR, ...)",
+            "type": "string"
+          },
+          "query": {
+            "description": "Search query string (use * wildcard for partial match)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "name": "SearchObject"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleSearchObject-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Set an external breakpoint through SAP's ADT resources. Kinds: 'line' (an object and a line), 'statement' (an ABAP keyword), 'exception' (an exception class). The line is the line in the source as vsp shows it. Needs no ZADT_VSP and no other ABAP on the system.",
+      "inputSchema": {
+        "properties": {
+          "condition": {
+            "description": "Optional ABAP condition; the breakpoint only stops when it is true (e.g., 'lv_count \u003e 10')",
+            "type": "string"
+          },
+          "exception": {
+            "description": "Exception class for exception breakpoints (e.g., 'CX_SY_ZERODIVIDE', 'CX_SY_OPEN_SQL_DB')",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Breakpoint type: 'line' (default), 'statement', or 'exception'",
+            "type": "string"
+          },
+          "line": {
+            "description": "Line number, counted in the object's own source as vsp reads it",
+            "type": "number"
+          },
+          "program": {
+            "description": "Object the breakpoint sits in — a program, class or function module name, or an ADT source URI",
+            "type": "string"
+          },
+          "statement": {
+            "description": "ABAP statement for statement breakpoints (e.g., 'CALL FUNCTION', 'SELECT', 'LOOP', 'CALL METHOD')",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "SetBreakpoint"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleSetBreakpoint-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Set program text elements (selection texts, text symbols, and heading texts). Use for adding descriptions to selection screen parameters, text symbols, and list/column headings.",
+      "inputSchema": {
+        "properties": {
+          "heading_texts": {
+            "description": "JSON object of heading texts for list/column headings (e.g., '{\"001\":\"Report Title\",\"002\":\"Column Header\"}')",
+            "type": "string"
+          },
+          "language": {
+            "description": "Language key (e.g., 'E' for English, 'D' for German). Default: system language.",
+            "type": "string"
+          },
+          "program": {
+            "description": "Program name",
+            "type": "string"
+          },
+          "selection_texts": {
+            "description": "JSON object of selection texts (e.g., '{\"P_BUKRS\":\"Company Code\",\"S_KUNNR\":\"Customer Range\"}')",
+            "type": "string"
+          },
+          "text_symbols": {
+            "description": "JSON object of text symbols (e.g., '{\"001\":\"Header Text\",\"002\":\"Footer\"}')",
+            "type": "string"
+          }
+        },
+        "required": [
+          "program"
+        ],
+        "type": "object"
+      },
+      "name": "SetTextElements"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleSetTextElements-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Check ABAP source code for syntax errors",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "ABAP source code to check",
+            "type": "string"
+          },
+          "object_url": {
+            "description": "ADT URL of the object (e.g., /sap/bc/adt/programs/programs/ZTEST)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_url",
+          "content"
+        ],
+        "type": "object"
+      },
+      "name": "SyntaxCheck"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleSyntaxCheck-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "COMPOSITE RCA TOOL: Performs traced execution analysis. 1) Builds static call graph from object, 2) Optionally runs unit tests, 3) Collects trace data, 4) Extracts actual call edges, 5) Compares static vs actual for root cause analysis.",
+      "inputSchema": {
+        "properties": {
+          "max_depth": {
+            "description": "Maximum depth for call graph traversal (default: 5)",
+            "type": "number"
+          },
+          "object_uri": {
+            "description": "ADT URI of the starting object for static call graph",
+            "type": "string"
+          },
+          "run_tests": {
+            "description": "Run unit tests before collecting trace (default: false)",
+            "type": "boolean"
+          },
+          "test_object_uri": {
+            "description": "Object URI for tests to run (defaults to object_uri)",
+            "type": "string"
+          },
+          "trace_user": {
+            "description": "Filter traces by user (defaults to current user)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_uri"
+        ],
+        "type": "object"
+      },
+      "name": "TraceExecution"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleTraceExecution-fm"
+  },
+  {
+    "tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Unified tool for writing ABAP source code with automatic create/update detection. Supports PROG, CLAS, INTF, INCL, and RAP types (DDLS, BDEF, SRVD).",
+      "inputSchema": {
+        "properties": {
+          "description": {
+            "description": "Object description (required for create mode)",
+            "type": "string"
+          },
+          "expected_source_hash": {
+            "description": "Optional sourceHash returned by GetSource(include_hash=true). After locking, refuse the write if SAP source has changed.",
+            "type": "string"
+          },
+          "include": {
+            "description": "For CLAS only: write this include of an existing class instead of the main source: definitions, implementations, macros, testclasses (created if missing). Any other name is refused.",
+            "type": "string"
+          },
+          "method": {
+            "description": "For CLAS only: update only this method (source must be METHOD...ENDMETHOD block). Method must already exist in the class.",
+            "type": "string"
+          },
+          "mode": {
+            "description": "Operation mode: upsert (default, auto-detect), create (new only), update (existing only)",
+            "type": "string"
+          },
+          "name": {
+            "description": "Object name",
+            "type": "string"
+          },
+          "object_type": {
+            "description": "Object type: PROG (program), CLAS (class), INTF (interface), INCL (include), DDLS (CDS view), BDEF (behavior definition), SRVD (service definition)",
+            "type": "string"
+          },
+          "package": {
+            "description": "Package name (required for create mode)",
+            "type": "string"
+          },
+          "source": {
+            "description": "ABAP source code",
+            "type": "string"
+          },
+          "test_source": {
+            "description": "Test source code for CLAS (auto-creates test include and runs tests)",
+            "type": "string"
+          },
+          "transport": {
+            "description": "Transport request number",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_type",
+          "name",
+          "source"
+        ],
+        "type": "object"
+      },
+      "name": "WriteSource"
+    },
+    "handler": "github.com/oisee/vibing-steampunk/internal/mcp.(*Server).handleWriteSource-fm"
+  }
+]

@@ -527,7 +527,8 @@ func (s *Server) requireActiveAMDPSession() *mcp.CallToolResult {
 // - handlers_transport.go: ListTransports, GetTransport, etc.
 //
 // Tool registration is in:
-// - tools_register.go: registerTools() and all register*Tools() methods
+// - tools_register.go: registerTools() - mode logic and registration order
+// - tools_<domain>.go: the register*Tools() methods (tools_read.go, tools_crud.go, ...)
 // - tools_groups.go: toolGroups() - group definitions for --disabled-groups
 // - tools_focused.go: focusedToolSet() - focused mode whitelist
 // - tools_aliases.go: registerToolAliases() - short alias names

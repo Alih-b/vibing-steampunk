@@ -94,7 +94,8 @@ Key flags: `--mode focused|expert|hyperfocused`, `--read-only`, `--allowed-packa
 cmd/vsp/              CLI entry + 55 commands
 internal/mcp/
   handlers_*.go       Domain handlers (read, edit, debug, graph, ...)
-  tools_register.go   Registration + mode logic
+  tools_register.go   Mode logic (shouldRegister) + registration order
+  tools_<domain>.go   register*Tools per domain (read, crud, edit, debug, transport, ...)
   tools_focused.go    Focused mode whitelist
   handlers_universal.go  Hyperfocused single-tool (SAP)
 pkg/
@@ -115,7 +116,7 @@ pkg/
 
 | Task | Files |
 |------|-------|
-| Add MCP tool | `tools_register.go` + `handlers_*.go` + `tools_focused.go` |
+| Add MCP tool | `tools_<domain>.go` + `handlers_*.go` + `tools_focused.go` |
 | Add ADT operation | `pkg/adt/client.go`, `crud.go`, `devtools.go`, `codeintel.go` |
 | Touch SSO auth | `pkg/adt/sso*.go`, `cmd/vsp-sso/`, `cmd/vsp/sso.go` |
 | Add graph feature | `pkg/graph/` |
@@ -136,10 +137,11 @@ func (s *Server) handleX(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
     return mcp.NewToolResultText(format(result)), nil
 }
 ```
-2. Register in `tools_register.go` with `shouldRegister("X")`
+2. Register in the matching `tools_<domain>.go` with `shouldRegister("X")` (a new domain also needs a call in `tools_register.go`)
 3. Route in `handlers_analysis.go` (or appropriate router)
 4. Add to `tools_focused.go` if needed in focused mode
 5. Classify it in `internal/mcp/readonly_classes_test.go` (READ, MUTATE or EXECUTE); the read-only invariant test fails with "classify me" otherwise. The harness in `readonly_invariant_test.go` rarely needs reading.
+6. `go test ./internal/mcp -run TestToolRegistryGolden -update-tools-golden` and commit the golden diff
 
 ---
 
