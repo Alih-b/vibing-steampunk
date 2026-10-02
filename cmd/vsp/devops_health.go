@@ -10,6 +10,7 @@ import (
 
 	"github.com/oisee/vibing-steampunk/pkg/adt"
 	"github.com/oisee/vibing-steampunk/pkg/graph"
+	"github.com/oisee/vibing-steampunk/pkg/graph/adtsource"
 	"github.com/spf13/cobra"
 )
 
@@ -226,15 +227,8 @@ func collectObjectTestsCLI(ctx context.Context, client *adt.Client, objType, obj
 	if err != nil {
 		return cliHealthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}
 	}
-	classes, methods, alerts := summarizeUnitTestsCLI(result)
-	status := "PASS"
-	if classes == 0 {
-		status = "NONE"
-	}
-	if alerts > 0 {
-		status = "FAIL"
-	}
-	return cliHealthSignal{Status: status, Details: map[string]any{"classes": classes, "methods": methods, "alerts": alerts}}
+	status, details := adtsource.UnitTestVerdict(result)
+	return cliHealthSignal{Status: status, Details: details}
 }
 
 func collectPackageTestsWithDetails(ctx context.Context, client *adt.Client, pkg string) (cliHealthSignal, *adt.UnitTestResult) {
@@ -264,7 +258,7 @@ func collectPackageTestsWithDetails(ctx context.Context, client *adt.Client, pkg
 			continue
 		}
 		combined.Classes = append(combined.Classes, result.Classes...)
-		c, m, a := summarizeUnitTestsCLI(result)
+		c, m, a := adtsource.UnitTestCounts(result)
 		totalClasses += c
 		totalMethods += m
 		totalAlerts += a
@@ -291,21 +285,6 @@ func collectPackageTestsWithDetails(ctx context.Context, client *adt.Client, pkg
 	}}, combined
 }
 
-func summarizeUnitTestsCLI(result *adt.UnitTestResult) (classCount, methodCount, alertCount int) {
-	if result == nil {
-		return 0, 0, 0
-	}
-	classCount = len(result.Classes)
-	for _, c := range result.Classes {
-		methodCount += len(c.TestMethods)
-		alertCount += len(c.Alerts)
-		for _, m := range c.TestMethods {
-			alertCount += len(m.Alerts)
-		}
-	}
-	return classCount, methodCount, alertCount
-}
-
 func collectObjectATCCLI(ctx context.Context, client *adt.Client, objType, objName string) cliHealthSignal {
 	objectURL := buildObjectURL(objType, objName)
 	if objectURL == "" {
@@ -315,12 +294,8 @@ func collectObjectATCCLI(ctx context.Context, client *adt.Client, objType, objNa
 	if err != nil {
 		return cliHealthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}
 	}
-	total, errors, warnings, infos := summarizeATCCLI(result)
-	status := "CLEAN"
-	if total > 0 {
-		status = "FINDINGS"
-	}
-	return cliHealthSignal{Status: status, Details: map[string]any{"findings": total, "errors": errors, "warnings": warnings, "infos": infos}}
+	status, details := adtsource.ATCVerdict(result)
+	return cliHealthSignal{Status: status, Details: details}
 }
 
 func collectPackageATCWithDetails(ctx context.Context, client *adt.Client, pkg string) (cliHealthSignal, *adt.ATCWorklist) {
@@ -329,32 +304,8 @@ func collectPackageATCWithDetails(ctx context.Context, client *adt.Client, pkg s
 	if err != nil {
 		return cliHealthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}, nil
 	}
-	total, errors, warnings, infos := summarizeATCCLI(result)
-	status := "CLEAN"
-	if total > 0 {
-		status = "FINDINGS"
-	}
-	return cliHealthSignal{Status: status, Details: map[string]any{"findings": total, "errors": errors, "warnings": warnings, "infos": infos}}, result
-}
-
-func summarizeATCCLI(result *adt.ATCWorklist) (total, errors, warnings, infos int) {
-	if result == nil {
-		return 0, 0, 0, 0
-	}
-	for _, obj := range result.Objects {
-		total += len(obj.Findings)
-		for _, f := range obj.Findings {
-			switch f.Priority {
-			case 1:
-				errors++
-			case 2:
-				warnings++
-			default:
-				infos++
-			}
-		}
-	}
-	return total, errors, warnings, infos
+	status, details := adtsource.ATCVerdict(result)
+	return cliHealthSignal{Status: status, Details: details}, result
 }
 
 func collectObjectBoundariesCLI(ctx context.Context, client *adt.Client, objType, objName string) cliHealthSignal {
@@ -368,15 +319,7 @@ func collectObjectBoundariesCLI(ctx context.Context, client *adt.Client, objType
 	g := graph.New()
 	nodeID := graph.NodeID(objType, objName)
 	g.AddNode(&graph.Node{ID: nodeID, Name: objName, Type: objType})
-	edges := graph.ExtractDepsFromSource(source, nodeID)
-	dynEdges := graph.ExtractDynamicCalls(source, nodeID)
-	for _, e := range append(edges, dynEdges...) {
-		g.AddEdge(e)
-		parts := strings.SplitN(e.To, ":", 2)
-		if len(parts) == 2 {
-			g.AddNode(&graph.Node{ID: e.To, Name: parts[1], Type: parts[0]})
-		}
-	}
+	g.AddSourceDeps(nodeID, source)
 	missed := resolvePackagesCLI(ctx, client, g)
 	n := g.GetNode(nodeID)
 	if n == nil || n.Package == "" {
@@ -449,15 +392,7 @@ func collectPackageBoundariesWithDetails(ctx context.Context, client *adt.Client
 		obj := toRead[i]
 		nodeID := graph.NodeID(obj.Type, obj.Name)
 		g.AddNode(&graph.Node{ID: nodeID, Name: obj.Name, Type: obj.Type, Package: obj.Package})
-		edges := graph.ExtractDepsFromSource(r.Source, nodeID)
-		dynEdges := graph.ExtractDynamicCalls(r.Source, nodeID)
-		for _, e := range append(edges, dynEdges...) {
-			g.AddEdge(e)
-			parts := strings.SplitN(e.To, ":", 2)
-			if len(parts) == 2 {
-				g.AddNode(&graph.Node{ID: e.To, Name: parts[1], Type: parts[0]})
-			}
-		}
+		g.AddSourceDeps(nodeID, r.Source)
 		count++
 	}
 	if count > 0 {
@@ -588,27 +523,16 @@ func collectPackageStalenessCLI(ctx context.Context, client *adt.Client, pkg str
 	return sig
 }
 
+// stalenessCLIFromRevisions and stalenessCLIFromTime wrap the shared verdicts
+// in the CLI's signal type.
 func stalenessCLIFromRevisions(revs []adt.Revision) cliHealthSignal {
-	if len(revs) == 0 {
-		return cliHealthSignal{Status: "UNKNOWN"}
-	}
-	tm, err := time.Parse(time.RFC3339, revs[0].Date)
-	if err != nil {
-		return cliHealthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}
-	}
-	return stalenessCLIFromTime(tm, 1)
+	status, details := adtsource.RevisionsVerdict(revs)
+	return cliHealthSignal{Status: status, Details: details}
 }
 
 func stalenessCLIFromTime(tm time.Time, checked int) cliHealthSignal {
-	ageDays := int(time.Since(tm).Hours() / 24)
-	status := "ACTIVE"
-	switch {
-	case ageDays > 365:
-		status = "STALE"
-	case ageDays > 90:
-		status = "AGING"
-	}
-	return cliHealthSignal{Status: status, Details: map[string]any{"last_changed": tm.Format(time.RFC3339), "age_days": ageDays, "checked": checked}}
+	status, details := adtsource.StalenessVerdict(tm, checked)
+	return cliHealthSignal{Status: status, Details: details}
 }
 
 func summarizeCLIHealth(signals map[string]cliHealthSignal) cliHealthSummary {

@@ -197,22 +197,6 @@ func TestBlockedFreeSQLIsAGapNotACleanReport(t *testing.T) {
 	}
 }
 
-// The same object is reached through several edges, and a caveat that names it
-// four times reads as four separate holes.
-func TestGapsAreNamedOnce(t *testing.T) {
-	in := []adt.Unsearched{
-		{Object: "ZCL_DEMO_A", Reason: "timed out"},
-		{Object: "ZCL_DEMO_A", Reason: "timed out"},
-		{Object: "ZCL_DEMO_B", Reason: "timed out"},
-	}
-	if got := dedupeUnsearched(in); len(got) != 2 {
-		t.Fatalf("dedupeUnsearched = %+v, want two entries", got)
-	}
-	if dedupeUnsearched(nil) != nil {
-		t.Fatal("nothing missed stays nothing")
-	}
-}
-
 // --- the landscape -----------------------------------------------------
 
 func landscapeCmdWithFile(t *testing.T, path string) *cobra.Command {

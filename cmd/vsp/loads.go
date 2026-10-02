@@ -15,6 +15,7 @@ import (
 
 	"github.com/oisee/vibing-steampunk/pkg/adt"
 	"github.com/oisee/vibing-steampunk/pkg/graph"
+	"github.com/oisee/vibing-steampunk/pkg/graph/adtsource"
 	"github.com/spf13/cobra"
 )
 
@@ -135,21 +136,8 @@ type loadEdge struct {
 
 // loadEdgesOf runs the rows through the graph builder, which is what decides
 // which of the three kinds of row is a dependency.
-//
-// The conversion below is duplicated in internal/mcp, deliberately and
-// visibly: the alternative is pkg/adt importing pkg/graph so that a client
-// reading a table speaks in graph types, and a client should not know what a
-// graph is. Seven lines in two places is the smaller cost, and both carry this
-// note so neither drifts without the other being found.
 func loadEdgesOf(rows []adt.LoadRow) []loadEdge {
-	converted := make([]graph.D010INCRow, 0, len(rows))
-	for _, r := range rows {
-		converted = append(converted, graph.D010INCRow{
-			Master:            r.Master,
-			Include:           r.Include,
-			ObsoleteInVersion: r.ObsoleteInVersion,
-		})
-	}
+	converted := adtsource.D010INCRows(rows)
 
 	out := make([]loadEdge, 0)
 	for _, e := range graph.BuildD010INCGraph(converted).Edges() {

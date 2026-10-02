@@ -1,0 +1,86 @@
+=== isError
+false
+=== text
+{
+  "scope": {
+    "kind": "object",
+    "object_type": "CLAS",
+    "object_name": "ZCL_NARROW"
+  },
+  "summary": {
+    "status": "UNKNOWN",
+    "headline": "Nothing was found wrong, but boundaries could not be checked in full — see notes"
+  },
+  "signals": {
+    "atc": {
+      "status": "CLEAN",
+      "details": {
+        "errors": 0,
+        "findings": 0,
+        "infos": 0,
+        "warnings": 0
+      }
+    },
+    "boundaries": {
+      "status": "UNKNOWN",
+      "unsearched": [
+        {
+          "object": "FUGR ZGOLD_FG",
+          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+        },
+        {
+          "object": "FUGR ZLOST_FG",
+          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+        },
+        {
+          "object": "ZCL_NARROW",
+          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+        },
+        {
+          "object": "Z_GOLD_FM",
+          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+        },
+        {
+          "object": "Z_LOST_FM",
+          "reason": "running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+        }
+      ],
+      "note": "package lookup failed for objects in this graph, so they count as unknown rather than checked — this report can only under-report violations.\n5 of 5 objects could not be searched, so this is not a complete answer:\n  FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  ZCL_NARROW: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+    },
+    "staleness": {
+      "status": "AGING",
+      "details": {
+        "age_days": N,
+        "checked": 1,
+        "last_changed": "2026-01-01T10:00:00Z"
+      }
+    },
+    "tests": {
+      "status": "PASS",
+      "details": {
+        "alerts": 0,
+        "classes": 1,
+        "methods": 1
+      }
+    }
+  },
+  "notes": [
+    "boundaries: package lookup failed for objects in this graph, so they count as unknown rather than checked — this report can only under-report violations.\n5 of 5 objects could not be searched, so this is not a complete answer:\n  FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  ZCL_NARROW: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query\n  Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+  ]
+}
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_NARROW/includes/main/versions
+GET /sap/bc/adt/oo/classes/ZCL_NARROW/source/main
+GET atc/customizing
+GET atc/worklists/WL1
+POST atc/runs /sap/bc/adt/oo/classes/zcl_narrow
+POST atc/worklists
+POST testruns /sap/bc/adt/oo/classes/zcl_narrow
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('ZCL_NARROW')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_NARROW')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

@@ -344,16 +344,7 @@ func (s *Server) analyzeTransportBoundaries(ctx context.Context, trList []string
 			continue
 		}
 
-		edges := graph.ExtractDepsFromSource(source, nodeID)
-		dynEdges := graph.ExtractDynamicCalls(source, nodeID)
-		for _, e := range append(edges, dynEdges...) {
-			g.AddEdge(e)
-			g.AddNode(&graph.Node{
-				ID:   e.To,
-				Name: strings.SplitN(e.To, ":", 2)[1],
-				Type: strings.SplitN(e.To, ":", 2)[0],
-			})
-		}
+		g.AddSourceDeps(nodeID, source)
 		count++
 	}
 

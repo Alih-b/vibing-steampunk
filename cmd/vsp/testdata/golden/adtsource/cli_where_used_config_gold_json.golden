@@ -1,0 +1,42 @@
+=== stdout
+{
+  "variable": "TVARVC:ZGOLD_VAR",
+  "variable_name": "ZGOLD_VAR",
+  "found": true,
+  "readers": [
+    {
+      "node_id": "PROG:ZGOLD_REPORT",
+      "name": "ZGOLD_REPORT",
+      "type": "PROG",
+      "confidence": "HIGH",
+      "edge_count": 1
+    },
+    {
+      "node_id": "CLAS:ZCL_GOLD_A",
+      "name": "ZCL_GOLD_A",
+      "type": "CLAS",
+      "confidence": "MEDIUM",
+      "edge_count": 1
+    },
+    {
+      "node_id": "PROG:ZGOLD_MISSING",
+      "name": "ZGOLD_MISSING",
+      "type": "PROG",
+      "confidence": "MEDIUM",
+      "edge_count": 1
+    }
+  ]
+}
+
+=== stderr
+Querying WBCROSSGT and CROSS for TVARVC references...
+Found 3 candidate programs. Grep confirmed 1.
+
+=== error
+<nil>
+=== requests
+GET /sap/bc/adt/oo/classes/zcl_gold_a/source/main
+GET /sap/bc/adt/programs/programs/zgold_missing/source/main
+GET /sap/bc/adt/programs/programs/zgold_report/source/main
+SQL SELECT INCLUDE FROM CROSS WHERE TYPE = 'S' AND NAME = 'TVARVC'
+SQL SELECT INCLUDE FROM WBCROSSGT WHERE OTYPE = 'TY' AND NAME = 'TVARVC'

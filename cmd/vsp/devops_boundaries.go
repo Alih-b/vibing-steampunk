@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/oisee/vibing-steampunk/pkg/adt"
 	"github.com/oisee/vibing-steampunk/pkg/graph"
+	"github.com/oisee/vibing-steampunk/pkg/graph/adtsource"
 	"github.com/spf13/cobra"
 )
 
@@ -77,15 +77,7 @@ func runBoundaries(cmd *cobra.Command, args []string) error {
 		obj := toFetch[i]
 		nodeID := graph.NodeID(obj.Type, obj.Name)
 		g.AddNode(&graph.Node{ID: nodeID, Name: obj.Name, Type: obj.Type, Package: obj.Package})
-		edges := graph.ExtractDepsFromSource(r.Source, nodeID)
-		dynEdges := graph.ExtractDynamicCalls(r.Source, nodeID)
-		for _, e := range append(edges, dynEdges...) {
-			g.AddEdge(e)
-			parts := strings.SplitN(e.To, ":", 2)
-			if len(parts) == 2 {
-				g.AddNode(&graph.Node{ID: e.To, Name: parts[1], Type: parts[0]})
-			}
-		}
+		g.AddSourceDeps(nodeID, r.Source)
 		count++
 	}
 
@@ -423,8 +415,8 @@ func printCrossingsMD(report *graph.CrossingReport) {
 	}
 }
 
-// resolvePackagesCLI queries TADIR to fill in missing package info and correct
-// object types. Two-pass: TADIR for R3TR objects, then TFDIR→TADIR for FMs.
+// resolvePackagesCLI fills in missing packages and corrects object types from
+// TADIR, then TFDIR→TADIR for function modules (see adtsource.ResolvePackages).
 //
 // It returns the objects whose package is unknown *because a query failed*, and
 // that distinction is the whole point. AnalyzeCrossings drops an edge whose
@@ -435,225 +427,25 @@ func printCrossingsMD(report *graph.CrossingReport) {
 // did not find in TADIR is a genuine answer (a local class, a standard name)
 // and is not reported here, or every run would carry a caveat.
 func resolvePackagesCLI(ctx context.Context, client *adt.Client, g *graph.Graph) []adt.Unsearched {
-	var names []string
-	nodesByName := make(map[string][]*graph.Node)
-	for _, n := range g.Nodes() {
-		if n.Package == "" && !graph.IsStandardObject(n.Name) && !strings.HasPrefix(n.ID, "DYNAMIC:") {
-			names = append(names, n.Name)
-			nodesByName[strings.ToUpper(n.Name)] = append(nodesByName[strings.ToUpper(n.Name)], n)
-		}
-	}
-	if len(names) == 0 {
-		return nil
-	}
-
-	// Pass 1: TADIR batch lookup
-	failed := resolveTADIRcli(ctx, client, names, nodesByName)
-
-	// Pass 2: TFDIR fallback for unresolved nodes (function modules)
-	var unresolved []string
-	for _, n := range names {
-		if nodes, ok := nodesByName[strings.ToUpper(n)]; ok {
-			for _, node := range nodes {
-				if node.Package == "" {
-					unresolved = append(unresolved, strings.ToUpper(n))
-					break
-				}
-			}
-		}
-	}
-	if len(unresolved) > 0 {
-		// Pass 2 can rescue a name pass 1 could not reach, so its verdict wins.
-		for name, reason := range resolveFMviaTFDIRcli(ctx, client, unresolved, nodesByName) {
-			failed[name] = reason
-		}
-	}
-
-	// Only a name that is *still* without a package and whose lookup failed is
-	// a gap. One that resolved on the second pass is answered, and one the
-	// query reached and did not find is answered too.
-	var missed []adt.Unsearched
-	for _, n := range names {
-		key := strings.ToUpper(n)
-		reason, everFailed := failed[key]
-		if !everFailed {
-			continue
-		}
-		for _, node := range nodesByName[key] {
-			if node.Package == "" {
-				missed = append(missed, adt.Unsearched{Object: key, Reason: reason})
-				break
-			}
-		}
-	}
-	sort.Slice(missed, func(i, j int) bool { return missed[i].Object < missed[j].Object })
-	return dedupeUnsearched(missed)
+	return adtsource.ResolvePackages(ctx, client, g, warnResolveFailure).Unplaced()
 }
 
-// dedupeUnsearched keeps one entry per object. The same class can be reached
-// through several edges, and a caveat that names it four times reads as four
-// separate holes.
-func dedupeUnsearched(in []adt.Unsearched) []adt.Unsearched {
-	if len(in) == 0 {
-		return nil
+// warnResolveFailure says on stderr that a lookup failed, as it happens. A
+// failed batch loses five objects' packages, and a boundary report is built
+// out of packages; failing the whole run over it would be worse, so the run
+// carries on — but silently is what turned a blocked query into a clean report.
+func warnResolveFailure(f adtsource.Failure) {
+	if f.Err == nil {
+		return
 	}
-	seen := make(map[string]bool, len(in))
-	out := in[:0:0]
-	for _, u := range in {
-		if seen[u.Object] {
-			continue
-		}
-		seen[u.Object] = true
-		out = append(out, u)
+	switch f.Stage {
+	case adtsource.StageTADIR:
+		fmt.Fprintf(os.Stderr, "    WARN: TADIR resolve batch failed: %v\n", f.Err)
+	case adtsource.StageTFDIR:
+		fmt.Fprintf(os.Stderr, "    WARN: TFDIR resolve batch failed: %v\n", f.Err)
+	case adtsource.StageFUGR:
+		fmt.Fprintf(os.Stderr, "    WARN: FUGR TADIR resolve failed: %v\n", f.Err)
 	}
-	return out
-}
-
-// resolveTADIRcli fills packages in from TADIR and returns, per object name,
-// the reason its batch never ran.
-func resolveTADIRcli(ctx context.Context, client *adt.Client, names []string, nodesByName map[string][]*graph.Node) map[string]string {
-	failed := map[string]string{}
-	// Batch size 5: SAP freestyle query has a ~255 char literal limit for IN clauses
-	for start := 0; start < len(names); start += 5 {
-		end := start + 5
-		if end > len(names) {
-			end = len(names)
-		}
-		chunk := names[start:end]
-		quoted := make([]string, len(chunk))
-		for i, n := range chunk {
-			quoted[i] = "'" + strings.ToUpper(n) + "'"
-		}
-		query := fmt.Sprintf("SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN (%s)", strings.Join(quoted, ","))
-		result, err := client.RunQuery(ctx, query, len(chunk)*3)
-		if err != nil {
-			// Five objects lose their package here, and a boundary report is
-			// built out of packages. Failing the whole run over one batch would
-			// be worse, so it carries on — but silently is what turned a
-			// blocked query into a clean report.
-			fmt.Fprintf(os.Stderr, "    WARN: TADIR resolve batch failed: %v\n", err)
-			for _, n := range chunk {
-				failed[strings.ToUpper(n)] = err.Error()
-			}
-			continue
-		}
-		if result == nil {
-			for _, n := range chunk {
-				failed[strings.ToUpper(n)] = "TADIR query returned nothing at all"
-			}
-			continue
-		}
-		for _, row := range result.Rows {
-			objType := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["OBJECT"])))
-			objName := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["OBJ_NAME"])))
-			devclass := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["DEVCLASS"])))
-			if nodes, ok := nodesByName[objName]; ok {
-				for _, n := range nodes {
-					n.Package = devclass
-					if objType != "" && n.Type != objType {
-						n.Type = objType
-					}
-				}
-			}
-		}
-	}
-	return failed
-}
-
-// resolveFMviaTFDIRcli resolves function modules through their function group,
-// and returns, per name, the reason a lookup on the way never ran.
-func resolveFMviaTFDIRcli(ctx context.Context, client *adt.Client, fmNames []string, nodesByName map[string][]*graph.Node) map[string]string {
-	failed := map[string]string{}
-	fugrSet := make(map[string]bool)
-	fmToFugr := make(map[string]string)
-
-	// Batch TFDIR queries (SAP 255-char IN clause limit)
-	for start := 0; start < len(fmNames); start += 5 {
-		end := start + 5
-		if end > len(fmNames) {
-			end = len(fmNames)
-		}
-		batch := fmNames[start:end]
-		quoted := make([]string, len(batch))
-		for i, n := range batch {
-			quoted[i] = "'" + n + "'"
-		}
-		query := fmt.Sprintf("SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN (%s)", strings.Join(quoted, ","))
-		result, err := client.RunQuery(ctx, query, len(batch)*2)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "    WARN: TFDIR resolve batch failed: %v\n", err)
-			for _, n := range batch {
-				failed[n] = err.Error()
-			}
-			continue
-		}
-		if result == nil {
-			for _, n := range batch {
-				failed[n] = "TFDIR query returned nothing at all"
-			}
-			continue
-		}
-		for _, row := range result.Rows {
-			funcName := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["FUNCNAME"])))
-			pname := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["PNAME"])))
-			fugrName := ""
-			if strings.HasPrefix(pname, "SAPL") {
-				fugrName = pname[4:]
-			} else if pname != "" {
-				fugrName = pname
-			}
-			if fugrName != "" {
-				fmToFugr[funcName] = fugrName
-				fugrSet[fugrName] = true
-			}
-		}
-	}
-	if len(fugrSet) == 0 {
-		return failed
-	}
-
-	fugrQuoted := make([]string, 0, len(fugrSet))
-	for fg := range fugrSet {
-		fugrQuoted = append(fugrQuoted, "'"+fg+"'")
-	}
-	fugrQuery := fmt.Sprintf("SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN (%s)", strings.Join(fugrQuoted, ","))
-	fugrResult, err := client.RunQuery(ctx, fugrQuery, len(fugrSet)*2)
-	if err != nil {
-		// The function groups were found but their packages were not, so every
-		// module that reached this point is still unplaced.
-		fmt.Fprintf(os.Stderr, "    WARN: FUGR TADIR resolve failed: %v\n", err)
-		for fmName := range fmToFugr {
-			failed[fmName] = err.Error()
-		}
-		return failed
-	}
-	if fugrResult == nil {
-		for fmName := range fmToFugr {
-			failed[fmName] = "FUGR TADIR query returned nothing at all"
-		}
-		return failed
-	}
-
-	fugrPkg := make(map[string]string)
-	for _, row := range fugrResult.Rows {
-		objName := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["OBJ_NAME"])))
-		devclass := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["DEVCLASS"])))
-		fugrPkg[objName] = devclass
-	}
-
-	for fmName, fugrName := range fmToFugr {
-		if devclass, ok := fugrPkg[fugrName]; ok {
-			if nodes, ok := nodesByName[fmName]; ok {
-				for _, n := range nodes {
-					n.Package = devclass
-					n.Type = "FUNC"
-				}
-			}
-			// Resolved after all: pass 1's failure is no longer a gap.
-			delete(failed, fmName)
-		}
-	}
-	return failed
 }
 
 func init() {

@@ -1,0 +1,36 @@
+=== stdout
+Health: CLAS ZCL_NARROW
+Summary: PARTIAL — Nothing bad found, but 3 thing(s) could not be checked — this is not a clean bill of health
+
+tests:      PASS {"alerts":0,"classes":1,"methods":1}
+atc:        CLEAN {"errors":0,"findings":0,"infos":0,"warnings":0}
+boundaries: UNKNOWN
+            3 of 3 items could not be searched, so this is not a complete answer:
+            ZCL_NARROW: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+            Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+            Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+staleness:  AGING {"age_days":N,"checked":1,"last_changed":"2026-01-01T10:00:00Z"}
+
+=== stderr
+    WARN: TADIR resolve batch failed: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+    WARN: FUGR TADIR resolve failed: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+
+=== error
+<nil>
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_NARROW/includes/main/versions
+GET /sap/bc/adt/oo/classes/ZCL_NARROW/source/main
+GET /sap/bc/adt/oo/classes/ZCL_NARROW/source/main
+GET atc/customizing
+GET atc/worklists/WL1
+POST atc/runs /sap/bc/adt/oo/classes/zcl_narrow
+POST atc/worklists
+POST testruns /sap/bc/adt/oo/classes/zcl_narrow
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('ZCL_NARROW')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_NARROW')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

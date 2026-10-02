@@ -1,0 +1,114 @@
+=== stdout
+{
+  "rootPackage": "$ZGOLD",
+  "packagesScanned": 2,
+  "objectsScanned": 5,
+  "sourceRead": 4,
+  "sourceAttempted": 5,
+  "unreadable": [
+    "CLAS ZCL_GOLD_DENIED: getting class source: ADT API error: status 403 at /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main: No authorisation to display ZCL_GOLD_DENIED"
+  ],
+  "entries": [
+    {
+      "sourceObject": "ZCL_GOLD_A",
+      "sourceType": "CLAS",
+      "sourcePackage": "$ZGOLD",
+      "targetObject": "ZCL_FOREIGN",
+      "targetType": "CLAS",
+      "targetPackage": "$ZOTHER",
+      "direction": "EXTERNAL",
+      "edgeKind": "REFERENCES",
+      "refDetail": "TYPE_REF_TO:zcl_foreign"
+    },
+    {
+      "sourceObject": "ZCL_GOLD_A",
+      "sourceType": "CLAS",
+      "sourcePackage": "$ZGOLD",
+      "targetObject": "ZGOLD_REPORT",
+      "targetType": "PROG",
+      "targetPackage": "$ZGOLD_SUB",
+      "direction": "DOWNWARD",
+      "edgeKind": "CALLS",
+      "refDetail": "SUBMIT:zgold_report"
+    },
+    {
+      "sourceObject": "ZCL_GOLD_A",
+      "sourceType": "CLAS",
+      "sourcePackage": "$ZGOLD",
+      "targetObject": "Z_GOLD_FM",
+      "targetType": "FUNC",
+      "targetPackage": "$ZOTHER",
+      "direction": "EXTERNAL",
+      "edgeKind": "CALLS",
+      "refDetail": "FM:Z_GOLD_FM"
+    },
+    {
+      "sourceObject": "ZCL_GOLD_A",
+      "sourceType": "CLAS",
+      "sourcePackage": "$ZGOLD",
+      "targetObject": "Z_LOST_FM",
+      "targetType": "FUGR",
+      "targetPackage": "$Z_LOST",
+      "direction": "EXTERNAL",
+      "edgeKind": "CALLS",
+      "refDetail": "FM:Z_LOST_FM"
+    },
+    {
+      "sourceObject": "ZGOLD_REPORT",
+      "sourceType": "PROG",
+      "sourcePackage": "$ZGOLD_SUB",
+      "targetObject": "ZCL_GOLD_A",
+      "targetType": "CLAS",
+      "targetPackage": "$ZGOLD",
+      "direction": "UPWARD",
+      "edgeKind": "CALLS",
+      "refDetail": "STATIC_CALL:zcl_gold_a=\u003erun"
+    },
+    {
+      "sourceObject": "ZGOLD_REPORT",
+      "sourceType": "PROG",
+      "sourcePackage": "$ZGOLD_SUB",
+      "targetObject": "Z_GOLD_FM",
+      "targetType": "FUNC",
+      "targetPackage": "$ZOTHER",
+      "direction": "EXTERNAL",
+      "edgeKind": "CALLS",
+      "refDetail": "FM:Z_GOLD_FM"
+    }
+  ],
+  "upward": 1,
+  "upwardSkip": 0,
+  "common": 0,
+  "sibling": 0,
+  "downward": 1,
+  "commonDown": 0,
+  "external": 4,
+  "dynamic": 1
+}
+
+=== stderr
+Analyzing boundaries for $ZGOLD (2 packages in scope)...
+  WARN: CLAS ZCL_GOLD_DENIED: getting class source: ADT API error: status 403 at /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main: No authorisation to display ZCL_GOLD_DENIED
+Resolving target packages...
+1 of 6 objects could not be searched, so this is not a complete answer:
+  CLAS ZCL_GOLD_DENIED: getting class source: ADT API error: status 403 at /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main: No authorisation to display ZCL_GOLD_DENIED
+
+=== error
+<nil>
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_TEST/source/main
+GET /sap/bc/adt/oo/interfaces/ZIF_GOLD/source/main
+GET /sap/bc/adt/programs/programs/ZGOLD_REPORT/source/main
+SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZGOLD%'
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS IN ('$ZGOLD') AND PGMID = 'R3TR'
+SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS IN ('$ZGOLD_SUB') AND PGMID = 'R3TR'
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_FOREIGN')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZGOLD_T')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

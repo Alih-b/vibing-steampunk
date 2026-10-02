@@ -1,0 +1,24 @@
+=== stdout
+Where-used config: ZGOLD_VAR
+Found: true
+
+Confidence  Type  Name           Package
+----------  ----  -------------  -------
+HIGH        PROG  ZGOLD_REPORT   -      
+MEDIUM      CLAS  ZCL_GOLD_A     -      
+MEDIUM      PROG  ZGOLD_MISSING  -      
+
+=== stderr
+Querying WBCROSSGT and CROSS for TVARVC references...
+Found 3 candidate programs. Grep confirmed 1.
+
+3 readers (1 HIGH, 2 MEDIUM)
+
+=== error
+<nil>
+=== requests
+GET /sap/bc/adt/oo/classes/zcl_gold_a/source/main
+GET /sap/bc/adt/programs/programs/zgold_missing/source/main
+GET /sap/bc/adt/programs/programs/zgold_report/source/main
+SQL SELECT INCLUDE FROM CROSS WHERE TYPE = 'S' AND NAME = 'TVARVC'
+SQL SELECT INCLUDE FROM WBCROSSGT WHERE OTYPE = 'TY' AND NAME = 'TVARVC'

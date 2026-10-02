@@ -1,0 +1,51 @@
+=== isError
+false
+=== text
+{
+  "scope": {
+    "kind": "package",
+    "package": "$ZNARROW"
+  },
+  "summary": {
+    "status": "UNKNOWN",
+    "headline": "Nothing was found wrong, but boundaries could not be checked in full — see notes"
+  },
+  "signals": {
+    "atc": {
+      "status": "CLEAN",
+      "details": {
+        "errors": 0,
+        "findings": 0,
+        "infos": 0,
+        "warnings": 0
+      }
+    },
+    "boundaries": {
+      "status": "UNKNOWN",
+      "details": {
+        "crossed_packages": {},
+        "scanned_objects": 0,
+        "violating_objects": null,
+        "violations": 0
+      },
+      "note": "no source-bearing objects were read in this package, so there is no boundary verdict here — not a clean one."
+    },
+    "staleness": {
+      "status": "UNKNOWN"
+    },
+    "tests": {
+      "status": "NONE"
+    }
+  },
+  "notes": [
+    "boundaries: no source-bearing objects were read in this package, so there is no boundary verdict here — not a clean one."
+  ]
+}
+=== requests
+GET atc/customizing
+GET atc/worklists/WL1
+GET nodestructure $ZNARROW
+GET nodestructure $ZNARROW
+GET nodestructure $ZNARROW
+POST atc/runs /sap/bc/adt/packages/$znarrow
+POST atc/worklists

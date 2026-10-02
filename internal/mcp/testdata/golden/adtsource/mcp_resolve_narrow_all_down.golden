@@ -1,0 +1,26 @@
+=== nodes
+CLAS:CL_STANDARD type=CLAS package=
+CLAS:ZCL_FOREIGN type=CLAS package=
+CLAS:ZCL_GOLD_A type=CLAS package=
+CLAS:ZCL_NARROW type=CLAS package=$ZNARROW
+DYNAMIC:LV_FM type=DYNAMIC package=
+FUGR:Z_GOLD_FM type=FUGR package=
+FUGR:Z_LOST_FM type=FUGR package=
+=== missed (6)
+FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+ZCL_FOREIGN: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+ZCL_GOLD_A: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+=== requests
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('ZCL_FOREIGN')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('ZCL_GOLD_A')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_FOREIGN')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_GOLD_A')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

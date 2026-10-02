@@ -1,0 +1,100 @@
+=== stdout
+# Health Report: $ZGOLD
+
+**BAD** — Unit tests are failing
+
+## Signals
+
+| Signal | Status | Details |
+|--------|--------|---------|
+| tests | FAIL | alerts: 1, classes: 1, methods: 2, packages_scanned: 1 |
+| atc | FINDINGS | errors: 1, findings: 4, infos: 2, warnings: 1 |
+| boundaries | VIOLATIONS | downward: 1, dynamic: 1, external: 4, objects_scanned: 4, packages_scanned: 2, upward: 1 |
+| staleness | STALE | age_days: 2772, checked: 0, last_changed: 2019-03-01T00:00:00Z |
+
+## Test Details
+
+### CLAS/OC ZCL_GOLD_TEST
+
+#### LTCL_GOLD
+
+| Method | Status | Time | Details |
+|--------|--------|------|---------|
+| WORKS | PASS | 0.010s |  |
+| BREAKS | FAIL | 0.010s | failedAssertion: Expected 1, got 2 |
+
+
+## ATC Findings
+
+### CLAS ZCL_GOLD_A
+
+| Priority | Check | Message | Location |
+|----------|-------|---------|----------|
+| Error | Check 0 | Finding 0 | /sap/bc/adt/oo/classes/zcl_gold_a/source/main#start=1,1 |
+| Warning | Check 1 | Finding 1 | /sap/bc/adt/oo/classes/zcl_gold_a/source/main#start=2,1 |
+| Info | Check 2 | Finding 2 | /sap/bc/adt/oo/classes/zcl_gold_a/source/main#start=3,1 |
+| Info | Check 3 | Finding 3 | /sap/bc/adt/oo/classes/zcl_gold_a/source/main#start=4,1 |
+
+
+## Boundary Crossings
+
+### DOWNWARD — BAD (1)
+
+| From Pkg | Source Object | To Pkg | Target Object | Edge | Detail |
+|----------|---------------|--------|---------------|------|--------|
+| $ZGOLD | CLAS ZCL_GOLD_A | $ZGOLD_SUB | PROG ZGOLD_REPORT | CALLS | SUBMIT:zgold_report |
+
+### EXTERNAL — WARN (4)
+
+| From Pkg | Source Object | To Pkg | Target Object | Edge | Detail |
+|----------|---------------|--------|---------------|------|--------|
+| $ZGOLD | CLAS ZCL_GOLD_A | $ZOTHER | CLAS ZCL_FOREIGN | REFERENCES | TYPE_REF_TO:zcl_foreign |
+| $ZGOLD | CLAS ZCL_GOLD_A | $ZOTHER | FUNC Z_GOLD_FM | CALLS | FM:Z_GOLD_FM |
+| $ZGOLD | CLAS ZCL_GOLD_A | $Z_LOST | FUGR Z_LOST_FM | CALLS | FM:Z_LOST_FM |
+| $ZGOLD_SUB | PROG ZGOLD_REPORT | $ZOTHER | FUNC Z_GOLD_FM | CALLS | FM:Z_GOLD_FM |
+
+### UPWARD — OK (1)
+
+| From Pkg | Source Object | To Pkg | Target Object | Edge | Detail |
+|----------|---------------|--------|---------------|------|--------|
+| $ZGOLD_SUB | PROG ZGOLD_REPORT | $ZGOLD | CLAS ZCL_GOLD_A | CALLS | STATIC_CALL:zcl_gold_a=>run |
+
+
+=== stderr
+  [1/4] Running tests...
+  [2/4] Checking boundaries...
+
+    WARN: CLAS ZCL_GOLD_DENIED: getting class source: ADT API error: status 403 at /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main: No authorisation to display ZCL_GOLD_DENIED
+
+  [4/4] Checking staleness...
+
+=== error
+<nil>
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_TEST/source/main
+GET /sap/bc/adt/oo/interfaces/ZIF_GOLD/source/main
+GET /sap/bc/adt/programs/programs/ZGOLD_REPORT/source/main
+GET atc/customizing
+GET atc/worklists/WL1
+GET nodestructure $ZGOLD
+GET nodestructure $ZGOLD
+POST atc/runs /sap/bc/adt/packages/$ZGOLD
+POST atc/worklists
+POST testruns /sap/bc/adt/packages/$ZGOLD
+POST testruns /sap/bc/adt/packages/$ZGOLD_SUB
+POST testruns /sap/bc/adt/packages/$ZGOLD_SUB
+SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZGOLD%'
+SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZGOLD%'
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT MAX( AS4DATE ) AS LAST_DATE FROM E070 WHERE TRKORR IN ( SELECT TRKORR FROM E071 WHERE OBJ_NAME IN ( SELECT OBJ_NAME FROM TADIR WHERE DEVCLASS LIKE '$ZGOLD%' ) )
+SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS IN ('$ZGOLD') AND PGMID = 'R3TR'
+SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS IN ('$ZGOLD_SUB') AND PGMID = 'R3TR'
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_FOREIGN')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZGOLD_T')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

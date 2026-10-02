@@ -1,0 +1,71 @@
+=== isError
+false
+=== text
+{
+  "scope": {
+    "kind": "object",
+    "object_type": "CLAS",
+    "object_name": "ZCL_GOLD_A"
+  },
+  "summary": {
+    "status": "WARN",
+    "headline": "Boundary violations detected"
+  },
+  "signals": {
+    "atc": {
+      "status": "FINDINGS",
+      "details": {
+        "errors": 1,
+        "findings": 4,
+        "infos": 2,
+        "warnings": 1
+      }
+    },
+    "boundaries": {
+      "status": "VIOLATIONS",
+      "details": {
+        "crossed_packages": {
+          "$ZGOLD_SUB": 1,
+          "$ZOTHER": 2
+        },
+        "dynamic": 1,
+        "violations": 3
+      }
+    },
+    "staleness": {
+      "status": "STALE",
+      "details": {
+        "age_days": N,
+        "checked": 1,
+        "last_changed": "2019-03-01T10:00:00Z"
+      }
+    },
+    "tests": {
+      "status": "PASS",
+      "details": {
+        "alerts": 0,
+        "classes": 1,
+        "methods": 1
+      }
+    }
+  }
+}
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/includes/main/versions
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/source/main
+GET atc/customizing
+GET atc/worklists/WL1
+POST atc/runs /sap/bc/adt/oo/classes/zcl_gold_a
+POST atc/worklists
+POST testruns /sap/bc/adt/oo/classes/zcl_gold_a
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_FOREIGN')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_GOLD_A')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZGOLD_REPORT')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZGOLD_T')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZIF_GOLD')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

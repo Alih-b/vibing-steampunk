@@ -16,6 +16,7 @@ import (
 	"github.com/oisee/vibing-steampunk/pkg/abaplint"
 	"github.com/oisee/vibing-steampunk/pkg/adt"
 	"github.com/oisee/vibing-steampunk/pkg/graph"
+	"github.com/oisee/vibing-steampunk/pkg/graph/adtsource"
 	"github.com/spf13/cobra"
 )
 
@@ -2108,47 +2109,10 @@ func runGraphWhereUsedConfig(cmd *cobra.Command, args []string) error {
 	doGrep := !noGrep
 	ctx := context.Background()
 
-	// Step 1: Find the includes whose code touches the TVARVC table.
-	//
-	// WBCROSSGT OTYPE='TY' covers OO code, CROSS TYPE='S' covers classic
-	// procedural code, and neither alone covers both — the same pairing
-	// queryTableReaderIncludes uses. The query that used to be here,
-	// CROSS TYPE='DA', could never return a row: CROSS.TYPE is C(1), 'DA' is
-	// two characters, and SAP answers 400. 'DA' belongs to WBCROSSGT's C(2)
-	// OTYPE column and means a data object rather than a table.
+	// Step 1: Find the objects whose code touches the TVARVC table, in the two
+	// cross-reference tables (see adtsource.TVARVCReaders for why both).
 	fmt.Fprintf(os.Stderr, "Querying WBCROSSGT and CROSS for TVARVC references...\n")
-	type candidate struct {
-		objType string
-		objName string
-	}
-	seen := make(map[string]bool)
-	var candidates []candidate
-
-	collect := func(label, query string) error {
-		res, err := client.RunQuery(ctx, query, 500)
-		if err != nil {
-			return fmt.Errorf("%s: %w", label, err)
-		}
-		if res == nil {
-			return nil
-		}
-		for _, row := range res.Rows {
-			include := strings.TrimSpace(fmt.Sprintf("%v", row["INCLUDE"]))
-			if include == "" {
-				continue
-			}
-			_, objType, objName := graph.NormalizeInclude(include)
-			key := objType + ":" + objName
-			if !seen[key] {
-				seen[key] = true
-				candidates = append(candidates, candidate{objType, objName})
-			}
-		}
-		return nil
-	}
-
-	wbErr := collect("WBCROSSGT", "SELECT INCLUDE FROM WBCROSSGT WHERE OTYPE = 'TY' AND NAME = 'TVARVC'")
-	crossErr := collect("CROSS", "SELECT INCLUDE FROM CROSS WHERE TYPE = 'S' AND NAME = 'TVARVC'")
+	candidates, wbErr, crossErr := adtsource.TVARVCReaders(ctx, client)
 	if wbErr != nil && crossErr != nil {
 		return fmt.Errorf("neither cross-reference table could be read, so this is not an answer: %v; %v", wbErr, crossErr)
 	}
@@ -2172,7 +2136,7 @@ func runGraphWhereUsedConfig(cmd *cobra.Command, args []string) error {
 	for _, c := range candidates {
 		confirmed := false
 		if doGrep {
-			objURL := cliADTObjectURL(c.objType, c.objName)
+			objURL := cliADTObjectURL(c.Type, c.Name)
 			if objURL != "" {
 				grepResult, err := client.GrepObject(ctx, objURL, variable, true, 0)
 				switch {
@@ -2180,7 +2144,7 @@ func runGraphWhereUsedConfig(cmd *cobra.Command, args []string) error {
 					// Unconfirmed already means "read it, the name is not
 					// there". A grep that failed must not be filed under it.
 					grepFailed++
-					fmt.Fprintf(os.Stderr, "WARN: %s %s could not be grepped: %v\n", c.objType, c.objName, err)
+					fmt.Fprintf(os.Stderr, "WARN: %s %s could not be grepped: %v\n", c.Type, c.Name, err)
 				case grepResult != nil && len(grepResult.Matches) > 0:
 					confirmed = true
 					grepCount++
@@ -2189,8 +2153,8 @@ func runGraphWhereUsedConfig(cmd *cobra.Command, args []string) error {
 		}
 		refs = append(refs, graph.TVARVCReference{
 			VariableName: variable,
-			ObjectType:   c.objType,
-			ObjectName:   c.objName,
+			ObjectType:   c.Type,
+			ObjectName:   c.Name,
 			Confirmed:    confirmed,
 		})
 	}

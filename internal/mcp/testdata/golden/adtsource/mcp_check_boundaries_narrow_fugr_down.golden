@@ -1,0 +1,32 @@
+=== isError
+false
+=== text
+Package Boundary Analysis: $ZNARROW
+Total dependencies: 2
+
+--- SUMMARY ---
+  Standard (SAP):    0
+  Same package:      0
+  Whitelisted:       0
+  Violations:        0
+  Dynamic (warning): 0
+  Unknown:           2
+
+  ? INCONCLUSIVE — 2 of 2 references could not be attributed to a package, and an unattributed reference is one this cannot judge.
+    unattributed: &{CLAS:ZCL_NARROW ZCL_NARROW CLAS $ZNARROW [] map[]} → &{FUGR:Z_GOLD_FM Z_GOLD_FM FUGR  [] map[]}
+    unattributed: &{CLAS:ZCL_NARROW ZCL_NARROW CLAS $ZNARROW [] map[]} → &{FUGR:Z_LOST_FM Z_LOST_FM FUGR  [] map[]}
+
+package lookup failed for objects in this graph, so they count as unknown rather than checked — this report can only under-report violations.
+2 of 2 objects could not be searched, so this is not a complete answer:
+  FUGR ZGOLD_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+  FUGR ZLOST_FG: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_NARROW/source/main
+GET nodestructure $ZNARROW
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

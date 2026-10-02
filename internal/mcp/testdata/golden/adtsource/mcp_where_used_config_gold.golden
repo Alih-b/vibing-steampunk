@@ -1,0 +1,45 @@
+=== isError
+false
+=== text
+{
+  "variable": "TVARVC:ZGOLD_VAR",
+  "variable_name": "ZGOLD_VAR",
+  "found": true,
+  "readers": [
+    {
+      "node_id": "PROG:ZGOLD_REPORT",
+      "name": "ZGOLD_REPORT",
+      "type": "PROG",
+      "package": "$ZGOLD_SUB",
+      "confidence": "HIGH",
+      "edge_count": 1
+    },
+    {
+      "node_id": "CLAS:ZCL_GOLD_A",
+      "name": "ZCL_GOLD_A",
+      "type": "CLAS",
+      "package": "$ZGOLD",
+      "confidence": "MEDIUM",
+      "edge_count": 1
+    },
+    {
+      "node_id": "PROG:ZGOLD_MISSING",
+      "name": "ZGOLD_MISSING",
+      "type": "PROG",
+      "confidence": "MEDIUM",
+      "edge_count": 1
+    }
+  ]
+}
+=== requests
+GET /sap/bc/adt/oo/classes/zcl_gold_a/source/main
+GET /sap/bc/adt/programs/programs/zgold_missing/source/main
+GET /sap/bc/adt/programs/programs/zgold_report/source/main
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('ZGOLD_MISSING')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('ZGOLD_VAR')
+SQL SELECT INCLUDE FROM CROSS WHERE TYPE = 'S' AND NAME = 'TVARVC'
+SQL SELECT INCLUDE FROM WBCROSSGT WHERE OTYPE = 'TY' AND NAME = 'TVARVC'
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_GOLD_A')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZGOLD_MISSING')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZGOLD_REPORT')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZGOLD_VAR')

@@ -27,6 +27,11 @@ pending for a week after both shipped on 2026-08-25. Corrected 2026-09-02.
 - Pending: unify `cli_deps.go` + `cli_extra.go` + `ctxcomp/analyzer.go`. Two of
   the three now import `pkg/graph` (`cli_extra.go:16`, `analyzer.go:9`); only
   `cli_deps.go` still carries its own extraction.
+- Started 2026-10-02: `pkg/graph/adtsource` is the one ADT/SQL source both
+  front ends call for TADIR/TFDIR package resolution, the TVARVC readers,
+  D010INC rows and the shared health verdicts; `graph.AddSourceDeps` replaced
+  eleven hand-rolled parse loops. Still twinned: the package-level health
+  collectors, the CROSS/WBCROSSGT reverse readers, transport data fetching.
 - Design: [002](reports/2026-04-05-002-graph-engine-design.md), [003](reports/2026-04-05-003-graph-engine-alignment-for-claude.md)
 
 ### 2. Debugger — Phase 1 shipped, #2 closed 2026-09-02
@@ -106,6 +111,7 @@ pkg/
     callgraph.go  object_explorer.go  traces.go  sqltrace.go  api_release.go
     crud.go  devtools.go  codeintel.go  http.go  ...
   graph/              Dependency graph engine (in progress)
+    adtsource/          What the graph is read from on SAP; shared by cmd/vsp and internal/mcp
   datacluster/        EXPORT data cluster parser (BALDAT, INDX, STXL): descriptors, rows, typed values
   sapcompress/        SAP LZH (= DEFLATE + prefix, via compress/flate) and LZC (compress(1)) decoders
   temse/              TemSe list spool format (TST03) → lines

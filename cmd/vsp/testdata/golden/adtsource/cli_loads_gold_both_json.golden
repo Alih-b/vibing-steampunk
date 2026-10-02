@@ -1,0 +1,32 @@
+=== stdout
+{
+  "direction": "both",
+  "loaded_by": [
+    {
+      "from": "PROG:ZGOLD_REPORT",
+      "to": "CLAS:ZCL_GOLD_A",
+      "include": "ZCL_GOLD_A====================CU",
+      "why": "a class's public section"
+    }
+  ],
+  "loaded_by_total": 1,
+  "loads": [
+    {
+      "from": "CLAS:ZCL_GOLD_A",
+      "to": "INTF:ZIF_GOLD",
+      "include": "ZIF_GOLD======================IU",
+      "why": "pool suffix IU"
+    }
+  ],
+  "loads_total": 1,
+  "object": "ZCL_GOLD_A",
+  "source": "D010INC, the compile-time load table. These are loads, not calls: what must be present for this to run, which is not the same as what it names."
+}
+
+=== stderr
+
+=== error
+<nil>
+=== requests
+SQL SELECT MASTER, INCLUDE, OBSOLETE_IN_VERSION FROM D010INC WHERE INCLUDE LIKE 'ZCL_GOLD_A%'
+SQL SELECT MASTER, INCLUDE, OBSOLETE_IN_VERSION FROM D010INC WHERE MASTER LIKE 'ZCL_GOLD_A%' OR MASTER = 'SAPLZCL_GOLD_A'

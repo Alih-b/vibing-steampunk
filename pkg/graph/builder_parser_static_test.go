@@ -72,3 +72,23 @@ func TestAnInstanceCallDoesNotInventAClass(t *testing.T) {
 		t.Errorf("a variable is not an object: %v", got)
 	}
 }
+
+func TestAddSourceDepsAddsEdgesAndTargets(t *testing.T) {
+	g := New()
+	from := NodeID("PROG", "ZDEMO_REPORT")
+	g.AddNode(&Node{ID: from, Name: "ZDEMO_REPORT", Type: "PROG", Package: "$ZDEMO"})
+	g.AddSourceDeps(from, "CALL FUNCTION 'Z_DEMO_FM'.\nCALL FUNCTION lv_fm.\nDATA lo TYPE REF TO zcl_demo_other.")
+
+	if n := g.GetNode(from); n.Package != "$ZDEMO" {
+		t.Errorf("the source node lost its package: %+v", n)
+	}
+	for id, typ := range map[string]string{"FUGR:Z_DEMO_FM": "FUGR", "CLAS:ZCL_DEMO_OTHER": "CLAS", "DYNAMIC:lv_fm": "DYNAMIC"} {
+		n := g.GetNode(id)
+		if n == nil || n.Type != typ || n.Package != "" {
+			t.Errorf("target %s = %+v", id, n)
+		}
+	}
+	if len(g.Edges()) != 3 {
+		t.Errorf("edges = %d, want 3", len(g.Edges()))
+	}
+}

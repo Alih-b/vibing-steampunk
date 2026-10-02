@@ -1,0 +1,25 @@
+=== stdout
+Boundaries: $ZNARROW (1 packages, 1 objects in the graph)
+
+  WARN  EXTERNAL     2
+         $ZNARROW → $ZOTHER  CLAS ZCL_NARROW → FUNC Z_GOLD_FM  [CALLS FM:Z_GOLD_FM]
+         $ZNARROW → $Z_LOST  CLAS ZCL_NARROW → FUGR Z_LOST_FM  [CALLS FM:Z_LOST_FM]
+
+CLEAN — no directional violations
+
+=== stderr
+Analyzing boundaries for $ZNARROW (1 packages in scope)...
+Resolving target packages...
+
+=== error
+<nil>
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_NARROW/source/main
+SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZNARROW%'
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS = '$ZNARROW' AND PGMID = 'R3TR'
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

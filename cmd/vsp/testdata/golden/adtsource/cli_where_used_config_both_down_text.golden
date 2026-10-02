@@ -1,0 +1,10 @@
+=== stdout
+
+=== stderr
+Querying WBCROSSGT and CROSS for TVARVC references...
+
+=== error
+neither cross-reference table could be read, so this is not an answer: WBCROSSGT: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query; CROSS: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+=== requests
+SQL SELECT INCLUDE FROM CROSS WHERE TYPE = 'S' AND NAME = 'TVARVC'
+SQL SELECT INCLUDE FROM WBCROSSGT WHERE OTYPE = 'TY' AND NAME = 'TVARVC'

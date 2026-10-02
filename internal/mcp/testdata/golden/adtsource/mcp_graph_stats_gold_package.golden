@@ -1,0 +1,35 @@
+=== isError
+false
+=== text
+{
+  "node_count": 9,
+  "edge_count": 8,
+  "by_node_type": {
+    "CLAS": 3,
+    "DYNAMIC": 1,
+    "FUGR": 2,
+    "INTF": 1,
+    "PROG": 1,
+    "TABL": 1
+  },
+  "by_edge_kind": {
+    "CALLS": 3,
+    "DYNAMIC_CALL": 1,
+    "REFERENCES": 4
+  },
+  "by_source": {
+    "PARSER": 8
+  },
+  "by_package": {
+    "$ZGOLD": 3
+  },
+  "notes": [
+    "these counts are of the objects that could be read, not of the package.\n1 of 4 objects could not be searched, so this is not a complete answer:\n  CLAS ZCL_GOLD_DENIED: getting class source: ADT API error: status 403 at /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main: No authorisation to display ZCL_GOLD_DENIED"
+  ]
+}
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_TEST/source/main
+GET /sap/bc/adt/oo/interfaces/ZIF_GOLD/source/main
+GET nodestructure $ZGOLD

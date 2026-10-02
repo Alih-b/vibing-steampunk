@@ -1,0 +1,42 @@
+=== stdout
+Health: package $ZNARROW
+Summary: WARN — Object or package appears stale
+
+tests:      PASS {"alerts":0,"classes":1,"methods":1,"packages_scanned":1}
+atc:        CLEAN {"errors":0,"findings":0,"infos":0,"warnings":0}
+boundaries: CLEAN {"external":2,"objects_scanned":1,"packages_scanned":1}
+            2 of 3 items could not be searched, so this is not a complete answer:
+            Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+            Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+staleness:  STALE {"age_days":N,"checked":0,"last_changed":"2019-03-01T00:00:00Z"}
+
+=== stderr
+  [1/4] Running tests...
+  [2/4] Checking boundaries...
+
+
+    WARN: FUGR TADIR resolve failed: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+  [3/4] Running ATC...
+  [4/4] Checking staleness...
+
+=== error
+<nil>
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_NARROW/source/main
+GET atc/customizing
+GET atc/worklists/WL1
+GET nodestructure $ZNARROW
+GET nodestructure $ZNARROW
+POST atc/runs /sap/bc/adt/packages/$ZNARROW
+POST atc/worklists
+POST testruns /sap/bc/adt/packages/$ZNARROW
+SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZNARROW%'
+SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZNARROW%'
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT MAX( AS4DATE ) AS LAST_DATE FROM E070 WHERE TRKORR IN ( SELECT TRKORR FROM E071 WHERE OBJ_NAME IN ( SELECT OBJ_NAME FROM TADIR WHERE DEVCLASS LIKE '$ZNARROW%' ) )
+SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS = '$ZNARROW' AND PGMID = 'R3TR'
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

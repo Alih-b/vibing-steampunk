@@ -728,3 +728,22 @@ func isStaticArrow(t abaplint.Token) bool {
 func fmToFugrName(fmName string) string {
 	return fmName // Keep as-is; TADIR resolution will fix it
 }
+
+// AddSourceDeps parses source, adds every static and dynamic dependency it
+// finds as an edge from the node `from`, and adds each edge's target as a node
+// with the type and name its ID carries and no package. The node `from` itself
+// is the caller's to add, with whatever it knows about it.
+//
+// Eleven scans across cmd/vsp and internal/mcp did this by hand, and they did
+// not agree on a target ID with no "type:" part: half skipped it, half would
+// have panicked on it. The extractors never produce one — every target is a
+// NodeID or "DYNAMIC:<name>" — so skipping it is what every copy actually did.
+func (g *Graph) AddSourceDeps(from, source string) {
+	edges := ExtractDepsFromSource(source, from)
+	for _, e := range append(edges, ExtractDynamicCalls(source, from)...) {
+		g.AddEdge(e)
+		if typ, name, ok := strings.Cut(e.To, ":"); ok {
+			g.AddNode(&Node{ID: e.To, Name: name, Type: typ})
+		}
+	}
+}

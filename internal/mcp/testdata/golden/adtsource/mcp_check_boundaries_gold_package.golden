@@ -1,0 +1,54 @@
+=== isError
+false
+=== text
+Package Boundary Analysis: $ZGOLD
+Total dependencies: 8
+
+--- SAME PACKAGE (3) ---
+  ZCL_GOLD_A → ZGOLD_T (REFERENCES)
+  ZCL_GOLD_A → ZIF_GOLD (REFERENCES)
+  ZCL_GOLD_TEST → ZCL_GOLD_A (REFERENCES)
+
+--- VIOLATIONS (3) ---
+  ✗ ZCL_GOLD_A → ZCL_FOREIGN (REFERENCES, pkg: $ZOTHER) [TYPE_REF_TO:zcl_foreign]
+  ✗ ZCL_GOLD_A → ZGOLD_REPORT (CALLS, pkg: $ZGOLD_SUB) [SUBMIT:zgold_report]
+  ✗ ZCL_GOLD_A → Z_GOLD_FM (CALLS, pkg: $ZOTHER) [FM:Z_GOLD_FM]
+
+--- DYNAMIC CALLS (1) ---
+  ⚠ ZCL_GOLD_A → DYNAMIC:lv_fm [DYNAMIC_FM:lv_fm]
+
+--- SUMMARY ---
+  Standard (SAP):    0
+  Same package:      3
+  Whitelisted:       0
+  Violations:        3
+  Dynamic (warning): 1
+  Unknown:           1
+
+  Packages crossed:
+    $ZGOLD_SUB — 1 refs
+    $ZOTHER — 2 refs
+
+  ? INCONCLUSIVE — 1 of 8 references could not be attributed to a package, and an unattributed reference is one this cannot judge.
+    unattributed: &{CLAS:ZCL_GOLD_A ZCL_GOLD_A CLAS $ZGOLD [] map[]} → &{FUGR:Z_LOST_FM Z_LOST_FM FUGR  [] map[]}
+  ✗ 3 violation(s) in 1 object(s) among the references it could judge
+
+objects in $ZGOLD could not be read, so their dependencies are absent from this verdict.
+1 of 4 objects could not be searched, so this is not a complete answer:
+  CLAS ZCL_GOLD_DENIED: getting class source: ADT API error: status 403 at /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main: No authorisation to display ZCL_GOLD_DENIED
+
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_TEST/source/main
+GET /sap/bc/adt/oo/interfaces/ZIF_GOLD/source/main
+GET nodestructure $ZGOLD
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_FOREIGN')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZGOLD_REPORT')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZGOLD_T')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

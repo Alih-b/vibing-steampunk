@@ -1,0 +1,12 @@
+=== stdout
+Load graph for ZGOLD_REPORT — from D010INC, which records what must be present, not what is named.
+
+Loads (1):
+  ZCL_GOLD_A                               a class's public section
+
+=== stderr
+
+=== error
+<nil>
+=== requests
+SQL SELECT MASTER, INCLUDE, OBSOLETE_IN_VERSION FROM D010INC WHERE MASTER LIKE 'ZGOLD_REPORT%' OR MASTER = 'SAPLZGOLD_REPORT'

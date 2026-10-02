@@ -1,0 +1,6 @@
+=== isError
+true
+=== text
+Failed to read source for ZCL_NARROW: unsupported object type:  (supported: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, VIEW, BDEF, SRVD, SRVB, MSAG, ENHO)
+=== requests
+

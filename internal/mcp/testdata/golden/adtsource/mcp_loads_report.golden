@@ -1,0 +1,18 @@
+=== isError
+false
+=== text
+{
+  "direction": "loads",
+  "loads": [
+    {
+      "detail": "LOADS:ZCL_GOLD_A====================CU",
+      "from": "PROG:ZGOLD_REPORT",
+      "to": "CLAS:ZCL_GOLD_A"
+    }
+  ],
+  "loads_total": 1,
+  "object": "ZGOLD_REPORT",
+  "source": "D010INC, the compile-time load table. These are loads, not calls: what must be present for this to run, which is not the same as what it names."
+}
+=== requests
+SQL SELECT MASTER, INCLUDE, OBSOLETE_IN_VERSION FROM D010INC WHERE MASTER LIKE 'ZGOLD_REPORT%' OR MASTER = 'SAPLZGOLD_REPORT'

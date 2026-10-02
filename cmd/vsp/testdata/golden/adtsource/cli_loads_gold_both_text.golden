@@ -1,0 +1,16 @@
+=== stdout
+Load graph for ZCL_GOLD_A — from D010INC, which records what must be present, not what is named.
+
+Loads (1):
+  ZIF_GOLD                                 pool suffix IU
+
+Loaded by (1):
+  ZGOLD_REPORT                             a class's public section
+
+=== stderr
+
+=== error
+<nil>
+=== requests
+SQL SELECT MASTER, INCLUDE, OBSOLETE_IN_VERSION FROM D010INC WHERE INCLUDE LIKE 'ZCL_GOLD_A%'
+SQL SELECT MASTER, INCLUDE, OBSOLETE_IN_VERSION FROM D010INC WHERE MASTER LIKE 'ZCL_GOLD_A%' OR MASTER = 'SAPLZCL_GOLD_A'

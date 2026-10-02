@@ -1,0 +1,18 @@
+=== nodes
+CLAS:CL_STANDARD type=CLAS package=
+CLAS:ZCL_FOREIGN type=CLAS package=$ZOTHER
+CLAS:ZCL_GOLD_A type=CLAS package=$ZGOLD
+CLAS:ZCL_NARROW type=CLAS package=$ZNARROW
+DYNAMIC:LV_FM type=DYNAMIC package=
+FUGR:Z_GOLD_FM type=FUNC package=$ZOTHER
+FUGR:Z_LOST_FM type=FUGR package=
+=== missed (0)
+=== requests
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_FOREIGN')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_GOLD_A')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

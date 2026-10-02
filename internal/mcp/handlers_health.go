@@ -10,6 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/oisee/vibing-steampunk/pkg/adt"
 	"github.com/oisee/vibing-steampunk/pkg/graph"
+	"github.com/oisee/vibing-steampunk/pkg/graph/adtsource"
 )
 
 type healthScope struct {
@@ -112,19 +113,8 @@ func (s *Server) collectObjectTests(ctx context.Context, objType, objName string
 	if err != nil {
 		return healthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}
 	}
-	classCount, methodCount, alertCount := summarizeUnitTests(result)
-	status := "PASS"
-	if classCount == 0 {
-		status = "NONE"
-	}
-	if alertCount > 0 {
-		status = "FAIL"
-	}
-	return healthSignal{Status: status, Details: map[string]any{
-		"classes": classCount,
-		"methods": methodCount,
-		"alerts":  alertCount,
-	}}
+	status, details := adtsource.UnitTestVerdict(result)
+	return healthSignal{Status: status, Details: details}
 }
 
 func (s *Server) collectPackageTests(ctx context.Context, pkg string) healthSignal {
@@ -163,7 +153,7 @@ func (s *Server) collectPackageTests(ctx context.Context, pkg string) healthSign
 			continue
 		}
 		ran++
-		c, m, a := summarizeUnitTests(result)
+		c, m, a := adtsource.UnitTestCounts(result)
 		totalClasses += c
 		totalMethods += m
 		totalAlerts += a
@@ -214,21 +204,6 @@ func joinNotes(notes ...string) string {
 	return strings.Join(kept, "\n")
 }
 
-func summarizeUnitTests(result *adt.UnitTestResult) (classCount, methodCount, alertCount int) {
-	if result == nil {
-		return 0, 0, 0
-	}
-	classCount = len(result.Classes)
-	for _, c := range result.Classes {
-		methodCount += len(c.TestMethods)
-		alertCount += len(c.Alerts)
-		for _, m := range c.TestMethods {
-			alertCount += len(m.Alerts)
-		}
-	}
-	return classCount, methodCount, alertCount
-}
-
 func (s *Server) collectObjectATC(ctx context.Context, objType, objName string) healthSignal {
 	objectURL := buildHealthObjectURL(objType, objName, "")
 	if objectURL == "" {
@@ -238,17 +213,8 @@ func (s *Server) collectObjectATC(ctx context.Context, objType, objName string) 
 	if err != nil {
 		return healthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}
 	}
-	total, errors, warnings, infos := summarizeATC(result)
-	status := "CLEAN"
-	if total > 0 {
-		status = "FINDINGS"
-	}
-	return healthSignal{Status: status, Details: map[string]any{
-		"findings": total,
-		"errors":   errors,
-		"warnings": warnings,
-		"infos":    infos,
-	}}
+	status, details := adtsource.ATCVerdict(result)
+	return healthSignal{Status: status, Details: details}
 }
 
 func (s *Server) collectPackageATC(ctx context.Context, pkg string) healthSignal {
@@ -257,37 +223,8 @@ func (s *Server) collectPackageATC(ctx context.Context, pkg string) healthSignal
 	if err != nil {
 		return healthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}
 	}
-	total, errors, warnings, infos := summarizeATC(result)
-	status := "CLEAN"
-	if total > 0 {
-		status = "FINDINGS"
-	}
-	return healthSignal{Status: status, Details: map[string]any{
-		"findings": total,
-		"errors":   errors,
-		"warnings": warnings,
-		"infos":    infos,
-	}}
-}
-
-func summarizeATC(result *adt.ATCWorklist) (total, errors, warnings, infos int) {
-	if result == nil {
-		return 0, 0, 0, 0
-	}
-	for _, obj := range result.Objects {
-		total += len(obj.Findings)
-		for _, f := range obj.Findings {
-			switch f.Priority {
-			case 1:
-				errors++
-			case 2:
-				warnings++
-			default:
-				infos++
-			}
-		}
-	}
-	return total, errors, warnings, infos
+	status, details := adtsource.ATCVerdict(result)
+	return healthSignal{Status: status, Details: details}
 }
 
 func (s *Server) collectObjectBoundaries(ctx context.Context, objType, objName, parent string) healthSignal {
@@ -302,15 +239,7 @@ func (s *Server) collectObjectBoundaries(ctx context.Context, objType, objName, 
 	g := graph.New()
 	nodeID := graph.NodeID(objType, objName)
 	g.AddNode(&graph.Node{ID: nodeID, Name: objName, Type: objType})
-	edges := graph.ExtractDepsFromSource(source, nodeID)
-	dynEdges := graph.ExtractDynamicCalls(source, nodeID)
-	for _, e := range append(edges, dynEdges...) {
-		g.AddEdge(e)
-		parts := strings.SplitN(e.To, ":", 2)
-		if len(parts) == 2 {
-			g.AddNode(&graph.Node{ID: e.To, Name: parts[1], Type: parts[0]})
-		}
-	}
+	g.AddSourceDeps(nodeID, source)
 	unresolved := s.resolvePackages(ctx, g)
 	n := g.GetNode(nodeID)
 	if n == nil || n.Package == "" {
@@ -366,15 +295,7 @@ func (s *Server) collectPackageBoundaries(ctx context.Context, pkg string) healt
 		}
 		nodeID := graph.NodeID(objType, obj.Name)
 		g.AddNode(&graph.Node{ID: nodeID, Name: obj.Name, Type: objType, Package: pkg})
-		edges := graph.ExtractDepsFromSource(source, nodeID)
-		dynEdges := graph.ExtractDynamicCalls(source, nodeID)
-		for _, e := range append(edges, dynEdges...) {
-			g.AddEdge(e)
-			parts := strings.SplitN(e.To, ":", 2)
-			if len(parts) == 2 {
-				g.AddNode(&graph.Node{ID: e.To, Name: parts[1], Type: parts[0]})
-			}
-		}
+		g.AddSourceDeps(nodeID, source)
 		count++
 	}
 	unresolved := s.resolvePackages(ctx, g)
@@ -475,31 +396,16 @@ func (s *Server) collectPackageStaleness(ctx context.Context, pkg string) health
 	return signal
 }
 
+// stalenessFromRevisions and stalenessFromTime wrap the shared verdicts in the
+// MCP signal type.
 func stalenessFromRevisions(revs []adt.Revision) healthSignal {
-	if len(revs) == 0 {
-		return healthSignal{Status: "UNKNOWN"}
-	}
-	tm, err := time.Parse(time.RFC3339, revs[0].Date)
-	if err != nil {
-		return healthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}
-	}
-	return stalenessFromTime(tm, 1)
+	status, details := adtsource.RevisionsVerdict(revs)
+	return healthSignal{Status: status, Details: details}
 }
 
 func stalenessFromTime(tm time.Time, checked int) healthSignal {
-	ageDays := int(time.Since(tm).Hours() / 24)
-	status := "ACTIVE"
-	switch {
-	case ageDays > 365:
-		status = "STALE"
-	case ageDays > 90:
-		status = "AGING"
-	}
-	return healthSignal{Status: status, Details: map[string]any{
-		"last_changed": tm.Format(time.RFC3339),
-		"age_days":     ageDays,
-		"checked":      checked,
-	}}
+	status, details := adtsource.StalenessVerdict(tm, checked)
+	return healthSignal{Status: status, Details: details}
 }
 
 func summarizeHealth(signals map[string]healthSignal) healthSummary {

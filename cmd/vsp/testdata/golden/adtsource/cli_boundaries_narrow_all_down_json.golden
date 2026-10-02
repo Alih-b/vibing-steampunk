@@ -1,0 +1,66 @@
+=== stdout
+{
+  "rootPackage": "$ZNARROW",
+  "packagesScanned": 1,
+  "objectsScanned": 1,
+  "sourceRead": -1,
+  "sourceAttempted": 1,
+  "unreadable": [
+    "Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query",
+    "Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query"
+  ],
+  "entries": [
+    {
+      "sourceObject": "ZCL_NARROW",
+      "sourceType": "CLAS",
+      "sourcePackage": "$ZNARROW",
+      "targetObject": "Z_GOLD_FM",
+      "targetType": "FUGR",
+      "targetPackage": "$Z_GOLD",
+      "direction": "EXTERNAL",
+      "edgeKind": "CALLS",
+      "refDetail": "FM:Z_GOLD_FM"
+    },
+    {
+      "sourceObject": "ZCL_NARROW",
+      "sourceType": "CLAS",
+      "sourcePackage": "$ZNARROW",
+      "targetObject": "Z_LOST_FM",
+      "targetType": "FUGR",
+      "targetPackage": "$Z_LOST",
+      "direction": "EXTERNAL",
+      "edgeKind": "CALLS",
+      "refDetail": "FM:Z_LOST_FM"
+    }
+  ],
+  "upward": 0,
+  "upwardSkip": 0,
+  "common": 0,
+  "sibling": 0,
+  "downward": 0,
+  "commonDown": 0,
+  "external": 2,
+  "dynamic": 0
+}
+
+=== stderr
+Analyzing boundaries for $ZNARROW (1 packages in scope)...
+Resolving target packages...
+    WARN: TADIR resolve batch failed: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+    WARN: FUGR TADIR resolve failed: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+2 of 3 objects could not be searched, so this is not a complete answer:
+  Z_GOLD_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+  Z_LOST_FM: running query: ADT API error: status 500 at /sap/bc/adt/datapreview/freestyle: Data preview refused this query
+
+=== error
+<nil>
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_NARROW/source/main
+SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZNARROW%'
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS = '$ZNARROW' AND PGMID = 'R3TR'
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

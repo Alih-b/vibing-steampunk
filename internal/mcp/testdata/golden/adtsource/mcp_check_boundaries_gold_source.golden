@@ -1,0 +1,27 @@
+=== isError
+false
+=== text
+Package Boundary Analysis: $ZGOLD
+Total dependencies: 2
+
+--- VIOLATIONS (2) ---
+  ✗  → ZCL_FOREIGN (REFERENCES, pkg: $ZOTHER) [TYPE_REF_TO:zcl_foreign]
+  ✗  → Z_GOLD_FM (CALLS, pkg: $ZOTHER) [FM:Z_GOLD_FM]
+
+--- SUMMARY ---
+  Standard (SAP):    0
+  Same package:      0
+  Whitelisted:       0
+  Violations:        2
+  Dynamic (warning): 0
+
+  Packages crossed:
+    $ZOTHER — 2 refs
+
+  ✗ 2 violation(s) in 1 object(s)
+
+=== requests
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_FOREIGN')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')

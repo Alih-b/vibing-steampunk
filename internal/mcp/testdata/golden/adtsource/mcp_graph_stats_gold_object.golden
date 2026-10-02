@@ -1,0 +1,26 @@
+=== isError
+false
+=== text
+{
+  "node_count": 8,
+  "edge_count": 7,
+  "by_node_type": {
+    "CLAS": 2,
+    "DYNAMIC": 1,
+    "FUGR": 2,
+    "INTF": 1,
+    "PROG": 1,
+    "TABL": 1
+  },
+  "by_edge_kind": {
+    "CALLS": 3,
+    "DYNAMIC_CALL": 1,
+    "REFERENCES": 3
+  },
+  "by_source": {
+    "PARSER": 7
+  },
+  "by_package": {}
+}
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/source/main

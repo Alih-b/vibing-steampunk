@@ -1,0 +1,119 @@
+=== stdout
+{
+  "scope": {
+    "kind": "package",
+    "package": "$ZGOLD"
+  },
+  "summary": {
+    "status": "WARN",
+    "headline": "ATC findings detected"
+  },
+  "signals": {
+    "atc": {
+      "status": "FINDINGS",
+      "details": {
+        "errors": 1,
+        "findings": 4,
+        "infos": 2,
+        "warnings": 1
+      }
+    },
+    "boundaries": {
+      "status": "SKIPPED",
+      "details": {
+        "reason": "fast mode"
+      }
+    },
+    "staleness": {
+      "status": "STALE",
+      "details": {
+        "age_days": N,
+        "checked": 0,
+        "last_changed": "2019-03-01T00:00:00Z"
+      }
+    },
+    "tests": {
+      "status": "SKIPPED",
+      "details": {
+        "reason": "fast mode"
+      }
+    }
+  },
+  "atcDetails": {
+    "id": "WL1",
+    "timestamp": 0,
+    "usedObjectSet": "",
+    "objectSetIsComplete": false,
+    "objectSets": [],
+    "objects": [
+      {
+        "uri": "/sap/bc/adt/oo/classes/zcl_gold_a",
+        "type": "CLAS",
+        "name": "ZCL_GOLD_A",
+        "packageName": "$ZGOLD",
+        "author": "",
+        "findings": [
+          {
+            "uri": "/f/0",
+            "location": "/sap/bc/adt/oo/classes/zcl_gold_a/source/main#start=1,1",
+            "priority": 1,
+            "checkId": "C0",
+            "checkTitle": "Check 0",
+            "messageId": "",
+            "messageTitle": "Finding 0",
+            "line": 1,
+            "column": 1
+          },
+          {
+            "uri": "/f/1",
+            "location": "/sap/bc/adt/oo/classes/zcl_gold_a/source/main#start=2,1",
+            "priority": 2,
+            "checkId": "C1",
+            "checkTitle": "Check 1",
+            "messageId": "",
+            "messageTitle": "Finding 1",
+            "line": 2,
+            "column": 1
+          },
+          {
+            "uri": "/f/2",
+            "location": "/sap/bc/adt/oo/classes/zcl_gold_a/source/main#start=3,1",
+            "priority": 3,
+            "checkId": "C2",
+            "checkTitle": "Check 2",
+            "messageId": "",
+            "messageTitle": "Finding 2",
+            "line": 3,
+            "column": 1
+          },
+          {
+            "uri": "/f/3",
+            "location": "/sap/bc/adt/oo/classes/zcl_gold_a/source/main#start=4,1",
+            "priority": 3,
+            "checkId": "C3",
+            "checkTitle": "Check 3",
+            "messageId": "",
+            "messageTitle": "Finding 3",
+            "line": 4,
+            "column": 1
+          }
+        ]
+      }
+    ]
+  }
+}
+
+=== stderr
+  [1/2] Running ATC...
+  [2/2] Checking staleness...
+
+=== error
+<nil>
+=== requests
+GET atc/customizing
+GET atc/worklists/WL1
+GET nodestructure $ZGOLD
+GET nodestructure $ZGOLD
+POST atc/runs /sap/bc/adt/packages/$ZGOLD
+POST atc/worklists
+SQL SELECT MAX( AS4DATE ) AS LAST_DATE FROM E070 WHERE TRKORR IN ( SELECT TRKORR FROM E071 WHERE OBJ_NAME IN ( SELECT OBJ_NAME FROM TADIR WHERE DEVCLASS LIKE '$ZGOLD%' ) )

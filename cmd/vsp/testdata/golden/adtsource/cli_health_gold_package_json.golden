@@ -1,0 +1,279 @@
+=== stdout
+{
+  "scope": {
+    "kind": "package",
+    "package": "$ZGOLD"
+  },
+  "summary": {
+    "status": "BAD",
+    "headline": "Unit tests are failing"
+  },
+  "signals": {
+    "atc": {
+      "status": "FINDINGS",
+      "details": {
+        "errors": 1,
+        "findings": 4,
+        "infos": 2,
+        "warnings": 1
+      }
+    },
+    "boundaries": {
+      "status": "VIOLATIONS",
+      "details": {
+        "downward": 1,
+        "dynamic": 1,
+        "external": 4,
+        "objects_scanned": 4,
+        "packages_scanned": 2,
+        "upward": 1
+      },
+      "unsearched": [
+        {
+          "object": "CLAS ZCL_GOLD_DENIED",
+          "reason": "getting class source: ADT API error: status 403 at /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main: No authorisation to display ZCL_GOLD_DENIED"
+        }
+      ]
+    },
+    "staleness": {
+      "status": "STALE",
+      "details": {
+        "age_days": N,
+        "checked": 0,
+        "last_changed": "2019-03-01T00:00:00Z"
+      }
+    },
+    "tests": {
+      "status": "FAIL",
+      "details": {
+        "alerts": 1,
+        "classes": 1,
+        "methods": 2,
+        "packages_scanned": 1
+      },
+      "unsearched": [
+        {
+          "object": "$ZGOLD_SUB",
+          "reason": "running unit tests: ADT API error: status 403 at /sap/bc/adt/abapunit/testruns: No authorisation for ABAP Unit"
+        }
+      ]
+    }
+  },
+  "testDetails": {
+    "classes": [
+      {
+        "uri": "/x",
+        "type": "CLAS/OL",
+        "name": "LTCL_GOLD",
+        "parentUri": "/x",
+        "parentType": "CLAS/OC",
+        "parentName": "ZCL_GOLD_TEST",
+        "testMethods": [
+          {
+            "uri": "/x",
+            "type": "CLAS/OM",
+            "name": "WORKS",
+            "executionTime": 0.01,
+            "unit": "s"
+          },
+          {
+            "uri": "/x",
+            "type": "CLAS/OM",
+            "name": "BREAKS",
+            "executionTime": 0.01,
+            "unit": "s",
+            "alerts": [
+              {
+                "kind": "failedAssertion",
+                "severity": "critical",
+                "title": "Expected 1, got 2"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "atcDetails": {
+    "id": "WL1",
+    "timestamp": 0,
+    "usedObjectSet": "",
+    "objectSetIsComplete": false,
+    "objectSets": [],
+    "objects": [
+      {
+        "uri": "/sap/bc/adt/oo/classes/zcl_gold_a",
+        "type": "CLAS",
+        "name": "ZCL_GOLD_A",
+        "packageName": "$ZGOLD",
+        "author": "",
+        "findings": [
+          {
+            "uri": "/f/0",
+            "location": "/sap/bc/adt/oo/classes/zcl_gold_a/source/main#start=1,1",
+            "priority": 1,
+            "checkId": "C0",
+            "checkTitle": "Check 0",
+            "messageId": "",
+            "messageTitle": "Finding 0",
+            "line": 1,
+            "column": 1
+          },
+          {
+            "uri": "/f/1",
+            "location": "/sap/bc/adt/oo/classes/zcl_gold_a/source/main#start=2,1",
+            "priority": 2,
+            "checkId": "C1",
+            "checkTitle": "Check 1",
+            "messageId": "",
+            "messageTitle": "Finding 1",
+            "line": 2,
+            "column": 1
+          },
+          {
+            "uri": "/f/2",
+            "location": "/sap/bc/adt/oo/classes/zcl_gold_a/source/main#start=3,1",
+            "priority": 3,
+            "checkId": "C2",
+            "checkTitle": "Check 2",
+            "messageId": "",
+            "messageTitle": "Finding 2",
+            "line": 3,
+            "column": 1
+          },
+          {
+            "uri": "/f/3",
+            "location": "/sap/bc/adt/oo/classes/zcl_gold_a/source/main#start=4,1",
+            "priority": 3,
+            "checkId": "C3",
+            "checkTitle": "Check 3",
+            "messageId": "",
+            "messageTitle": "Finding 3",
+            "line": 4,
+            "column": 1
+          }
+        ]
+      }
+    ]
+  },
+  "crossingDetails": {
+    "rootPackage": "$ZGOLD",
+    "packagesScanned": 2,
+    "objectsScanned": 5,
+    "entries": [
+      {
+        "sourceObject": "ZCL_GOLD_A",
+        "sourceType": "CLAS",
+        "sourcePackage": "$ZGOLD",
+        "targetObject": "ZCL_FOREIGN",
+        "targetType": "CLAS",
+        "targetPackage": "$ZOTHER",
+        "direction": "EXTERNAL",
+        "edgeKind": "REFERENCES",
+        "refDetail": "TYPE_REF_TO:zcl_foreign"
+      },
+      {
+        "sourceObject": "ZCL_GOLD_A",
+        "sourceType": "CLAS",
+        "sourcePackage": "$ZGOLD",
+        "targetObject": "ZGOLD_REPORT",
+        "targetType": "PROG",
+        "targetPackage": "$ZGOLD_SUB",
+        "direction": "DOWNWARD",
+        "edgeKind": "CALLS",
+        "refDetail": "SUBMIT:zgold_report"
+      },
+      {
+        "sourceObject": "ZCL_GOLD_A",
+        "sourceType": "CLAS",
+        "sourcePackage": "$ZGOLD",
+        "targetObject": "Z_GOLD_FM",
+        "targetType": "FUNC",
+        "targetPackage": "$ZOTHER",
+        "direction": "EXTERNAL",
+        "edgeKind": "CALLS",
+        "refDetail": "FM:Z_GOLD_FM"
+      },
+      {
+        "sourceObject": "ZCL_GOLD_A",
+        "sourceType": "CLAS",
+        "sourcePackage": "$ZGOLD",
+        "targetObject": "Z_LOST_FM",
+        "targetType": "FUGR",
+        "targetPackage": "$Z_LOST",
+        "direction": "EXTERNAL",
+        "edgeKind": "CALLS",
+        "refDetail": "FM:Z_LOST_FM"
+      },
+      {
+        "sourceObject": "ZGOLD_REPORT",
+        "sourceType": "PROG",
+        "sourcePackage": "$ZGOLD_SUB",
+        "targetObject": "ZCL_GOLD_A",
+        "targetType": "CLAS",
+        "targetPackage": "$ZGOLD",
+        "direction": "UPWARD",
+        "edgeKind": "CALLS",
+        "refDetail": "STATIC_CALL:zcl_gold_a=\u003erun"
+      },
+      {
+        "sourceObject": "ZGOLD_REPORT",
+        "sourceType": "PROG",
+        "sourcePackage": "$ZGOLD_SUB",
+        "targetObject": "Z_GOLD_FM",
+        "targetType": "FUNC",
+        "targetPackage": "$ZOTHER",
+        "direction": "EXTERNAL",
+        "edgeKind": "CALLS",
+        "refDetail": "FM:Z_GOLD_FM"
+      }
+    ],
+    "upward": 1,
+    "upwardSkip": 0,
+    "common": 0,
+    "sibling": 0,
+    "downward": 1,
+    "commonDown": 0,
+    "external": 4,
+    "dynamic": 1
+  }
+}
+
+=== stderr
+  [1/4] Running tests...
+  [2/4] Checking boundaries...
+
+    WARN: CLAS ZCL_GOLD_DENIED: getting class source: ADT API error: status 403 at /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main: No authorisation to display ZCL_GOLD_DENIED
+
+  [4/4] Checking staleness...
+
+=== error
+<nil>
+=== requests
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_A/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_DENIED/source/main
+GET /sap/bc/adt/oo/classes/ZCL_GOLD_TEST/source/main
+GET /sap/bc/adt/oo/interfaces/ZIF_GOLD/source/main
+GET /sap/bc/adt/programs/programs/ZGOLD_REPORT/source/main
+GET atc/customizing
+GET atc/worklists/WL1
+GET nodestructure $ZGOLD
+GET nodestructure $ZGOLD
+POST atc/runs /sap/bc/adt/packages/$ZGOLD
+POST atc/worklists
+POST testruns /sap/bc/adt/packages/$ZGOLD
+POST testruns /sap/bc/adt/packages/$ZGOLD_SUB
+POST testruns /sap/bc/adt/packages/$ZGOLD_SUB
+SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZGOLD%'
+SQL SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '$ZGOLD%'
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_GOLD_FM')
+SQL SELECT FUNCNAME, PNAME FROM TFDIR WHERE FUNCNAME IN ('Z_LOST_FM')
+SQL SELECT MAX( AS4DATE ) AS LAST_DATE FROM E070 WHERE TRKORR IN ( SELECT TRKORR FROM E071 WHERE OBJ_NAME IN ( SELECT OBJ_NAME FROM TADIR WHERE DEVCLASS LIKE '$ZGOLD%' ) )
+SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS IN ('$ZGOLD') AND PGMID = 'R3TR'
+SQL SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE DEVCLASS IN ('$ZGOLD_SUB') AND PGMID = 'R3TR'
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZGOLD_FG')
+SQL SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name IN ('ZLOST_FG')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZCL_FOREIGN')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('ZGOLD_T')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_GOLD_FM')
+SQL SELECT object, obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN ('Z_LOST_FM')

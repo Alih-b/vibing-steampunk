@@ -1,0 +1,51 @@
+=== isError
+false
+=== text
+{
+  "scope": {
+    "kind": "package",
+    "package": "$ZGOLD"
+  },
+  "summary": {
+    "status": "WARN",
+    "headline": "ATC findings detected"
+  },
+  "signals": {
+    "atc": {
+      "status": "FINDINGS",
+      "details": {
+        "errors": 1,
+        "findings": 4,
+        "infos": 2,
+        "warnings": 1
+      }
+    },
+    "boundaries": {
+      "status": "UNKNOWN",
+      "details": {
+        "crossed_packages": {},
+        "scanned_objects": 0,
+        "violating_objects": null,
+        "violations": 0
+      },
+      "note": "no source-bearing objects were read in this package, so there is no boundary verdict here — not a clean one."
+    },
+    "staleness": {
+      "status": "UNKNOWN"
+    },
+    "tests": {
+      "status": "NONE"
+    }
+  },
+  "notes": [
+    "boundaries: no source-bearing objects were read in this package, so there is no boundary verdict here — not a clean one."
+  ]
+}
+=== requests
+GET atc/customizing
+GET atc/worklists/WL1
+GET nodestructure $ZGOLD
+GET nodestructure $ZGOLD
+GET nodestructure $ZGOLD
+POST atc/runs /sap/bc/adt/packages/$zgold
+POST atc/worklists
