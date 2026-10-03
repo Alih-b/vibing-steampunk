@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -250,15 +251,17 @@ func TestLongCallReportsTheEffectiveDeadline(t *testing.T) {
 	defer cancel()
 	s := &Server{config: &Config{}}
 	res, _ := s.longCall(parent, newRequest(map[string]any{"timeout": float64(30)}), "execute_abap", waitForCtx)
+	// The deadline is measured from the call's start, a moment after the
+	// parent's timer began, so a slow runner reports 49ms rather than 50ms.
 	text := resultText(res)
-	if !strings.Contains(text, "execute_abap timed out after 50ms, at the caller's own deadline, before its budget of 30s") {
+	if !regexp.MustCompile(`execute_abap timed out after (4\d|50)ms, at the caller's own deadline, before its budget of 30s`).MatchString(text) {
 		t.Fatalf("got %q", text)
 	}
 
 	parent2, cancel2 := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel2()
 	res, _ = s.longCall(parent2, newRequest(map[string]any{}), "execute_abap", waitForCtx)
-	if text := resultText(res); !strings.Contains(text, "timed out after 50ms, at the caller's own deadline;") {
+	if text := resultText(res); !regexp.MustCompile(`timed out after (4\d|50)ms, at the caller's own deadline;`).MatchString(text) {
 		t.Fatalf("no budget, caller's deadline: got %q", text)
 	}
 }
