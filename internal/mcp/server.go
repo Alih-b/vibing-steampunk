@@ -79,6 +79,11 @@ type Config struct {
 	// Cookie authentication (alternative to basic auth)
 	Cookies map[string]string
 
+	// TransportCmd is the argv of a helper that carries every ADT request
+	// over its stdin/stdout (--transport-cmd / SAP_TRANSPORT_CMD). It
+	// authenticates itself; no user, password or cookies go with it.
+	TransportCmd []string
+
 	// Expect pins the system, client and user (--expect / SAP_EXPECT /
 	// "expect" in .vsp.json). Nil: no pin, and no preflight request.
 	Expect *adt.IdentityPin
@@ -213,6 +218,9 @@ func NewServer(cfg *Config) *Server {
 	}
 	if cfg.Expect != nil {
 		opts = append(opts, adt.WithExpect(*cfg.Expect))
+	}
+	if len(cfg.TransportCmd) > 0 {
+		opts = append(opts, adt.WithTransportCmd(cfg.TransportCmd))
 	}
 
 	// Configure safety settings
@@ -356,6 +364,11 @@ func parseFeatureMode(s string) adt.FeatureMode {
 
 // ServeStdio starts the MCP server on stdin/stdout.
 func (s *Server) ServeStdio() error {
+	// Deferred first, so it runs last, after the debug session is released.
+	// A transport command's helper is told to exit (stdin EOF).
+	if s.adtClient != nil {
+		defer func() { _ = s.adtClient.CloseTransport() }()
+	}
 	// A debuggee left attached when the server exits stays suspended in a work
 	// process until its caller times out, so the session is released here as
 	// well as on an explicit detach.
@@ -402,6 +415,9 @@ func stdioShutdown(err error) bool {
 //
 // GET /health answers without either check, for liveness probes.
 func (s *Server) ServeHTTP(addr string) error {
+	if s.adtClient != nil {
+		defer func() { _ = s.adtClient.CloseTransport() }()
+	}
 	apiKey := strings.TrimSpace(os.Getenv("VSP_HTTP_API_KEY"))
 	if apiKey == "" && !isLoopbackAddr(addr) {
 		return fmt.Errorf("refusing to serve %s without authentication: set VSP_HTTP_API_KEY (it exposes every ADT tool under your SAP credentials)", addr)
